@@ -70,6 +70,8 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	cmd.Flags().StringVarP(&format, "format", "f", "compact", "Output format: compact, verbose, detail, lines, xml")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 
+	cmd.AddCommand(newCommitCmd())
+
 	return cmd
 }
 
