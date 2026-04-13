@@ -169,6 +169,9 @@ func runRegexPass(root string, files []string, rules []*regexp.Regexp, class, ki
 			line := scanner.Text()
 			for _, re := range rules {
 				if re.MatchString(line) {
+					if kind == "pii" && isPlaceholderPath(line) {
+						break
+					}
 					out = append(out, Finding{
 						Class:   class,
 						Kind:    kind,
@@ -184,6 +187,24 @@ func runRegexPass(root string, files []string, rules []*regexp.Regexp, class, ki
 		f.Close()
 	}
 	return out
+}
+
+// isPlaceholderPath returns true for obvious doc-placeholder paths
+// ("/Users/you/", "/home/user/", etc.) that should not flag as PII.
+// These appear in READMEs and example output, not in real code.
+func isPlaceholderPath(line string) bool {
+	for _, p := range placeholderPathFragments {
+		if strings.Contains(line, p) {
+			return true
+		}
+	}
+	return false
+}
+
+var placeholderPathFragments = []string{
+	"/Users/you/", "/Users/user/", "/Users/username/", "/Users/name/",
+	"/home/you/", "/home/user/", "/home/username/", "/home/name/",
+	"/Users/<", "/home/<", // angle-bracket placeholders
 }
 
 // truncSnippet caps a snippet at 100 chars to keep findings.json small.
