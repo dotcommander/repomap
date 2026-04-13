@@ -2,7 +2,6 @@ package repomap
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -30,6 +29,9 @@ var (
 	pyFrom   = regexp.MustCompile(`^from\s+(\w+)`)
 )
 
+// parserFunc is a language-specific line parser.
+type parserFunc func(lines []string, fs *FileSymbols)
+
 // ParseGenericFile extracts symbols from a non-Go source file using regex
 // patterns. path is absolute, root is the project root for relative path
 // calculation.
@@ -39,10 +41,7 @@ func ParseGenericFile(path, root, language string) (*FileSymbols, error) {
 		return nil, err
 	}
 
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		rel = path
-	}
+	rel := relPath(root, path)
 
 	fs := &FileSymbols{
 		Path:        rel,
@@ -55,22 +54,8 @@ func ParseGenericFile(path, root, language string) (*FileSymbols, error) {
 		lines = lines[:maxScanLines]
 	}
 
-	switch language {
-	case "typescript", "javascript", "tsx", "jsx":
-		parseTS(lines, fs)
-	case "python":
-		parsePython(lines, fs)
-	case "rust":
-		parseRust(lines, fs)
-	case "c", "cpp", "c++", "cxx":
-		parseC(lines, fs)
-	case "java":
-		parseJava(lines, fs)
-	case "ruby":
-		parseRuby(lines, fs)
-	case "php":
-		parsePHP(lines, fs)
-		// swift, kotlin, lua, zig — unsupported, return empty
+	if fn, ok := langParsers[language]; ok {
+		fn(lines, fs)
 	}
 
 	return fs, nil
@@ -82,16 +67,16 @@ func parseTS(lines []string, fs *FileSymbols) {
 		trimmed := strings.TrimSpace(line)
 
 		if m := tsExportDecl.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Exported: true, Line: lineIdx + 1})
 			continue
 		}
 		if m := tsExportDefault.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Exported: true, Line: lineIdx + 1})
 			continue
 		}
 		if m := tsReExport.FindStringSubmatch(trimmed); m != nil {
 			for _, name := range splitReExportNames(m[1]) {
-				fs.Symbols = append(fs.Symbols, Symbol{Name: name, Kind: "reexport", Line: lineIdx + 1})
+				fs.Symbols = append(fs.Symbols, Symbol{Name: name, Kind: "reexport", Exported: true, Line: lineIdx + 1})
 			}
 			continue
 		}
@@ -155,15 +140,15 @@ func parsePython(lines []string, fs *FileSymbols) {
 		}
 
 		if m := pyFunc.FindStringSubmatch(line); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "function", Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "function", Exported: true, Line: lineIdx + 1})
 			continue
 		}
 		if m := pyClass.FindStringSubmatch(line); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "class", Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "class", Exported: true, Line: lineIdx + 1})
 			continue
 		}
 		if m := pyConst.FindStringSubmatch(line); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "const", Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "const", Exported: true, Line: lineIdx + 1})
 			continue
 		}
 		if m := pyImport.FindStringSubmatch(line); m != nil {

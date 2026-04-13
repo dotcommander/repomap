@@ -2,26 +2,9 @@ package repomap
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
-
-// categoryOrder defines the display order for symbol categories.
-var categoryOrder = []struct {
-	key   string
-	label string
-}{
-	{"tests", "tests"},
-	{"types", "types"},
-	{"interfaces", "interfaces"},
-	{"classes", "classes"},
-	{"enums", "enums"},
-	{"funcs", "funcs"},
-	{"methods", "methods"},
-	{"consts", "consts"},
-	{"vars", "vars"},
-	{"other", "other"},
-}
 
 // FormatMap formats ranked files into a token-budgeted text representation.
 // maxTokens controls the output size (estimated as len(text)/4).
@@ -55,27 +38,23 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool) string {
 	// Budget mode: assign detail levels, then render.
 	files = BudgetFiles(files, maxTokens)
 
+	var headerOnly []string
 	shownFiles := 0
 	for _, f := range files {
-		switch f.DetailLevel {
-		case -1:
+		if f.DetailLevel < 0 {
 			continue
-		case 0:
-			fmt.Fprint(&b, formatFileHeaderOnly(f))
-		case 1:
-			fmt.Fprint(&b, formatFileBlockSummary(f))
-		case 2:
-			fmt.Fprint(&b, formatFileBlockCompact(f, nil))
-		case 3:
-			top := map[string]bool{}
-			for _, s := range f.Symbols {
-				if (s.Kind == "struct" || s.Kind == "interface") && s.Signature != "" && s.Signature != "{}" {
-					top[s.Name] = true
-				}
-			}
-			fmt.Fprint(&b, formatFileBlockCompact(f, top))
 		}
+		if f.DetailLevel == 0 && len(f.Symbols) == 0 && f.Tag == "" {
+			headerOnly = append(headerOnly, f.Path)
+			shownFiles++
+			continue
+		}
+		fmt.Fprint(&b, f.formatDetail())
 		shownFiles++
+	}
+
+	if len(headerOnly) > 0 {
+		fmt.Fprint(&b, formatCollapsedPaths(headerOnly))
 	}
 
 	if shownFiles < totalFiles {
@@ -111,23 +90,13 @@ func formatFileBlockVerbose(f RankedFile) string {
 	var b strings.Builder
 	fmt.Fprint(&b, formatFileLine(f))
 
-	categorized := categorizeByKind(f.Path, f.Symbols)
-
-	for _, item := range categoryOrder {
-		syms := categorized[item.key]
-		if len(syms) == 0 {
-			continue
+	for _, g := range orderedGroups(f.Path, f.Symbols) {
+		names := make([]string, 0, len(g.syms))
+		for _, s := range g.syms {
+			names = append(names, symDisplayName(s))
 		}
-		names := make([]string, 0, len(syms))
-		for _, s := range syms {
-			if item.key == "methods" && s.Receiver != "" {
-				names = append(names, s.Receiver+"."+s.Name)
-			} else {
-				names = append(names, s.Name)
-			}
-		}
-		sort.Strings(names)
-		fmt.Fprintf(&b, "  %s: %s\n", item.label, strings.Join(names, ", "))
+		slices.Sort(names)
+		fmt.Fprintf(&b, "  %s: %s\n", g.label, strings.Join(names, ", "))
 	}
 	fmt.Fprint(&b, "\n")
 	return b.String()
@@ -155,39 +124,32 @@ func formatFileBlockDetail(f RankedFile) string {
 	var b strings.Builder
 	fmt.Fprint(&b, formatFileLine(f))
 
-	categorized := categorizeByKind(f.Path, f.Symbols)
-
-	for _, item := range categoryOrder {
-		syms := categorized[item.key]
-		if len(syms) == 0 {
-			continue
-		}
-
-		sort.Slice(syms, func(i, j int) bool {
-			return syms[i].Name < syms[j].Name
+	for _, g := range orderedGroups(f.Path, f.Symbols) {
+		slices.SortFunc(g.syms, func(a, b Symbol) int {
+			return strings.Compare(a.Name, b.Name)
 		})
 
 		var lines []string
-		for _, s := range syms {
+		for _, s := range g.syms {
 			var line string
 			switch {
-			case item.key == "methods" && s.Receiver != "":
+			case g.key == "methods" && s.Receiver != "":
 				if s.Signature != "" {
-					line = fmt.Sprintf("%s.%s%s", s.Receiver, s.Name, s.Signature)
+					line = fmt.Sprintf("%s.%s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s))
 				} else {
-					line = fmt.Sprintf("%s.%s", s.Receiver, s.Name)
+					line = fmt.Sprintf("%s.%s%s", s.Receiver, s.Name, annotationTag(s))
 				}
-			case (item.key == "types" || item.key == "interfaces") && s.Signature != "":
-				line = fmt.Sprintf("%s %s", s.Name, s.Signature)
-			case item.key == "funcs" && s.Signature != "":
-				line = fmt.Sprintf("%s%s", s.Name, s.Signature)
+			case (g.key == "types" || g.key == "interfaces") && s.Signature != "":
+				line = fmt.Sprintf("%s %s%s%s", s.Name, s.Signature, annotationTag(s), implementsTag(s))
+			case g.key == "funcs" && s.Signature != "":
+				line = fmt.Sprintf("%s%s%s", s.Name, s.Signature, annotationTag(s))
 			default:
-				line = s.Name
+				line = s.Name + annotationTag(s)
 			}
 			lines = append(lines, line)
 		}
 
-		fmt.Fprintf(&b, "  %s:\n", item.label)
+		fmt.Fprintf(&b, "  %s:\n", g.label)
 		for _, line := range lines {
 			fmt.Fprintf(&b, "    %s\n", line)
 		}
@@ -196,22 +158,53 @@ func formatFileBlockDetail(f RankedFile) string {
 	return b.String()
 }
 
-// formatFileLine returns the header line for a file block (path + tag/badge annotations).
-func formatFileLine(f RankedFile) string {
-	var tags []string
+// fileDiagnostic is one active diagnostic signal on a file. Each renderer
+// chooses whether to emit Label (text) or Attr (XML).
+type fileDiagnostic struct {
+	Label string // text form: "imported by 4", "untested"
+	Attr  string // xml form:  `imported-by="4"`, `untested="true"`
+}
+
+// fileDiagnostics returns the active signals for a file. minImportedBy is the
+// threshold below which ImportedBy is suppressed (text uses 2 to hide
+// single-importer noise; XML uses 1 to preserve raw counts).
+func fileDiagnostics(f RankedFile, minImportedBy int) []fileDiagnostic {
+	var out []fileDiagnostic
 	if f.Tag == "entry" {
-		tags = append(tags, "entry")
+		out = append(out, fileDiagnostic{Label: "entry", Attr: `tag="entry"`})
 	}
-	if f.ImportedBy > 0 {
-		tags = append(tags, fmt.Sprintf("imported by %d", f.ImportedBy))
+	if f.ImportedBy >= minImportedBy && f.ImportedBy > 0 {
+		out = append(out, fileDiagnostic{
+			Label: fmt.Sprintf("imported by %d", f.ImportedBy),
+			Attr:  fmt.Sprintf(`imported-by="%d"`, f.ImportedBy),
+		})
+	}
+	if f.DependsOn > 0 {
+		out = append(out, fileDiagnostic{
+			Label: fmt.Sprintf("imports: %d", f.DependsOn),
+			Attr:  fmt.Sprintf(`imports="%d"`, f.DependsOn),
+		})
+	}
+	if f.Untested {
+		out = append(out, fileDiagnostic{Label: "untested", Attr: `untested="true"`})
 	}
 	if f.ParseMethod == "regex" {
-		tags = append(tags, "inferred")
+		out = append(out, fileDiagnostic{Label: "inferred", Attr: `parsed="regex"`})
 	}
-	if len(tags) == 0 {
+	return out
+}
+
+// formatFileLine returns the header line for a file block (path + tag/badge annotations).
+func formatFileLine(f RankedFile) string {
+	diags := fileDiagnostics(f, 2)
+	if len(diags) == 0 {
 		return f.Path + "\n"
 	}
-	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(tags, ", "))
+	labels := make([]string, len(diags))
+	for i, d := range diags {
+		labels[i] = d.Label
+	}
+	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(labels, ", "))
 }
 
 // formatFileBlockCompact returns the compact block with struct fields for top-ranked types.
@@ -229,7 +222,7 @@ func formatFileBlockCompact(f RankedFile, topTypes map[string]bool) string {
 			continue
 		}
 		if (s.Kind == "struct" || s.Kind == "interface") && topTypes[s.Name] {
-			fmt.Fprintf(&b, "  %s %s\n", s.Name, s.Signature)
+			fmt.Fprintf(&b, "  %s %s%s\n", s.Name, s.Signature, implementsTag(s))
 		}
 	}
 
@@ -246,4 +239,114 @@ func formatFileHeaderOnly(f RankedFile) string {
 	}
 	fmt.Fprint(&b, "\n")
 	return b.String()
+}
+
+// formatDetail renders the file at its assigned DetailLevel.
+func (f RankedFile) formatDetail() string {
+	switch f.DetailLevel {
+	case 0:
+		return formatFileHeaderOnly(f)
+	case 1:
+		return formatFileBlockSummary(f)
+	case 2:
+		return formatFileBlockCompact(f, nil)
+	case 3:
+		top := make(map[string]bool)
+		for _, s := range f.Symbols {
+			if s.HasFields() {
+				top[s.Name] = true
+			}
+		}
+		return formatFileBlockCompact(f, top)
+	default:
+		return ""
+	}
+}
+
+// Symbol-level diagnostic thresholds. A symbol exceeding any of these gets
+// an annotation in the rendered output so an LLM can spot the smell quickly.
+const (
+	sizeThreshold    = 50 // line span → [NL]
+	paramThreshold   = 4  // function/method params > this → [Np]
+	resultThreshold  = 2  // function/method returns > this → [Nr]
+	methodsThreshold = 5  // interface methods > this → [Nm]
+)
+
+// sizeTag returns " [NL]" for symbols exceeding the size threshold, or "".
+// Kept for existing tests and single-signal callers.
+func sizeTag(s Symbol) string {
+	if span := s.LineSpan(); span >= sizeThreshold {
+		return fmt.Sprintf(" [%dL]", span)
+	}
+	return ""
+}
+
+// annotationTag returns a single bracketed suffix combining all symbol-level
+// diagnostic signals (size + signature smells), e.g. " [185L, 5p, 3r]".
+// Empty string if no signal crosses its threshold.
+func annotationTag(s Symbol) string {
+	var parts []string
+	if span := s.LineSpan(); span >= sizeThreshold {
+		parts = append(parts, fmt.Sprintf("%dL", span))
+	}
+	switch s.Kind {
+	case "function", "method":
+		if s.ParamCount > paramThreshold {
+			parts = append(parts, fmt.Sprintf("%dp", s.ParamCount))
+		}
+		if s.ResultCount > resultThreshold {
+			parts = append(parts, fmt.Sprintf("%dr", s.ResultCount))
+		}
+	case "interface":
+		if s.ParamCount > methodsThreshold {
+			parts = append(parts, fmt.Sprintf("%dm", s.ParamCount))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(parts, ", ") + "]"
+}
+
+// symDisplayName returns the display name for a symbol, with diagnostic tags.
+func symDisplayName(s Symbol) string {
+	name := s.Name
+	if s.Kind == "method" && s.Receiver != "" {
+		name = s.Receiver + "." + s.Name
+	}
+	return name + annotationTag(s) + implementsTag(s)
+}
+
+// implementsTag returns " [impl: A, B]" for structs that satisfy interfaces,
+// or "" if the symbol has no detected implementations.
+func implementsTag(s Symbol) string {
+	if len(s.Implements) == 0 {
+		return ""
+	}
+	return " [impl: " + strings.Join(s.Implements, ", ") + "]"
+}
+
+// collapsedPreviewLimit is the max number of paths shown before truncation.
+const collapsedPreviewLimit = 5
+
+// formatCollapsedPaths renders header-only files as a single compact line.
+// Shows: (+N more: a.go, b.go, c.go, ...)
+func formatCollapsedPaths(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	slices.Sort(paths)
+	preview := paths
+	truncated := false
+	if len(preview) > collapsedPreviewLimit {
+		preview = preview[:collapsedPreviewLimit]
+		truncated = true
+	}
+
+	body := strings.Join(preview, ", ")
+	if truncated {
+		body += ", ..."
+	}
+	return fmt.Sprintf("(+%d more: %s)\n", len(paths), body)
 }

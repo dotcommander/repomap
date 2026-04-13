@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -42,7 +42,11 @@ func FormatLines(files []RankedFile, maxTokens int, root string) string {
 			break
 		}
 
-		block := formatFileBlockLines(f, root)
+		var lines []string
+		if data, err := os.ReadFile(filepath.Join(root, f.Path)); err == nil {
+			lines = strings.Split(string(data), "\n")
+		}
+		block := formatFileBlockLines(f, lines)
 
 		if shownFiles > 0 && budgetBytes > 0 && b.Len()+len(block) > budgetBytes {
 			break
@@ -60,16 +64,9 @@ func FormatLines(files []RankedFile, maxTokens int, root string) string {
 }
 
 // formatFileBlockLines shows actual source lines for each symbol in a file.
-// Reads the source file on demand to avoid loading files that get budget-cut.
-func formatFileBlockLines(f RankedFile, root string) string {
+func formatFileBlockLines(f RankedFile, lines []string) string {
 	var b strings.Builder
 	fmt.Fprint(&b, formatFileLine(f))
-
-	var lines []string
-	absPath := filepath.Join(root, f.Path)
-	if data, err := os.ReadFile(absPath); err == nil {
-		lines = strings.Split(string(data), "\n")
-	}
 
 	// Collect symbols with known line numbers, sorted by position.
 	type symLine struct {
@@ -83,16 +80,15 @@ func formatFileBlockLines(f RankedFile, root string) string {
 		}
 	}
 
-	sort.Slice(syms, func(i, j int) bool {
-		return syms[i].line < syms[j].line
+	slices.SortFunc(syms, func(a, b symLine) int {
+		return a.line - b.line
 	})
 
 	for _, sl := range syms {
 		var text string
 
 		// For structs/interfaces with field info, prefer synthesized line
-		if (sl.sym.Kind == "struct" || sl.sym.Kind == "interface") &&
-			sl.sym.Signature != "" && sl.sym.Signature != "{}" {
+		if sl.sym.HasFields() {
 			text = synthesizeLine(sl.sym)
 		} else if lines != nil && sl.line > 0 && sl.line <= len(lines) {
 			text = strings.TrimRight(lines[sl.line-1], " \t\r")
@@ -103,6 +99,9 @@ func formatFileBlockLines(f RankedFile, root string) string {
 
 		if text == "" {
 			text = synthesizeLine(sl.sym)
+		}
+		if tag := annotationTag(sl.sym); tag != "" {
+			text += tag
 		}
 		fmt.Fprintf(&b, "│ %s\n", text)
 	}

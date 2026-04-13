@@ -20,13 +20,10 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 
-	relPath, err := filepath.Rel(root, path)
-	if err != nil {
-		relPath = path
-	}
+	rel := relPath(root, path)
 
 	fs := &FileSymbols{
-		Path:        relPath,
+		Path:        rel,
 		Language:    "go",
 		Package:     file.Name.Name,
 		ImportPath:  resolveImportPath(path, root),
@@ -54,6 +51,7 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 					Kind:     "function",
 					Exported: false,
 					Line:     fset.Position(d.Name.Pos()).Line,
+					EndLine:  fset.Position(d.End()).Line,
 				})
 			}
 		case *ast.GenDecl:
@@ -170,6 +168,7 @@ func extractFunc(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
 		Kind:     "function",
 		Exported: true,
 		Line:     fset.Position(d.Name.Pos()).Line,
+		EndLine:  fset.Position(d.End()).Line,
 	}
 
 	if d.Recv != nil && len(d.Recv.List) > 0 {
@@ -178,7 +177,26 @@ func extractFunc(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
 	}
 
 	sym.Signature = funcSignature(d.Type)
+	sym.ParamCount = fieldListCount(d.Type.Params)
+	sym.ResultCount = fieldListCount(d.Type.Results)
 	return sym, true
+}
+
+// fieldListCount counts individual items in an AST field list, accounting
+// for grouped declarations like "a, b int" (which contributes 2).
+func fieldListCount(fl *ast.FieldList) int {
+	if fl == nil {
+		return 0
+	}
+	n := 0
+	for _, field := range fl.List {
+		if len(field.Names) == 0 {
+			n++
+			continue
+		}
+		n += len(field.Names)
+	}
+	return n
 }
 
 // receiverString formats a receiver field as "*TypeName" or "TypeName".
@@ -201,15 +219,18 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl) []Symbol {
 			}
 			kind := "type"
 			var signature string
+			var memberCount int
 			switch t := ts.Type.(type) {
 			case *ast.StructType:
 				kind = "struct"
 				signature = structFields(t)
+				memberCount = fieldListCount(t.Fields)
 			case *ast.InterfaceType:
 				kind = "interface"
 				signature = interfaceMethods(t)
+				memberCount = fieldListCount(t.Methods)
 			}
-			syms = append(syms, Symbol{Name: ts.Name.Name, Kind: kind, Exported: true, Signature: signature, Line: fset.Position(ts.Name.Pos()).Line})
+			syms = append(syms, Symbol{Name: ts.Name.Name, Kind: kind, Exported: true, Signature: signature, Line: fset.Position(ts.Name.Pos()).Line, EndLine: fset.Position(ts.End()).Line, ParamCount: memberCount})
 		}
 	case token.CONST, token.VAR:
 		kind := "constant"
@@ -223,7 +244,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl) []Symbol {
 			}
 			for _, name := range vs.Names {
 				if isExported(name.Name) {
-					syms = append(syms, Symbol{Name: name.Name, Kind: kind, Exported: true, Line: fset.Position(name.Pos()).Line})
+					syms = append(syms, Symbol{Name: name.Name, Kind: kind, Exported: true, Line: fset.Position(name.Pos()).Line, EndLine: fset.Position(vs.End()).Line})
 				}
 			}
 		}

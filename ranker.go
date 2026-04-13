@@ -8,11 +8,13 @@ import (
 
 // RankedFile is a FileSymbols with an importance score.
 type RankedFile struct {
-	FileSymbols
+	*FileSymbols
 	Score       int    // higher = more important
 	Tag         string // e.g. "entry", ""
 	DetailLevel int    // set by BudgetFiles: -1=omit, 0=header, 1=summary, 2=symbols, 3=symbols+fields
 	ImportedBy  int    // number of files that import this file's package
+	DependsOn   int    // number of internal imports (fan-out coupling proxy)
+	Untested    bool   // true if package lacks test coverage
 }
 
 // RankFiles scores and sorts files by importance.
@@ -20,13 +22,14 @@ type RankedFile struct {
 func RankFiles(files []*FileSymbols) []RankedFile {
 	ranked := make([]RankedFile, len(files))
 	for i, f := range files {
-		ranked[i] = RankedFile{FileSymbols: *f}
+		ranked[i] = RankedFile{FileSymbols: f}
 	}
 
 	applyEntryBoosts(ranked)
 	applySymbolBonus(ranked)
 	applyDepthPenalty(ranked)
 	applyReferenceCounts(ranked, files)
+	applyDiagnosticSignals(ranked, files)
 
 	slices.SortFunc(ranked, func(a, b RankedFile) int {
 		if b.Score != a.Score {
@@ -59,13 +62,43 @@ func applyEntryBoosts(ranked []RankedFile) {
 	}
 }
 
+// kindWeight assigns ranking weight by symbol kind.
+// Types/interfaces define contracts (highest), structs define data,
+// functions/methods implement behavior, constants/vars are low signal.
+var kindWeight = map[string]int{
+	"interface": 3,
+	"type":      3,
+	"struct":    2,
+	"class":     2,
+	"enum":      2,
+	"function":  1,
+	"fn":        1,
+	"method":    1,
+	"constant":  0,
+	"const":     0,
+	"variable":  0,
+	"static":    0,
+}
+
+const maxSymbolBonus = 20
+
 func applySymbolBonus(ranked []RankedFile) {
 	for i := range ranked {
+		bonus := 0
 		for _, sym := range ranked[i].Symbols {
 			if sym.Exported {
-				ranked[i].Score++
+				w := kindWeight[sym.Kind]
+				if w == 0 {
+					// Unknown kinds get +1 (original behavior).
+					w = 1
+				}
+				bonus += w
 			}
 		}
+		if bonus > maxSymbolBonus {
+			bonus = maxSymbolBonus
+		}
+		ranked[i].Score += bonus
 	}
 }
 
@@ -99,65 +132,168 @@ func applyReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
 	applyBasenameReferenceCounts(ranked, files)
 }
 
-// applyGoReferenceCounts scores Go files by how many other files import their package.
-func applyGoReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
-	// Map importPath → all file indices sharing that package.
-	importIndex := make(map[string][]int, len(files))
+// distributeImportScores builds a key→indices map, counts unique importers per key,
+// then distributes score and ImportedBy to matching files.
+func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
+	keyFunc func(*FileSymbols) string,
+	matchFunc func(string) string,
+) {
+	// Build index: key → file indices.
+	index := make(map[string][]int, len(files))
 	for i, f := range files {
-		if f.ImportPath != "" {
-			importIndex[f.ImportPath] = append(importIndex[f.ImportPath], i)
+		if k := keyFunc(f); k != "" {
+			index[k] = append(index[k], i)
 		}
 	}
 
-	// Count unique importers per package.
-	importerCount := make(map[string]int, len(importIndex))
+	// Count unique importers per key.
+	importerCount := make(map[string]int, len(index))
 	for _, f := range files {
 		seen := make(map[string]bool)
 		for _, imp := range f.Imports {
-			if _, ok := importIndex[imp]; ok && !seen[imp] {
-				seen[imp] = true
-				importerCount[imp]++
+			k := matchFunc(imp)
+			if _, ok := index[k]; ok && !seen[k] {
+				seen[k] = true
+				importerCount[k]++
 			}
 		}
 	}
 
-	// Distribute score and ImportedBy to all files in each imported package.
-	for pkg, count := range importerCount {
-		for _, idx := range importIndex[pkg] {
+	// Distribute score and ImportedBy to all files matching each key.
+	for key, count := range importerCount {
+		for _, idx := range index[key] {
 			ranked[idx].Score += count * 10
 			ranked[idx].ImportedBy = count
 		}
 	}
 }
 
+// applyGoReferenceCounts scores Go files by how many other files import their package.
+func applyGoReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
+	distributeImportScores(ranked, files,
+		func(f *FileSymbols) string { return f.ImportPath },
+		func(imp string) string { return imp },
+	)
+}
+
 // applyBasenameReferenceCounts scores non-Go files by basename matching in imports.
 func applyBasenameReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
-	// Map basename (without ext) → all file indices sharing that name.
-	basenameIndex := make(map[string][]int, len(files))
-	for i, f := range files {
-		name := strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path))
-		basenameIndex[name] = append(basenameIndex[name], i)
+	basenameOf := func(s string) string {
+		seg := filepath.Base(s)
+		return strings.TrimSuffix(seg, filepath.Ext(seg))
+	}
+	distributeImportScores(ranked, files,
+		func(f *FileSymbols) string { return basenameOf(f.Path) },
+		basenameOf,
+	)
+}
+
+// applyDiagnosticSignals populates DependsOn and Untested on each RankedFile.
+func applyDiagnosticSignals(ranked []RankedFile, files []*FileSymbols) {
+	internalPkgs := buildInternalPackageSet(files)
+	testCoverage := buildTestCoverageMap(files)
+
+	for i := range ranked {
+		ranked[i].DependsOn = countInternalImports(ranked[i], internalPkgs)
+		if shouldTagUntested(ranked[i], testCoverage) {
+			ranked[i].Untested = true
+		}
+	}
+}
+
+// buildInternalPackageSet returns the set of all Go import paths present in the project.
+func buildInternalPackageSet(files []*FileSymbols) map[string]bool {
+	internalPkgs := make(map[string]bool)
+	for _, f := range files {
+		if f.ImportPath != "" {
+			internalPkgs[f.ImportPath] = true
+		}
+	}
+	return internalPkgs
+}
+
+// countInternalImports returns the number of distinct internal imports for a file.
+// For Go, only imports matching a known internal package are counted.
+// For non-Go, total distinct imports are used if above a noise threshold.
+func countInternalImports(f RankedFile, internalPkgs map[string]bool) int {
+	if len(f.Imports) == 0 {
+		return 0
 	}
 
-	// Count unique importers per basename.
-	importerCount := make(map[string]int, len(basenameIndex))
-	for _, f := range files {
-		seen := make(map[string]bool)
+	// Go: count only imports that match known internal packages.
+	if f.Language == "go" && len(internalPkgs) > 0 {
+		seen := make(map[string]bool, len(f.Imports))
+		count := 0
 		for _, imp := range f.Imports {
-			seg := filepath.Base(imp)
-			seg = strings.TrimSuffix(seg, filepath.Ext(seg))
-			if _, ok := basenameIndex[seg]; ok && !seen[seg] {
-				seen[seg] = true
-				importerCount[seg]++
+			if internalPkgs[imp] && !seen[imp] {
+				seen[imp] = true
+				count++
 			}
 		}
+		return count
 	}
 
-	// Distribute score and ImportedBy to all files matching each basename.
-	for name, count := range importerCount {
-		for _, idx := range basenameIndex[name] {
-			ranked[idx].Score += count * 10
-			ranked[idx].ImportedBy = count
+	// Non-Go fallback: total distinct imports, but only if above noise threshold.
+	// Below 3, most imports are stdlib/framework — the signal is noise.
+	const nonGoThreshold = 3
+	seen := make(map[string]bool, len(f.Imports))
+	for _, imp := range f.Imports {
+		seen[imp] = true
+	}
+	if len(seen) < nonGoThreshold {
+		return 0
+	}
+	return len(seen)
+}
+
+// diagnosticPackageKey returns the grouping key for test coverage detection.
+// Uses Go import path when available, otherwise the file's directory.
+func diagnosticPackageKey(f *FileSymbols) string {
+	if f.ImportPath != "" {
+		return f.ImportPath
+	}
+	return filepath.Dir(f.Path)
+}
+
+// buildTestCoverageMap returns a set of package keys that have test coverage.
+// A package is covered if any test file in it contains test symbols.
+func buildTestCoverageMap(files []*FileSymbols) map[string]bool {
+	covered := make(map[string]bool)
+	for _, f := range files {
+		if !isTestFile(f.Path) {
+			continue
+		}
+		if f.Language == "go" {
+			for _, s := range f.Symbols {
+				if isTestSymbol(f.Path, s) {
+					covered[diagnosticPackageKey(f)] = true
+					break
+				}
+			}
+		} else if len(f.Symbols) > 0 {
+			covered[diagnosticPackageKey(f)] = true
 		}
 	}
+	return covered
+}
+
+// shouldTagUntested reports whether a file should be flagged as lacking test coverage.
+func shouldTagUntested(f RankedFile, covered map[string]bool) bool {
+	if isTestFile(f.Path) {
+		return false
+	}
+
+	// Only flag files with exported symbols.
+	hasExported := false
+	for _, s := range f.Symbols {
+		if s.Exported {
+			hasExported = true
+			break
+		}
+	}
+	if !hasExported {
+		return false
+	}
+
+	return !covered[diagnosticPackageKey(f.FileSymbols)]
 }

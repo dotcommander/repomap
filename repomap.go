@@ -47,12 +47,10 @@ type Map struct {
 	ranked   []RankedFile
 	builtAt  time.Time
 	mtimes   map[string]time.Time // path → mtime at last build
+	outputs  outputCache
 
-	// Lazy formatting — nil means not yet computed; set on first access after Build().
-	output        *string
-	outputVerbose *string
-	outputDetail  *string
-	outputLines   *string
+	tsAvailable    bool // tree-sitter parsing available
+	ctagsAvailable bool // ctags binary available
 }
 
 // New creates a new Map for the given project root.
@@ -64,8 +62,10 @@ func New(root string, cfg Config) *Map {
 		cfg.MaxTokensNoCtx = defaultMaxTokensNoCtx
 	}
 	return &Map{
-		root:   root,
-		config: cfg,
+		root:           root,
+		config:         cfg,
+		tsAvailable:    TreeSitterAvailable(),
+		ctagsAvailable: CtagsAvailable(),
 	}
 }
 
@@ -96,11 +96,7 @@ func (m *Map) Build(ctx context.Context) error {
 	m.ranked = ranked
 	m.builtAt = time.Now()
 	m.mtimes = mtimes
-	// Reset lazy caches.
-	m.output = nil
-	m.outputVerbose = nil
-	m.outputDetail = nil
-	m.outputLines = nil
+	m.outputs.reset()
 	m.mu.Unlock()
 
 	if m.cacheDir != "" {
@@ -115,54 +111,45 @@ func (m *Map) Build(ctx context.Context) error {
 func (m *Map) String() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.output == nil {
-		s := FormatMap(m.ranked, m.config.MaxTokens, false, false)
-		m.output = &s
-	}
-	return *m.output
+	return m.outputs.get(&m.outputs.compact, func() string {
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false)
+	})
 }
 
 // StringVerbose returns the full verbose map output (all symbols, no summarization).
-// Returns empty string if Build has not been called or produced no symbols.
 func (m *Map) StringVerbose() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.ranked) == 0 {
-		return ""
-	}
-	if m.outputVerbose == nil {
-		s := FormatMap(m.ranked, 0, true, false)
-		m.outputVerbose = &s
-	}
-	return *m.outputVerbose
+	return m.outputs.get(&m.outputs.verbose, func() string {
+		return FormatMap(m.ranked, 0, true, false)
+	})
 }
 
 // StringDetail returns the full detailed map output with signatures and struct fields.
-// Returns empty string if Build has not been called or produced no symbols.
 func (m *Map) StringDetail() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if len(m.ranked) == 0 {
-		return ""
-	}
-	if m.outputDetail == nil {
-		s := FormatMap(m.ranked, 0, true, true)
-		m.outputDetail = &s
-	}
-	return *m.outputDetail
+	return m.outputs.get(&m.outputs.detail, func() string {
+		return FormatMap(m.ranked, 0, true, true)
+	})
 }
 
 // StringLines returns the source-line format showing actual code definitions.
-// More concise than verbose mode, more useful than compact mode.
-// Returns empty string if Build has not been called or produced no symbols.
 func (m *Map) StringLines() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.outputLines == nil {
-		s := FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
-		m.outputLines = &s
-	}
-	return *m.outputLines
+	return m.outputs.get(&m.outputs.lines, func() string {
+		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
+	})
+}
+
+// StringXML returns the structured XML format.
+func (m *Map) StringXML() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.outputs.get(&m.outputs.xml, func() string {
+		return FormatXML(m.ranked, m.config.MaxTokens)
+	})
 }
 
 // BuiltAt returns the time of the last successful build, or zero time if never built.

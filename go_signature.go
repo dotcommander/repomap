@@ -135,15 +135,15 @@ func typeString(expr ast.Expr) string {
 	}
 }
 
-// structFields extracts exported field names from a struct type.
-// Returns a compact representation like "{field1, field2, field3}".
-func structFields(st *ast.StructType) string {
-	if st.Fields == nil {
+// exportedNames extracts exported field/method names from a FieldList.
+// Returns a compact representation like "{Name1, Name2}" or "{}" if empty.
+func exportedNames(fl *ast.FieldList) string {
+	if fl == nil {
 		return "{}"
 	}
 
 	var names []string
-	for _, field := range st.Fields.List {
+	for _, field := range fl.List {
 		// Embedded type (no field names)
 		if len(field.Names) == 0 {
 			if ident, ok := field.Type.(*ast.Ident); ok && isExported(ident.Name) {
@@ -151,7 +151,7 @@ func structFields(st *ast.StructType) string {
 			}
 			continue
 		}
-		// Named fields
+		// Named fields/methods
 		for _, name := range field.Names {
 			if isExported(name.Name) {
 				names = append(names, name.Name)
@@ -165,32 +165,10 @@ func structFields(st *ast.StructType) string {
 	return "{" + strings.Join(names, ", ") + "}"
 }
 
-// interfaceMethods extracts method names from an interface type.
-// Returns a compact representation like "{Method1, Method2}".
+func structFields(st *ast.StructType) string {
+	return exportedNames(st.Fields)
+}
+
 func interfaceMethods(it *ast.InterfaceType) string {
-	if it.Methods == nil {
-		return "{}"
-	}
-
-	var names []string
-	for _, field := range it.Methods.List {
-		// Embedded interface
-		if len(field.Names) == 0 {
-			if ident, ok := field.Type.(*ast.Ident); ok && isExported(ident.Name) {
-				names = append(names, ident.Name)
-			}
-			continue
-		}
-		// Methods
-		for _, name := range field.Names {
-			if isExported(name.Name) {
-				names = append(names, name.Name)
-			}
-		}
-	}
-
-	if len(names) == 0 {
-		return "{}"
-	}
-	return "{" + strings.Join(names, ", ") + "}"
+	return exportedNames(it.Methods)
 }

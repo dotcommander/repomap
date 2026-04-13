@@ -1,6 +1,64 @@
 package repomap
 
-import "strings"
+import (
+	"path/filepath"
+	"strings"
+)
+
+// kindToCategory maps symbol kinds to their display category.
+var kindToCategory = map[string]string{
+	"struct":    "types",
+	"type":      "types",
+	"interface": "interfaces",
+	"class":     "classes",
+	"enum":      "enums",
+	"function":  "funcs",
+	"fn":        "funcs",
+	"method":    "methods",
+	"constant":  "consts",
+	"const":     "consts",
+	"variable":  "vars",
+	"static":    "vars",
+}
+
+// categoryOrder defines the display order for symbol categories.
+var categoryOrder = []struct {
+	key   string
+	label string
+}{
+	{"tests", "tests"},
+	{"types", "types"},
+	{"interfaces", "interfaces"},
+	{"classes", "classes"},
+	{"enums", "enums"},
+	{"funcs", "funcs"},
+	{"methods", "methods"},
+	{"consts", "consts"},
+	{"vars", "vars"},
+	{"other", "other"},
+}
+
+// categorizedGroup holds a category key, display label, and its symbols.
+type categorizedGroup struct {
+	key   string
+	label string
+	syms  []Symbol
+}
+
+// orderedGroups returns symbols grouped by category in display order,
+// skipping empty categories.
+func orderedGroups(path string, syms []Symbol) []categorizedGroup {
+	categorized := categorizeByKind(path, syms)
+	var groups []categorizedGroup
+	for _, item := range categoryOrder {
+		s := categorized[item.key]
+		if len(s) == 0 {
+			continue
+		}
+		groups = append(groups, categorizedGroup{key: item.key, label: item.label, syms: s})
+	}
+	return groups
+}
 
 func summarizeSymbols(f RankedFile) []symbolGroup {
 	categorized := categorizeByKind(f.Path, f.Symbols)
@@ -25,26 +83,10 @@ func symbolCategory(path string, s Symbol) string {
 		return "tests"
 	}
 
-	switch s.Kind {
-	case "struct", "type":
-		return "types"
-	case "interface":
-		return "interfaces"
-	case "class":
-		return "classes"
-	case "enum":
-		return "enums"
-	case "function", "fn":
-		return "funcs"
-	case "method":
-		return "methods"
-	case "constant", "const":
-		return "consts"
-	case "variable", "static":
-		return "vars"
-	default:
-		return "other"
+	if cat, ok := kindToCategory[s.Kind]; ok {
+		return cat
 	}
+	return "other"
 }
 
 // categorizeByKind groups symbols by their category key.
@@ -65,5 +107,24 @@ func isTestSymbol(path string, s Symbol) bool {
 }
 
 func isTestFile(path string) bool {
-	return strings.HasSuffix(path, "_test.go")
+	ext := filepath.Ext(path)
+	base := filepath.Base(path)
+	switch ext {
+	case ".go":
+		return strings.HasSuffix(path, "_test.go")
+	case ".py":
+		return strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py")
+	case ".rs":
+		return strings.Contains(path, "/tests/") || strings.HasSuffix(base, "_test.rs")
+	case ".java":
+		return strings.HasSuffix(base, "Test.java") || strings.HasSuffix(base, "Tests.java")
+	case ".ts", ".tsx", ".js", ".jsx":
+		return strings.HasSuffix(base, ".test"+ext) || strings.HasSuffix(base, ".spec"+ext)
+	case ".rb":
+		return strings.HasSuffix(base, "_test.rb") || strings.HasSuffix(base, "_spec.rb")
+	case ".php":
+		return strings.HasSuffix(base, "Test.php")
+	default:
+		return false
+	}
 }

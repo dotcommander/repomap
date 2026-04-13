@@ -4,20 +4,23 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
-	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
 
+// absPath returns the absolute path for a file relative to the project root.
+func (m *Map) absPath(rel string) string {
+	return filepath.Join(m.root, rel)
+}
+
 // parseFiles parses all discovered files in parallel and returns the symbols
 // and a path→mtime map for stale checking.
-// Uses ctags for non-Go files when available, falling back to regex.
+// Non-Go files use tree-sitter when available, then ctags, then regex.
 func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols, map[string]time.Time, error) {
 	mtimes := make(map[string]time.Time, len(files))
 	for _, fi := range files {
-		absPath := filepath.Join(m.root, fi.Path)
+		absPath := m.absPath(fi.Path)
 		info, err := os.Stat(absPath)
 		if err != nil {
 			continue
@@ -28,92 +31,85 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 	var (
 		goParsed    []*FileSymbols
 		nonGoParsed []*FileSymbols
-		wg          sync.WaitGroup
 	)
 
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
 		goFiles := make([]FileInfo, 0, len(files))
 		for _, fi := range files {
 			if fi.Language == "go" {
 				goFiles = append(goFiles, fi)
 			}
 		}
-		goResults := make([]*FileSymbols, len(goFiles))
-		g, _ := errgroup.WithContext(ctx)
-		g.SetLimit(runtime.NumCPU())
-
-		for i, fi := range goFiles {
-			g.Go(func() error {
-				absPath := filepath.Join(m.root, fi.Path)
-				sym, err := ParseGoFile(absPath, m.root)
-				if err != nil {
-					return nil //nolint:nilerr // skip parse errors
-				}
-				goResults[i] = sym
+		goParsed = parallelParse(goFiles, func(fi FileInfo) *FileSymbols {
+			sym, err := ParseGoFile(m.absPath(fi.Path), m.root)
+			if err != nil {
 				return nil
-			})
-		}
-		_ = g.Wait()
-		for _, sym := range goResults {
-			if sym != nil {
-				goParsed = append(goParsed, sym)
 			}
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		if CtagsAvailable() {
-			ctagsParsed, err := ParseWithCtags(ctx, m.root, files)
-			if err == nil {
-				nonGoParsed = ctagsParsed
-			} else {
-				nonGoParsed = m.parseGenericFiles(files)
-			}
-		} else {
-			nonGoParsed = m.parseGenericFiles(files)
-		}
-	}()
-
-	wg.Wait()
+			return sym
+		})
+		return nil
+	})
+	eg.Go(func() error {
+		nonGoParsed = m.parseNonGoFiles(egCtx, files)
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
+		return nil, nil, err
+	}
 
 	parsed := make([]*FileSymbols, 0, len(goParsed)+len(nonGoParsed))
 	parsed = append(parsed, goParsed...)
 	parsed = append(parsed, nonGoParsed...)
 
+	DetectImplementations(parsed)
+
 	return parsed, mtimes, nil
 }
 
+// parseNonGoFiles parses non-Go files using the tiered fallback:
+// tree-sitter → ctags → regex. Filters out Go files once at the entry so
+// downstream stages can assume a non-Go file slice.
+func (m *Map) parseNonGoFiles(ctx context.Context, files []FileInfo) []*FileSymbols {
+	nonGo := make([]FileInfo, 0, len(files))
+	for _, fi := range files {
+		if fi.Language != "go" {
+			nonGo = append(nonGo, fi)
+		}
+	}
+	if len(nonGo) == 0 {
+		return nil
+	}
+	if m.tsAvailable {
+		tsParsed, fallbackFiles := m.parseTreeSitterFiles(ctx, nonGo)
+		if len(fallbackFiles) > 0 {
+			fallbackParsed := m.parseWithCtagsOrRegex(ctx, fallbackFiles)
+			tsParsed = append(tsParsed, fallbackParsed...)
+		}
+		return tsParsed
+	}
+	return m.parseWithCtagsOrRegex(ctx, nonGo)
+}
+
+// parseWithCtagsOrRegex tries ctags, then falls back to regex parsing.
+func (m *Map) parseWithCtagsOrRegex(ctx context.Context, files []FileInfo) []*FileSymbols {
+	if m.ctagsAvailable {
+		ctagsParsed, err := ParseWithCtags(ctx, m.root, files)
+		if err == nil {
+			return ctagsParsed
+		}
+	}
+	return m.parseGenericFiles(files)
+}
+
 // parseGenericFiles parses non-Go files using regex patterns in parallel.
+// Caller must pass only non-Go files (enforced by parseNonGoFiles).
 func (m *Map) parseGenericFiles(files []FileInfo) []*FileSymbols {
-	results := make([]*FileSymbols, len(files))
-	g := new(errgroup.Group)
-	g.SetLimit(runtime.NumCPU())
-
-	for i, fi := range files {
-		if fi.Language == "go" {
-			continue
-		}
-		g.Go(func() error {
-			absPath := filepath.Join(m.root, fi.Path)
-			sym, err := ParseGenericFile(absPath, m.root, fi.Language)
-			if err != nil {
-				return nil //nolint:nilerr // skip parse errors
-			}
-			results[i] = sym
+	return parallelParse(files, func(fi FileInfo) *FileSymbols {
+		sym, err := ParseGenericFile(m.absPath(fi.Path), m.root, fi.Language)
+		if err != nil {
 			return nil
-		})
-	}
-	_ = g.Wait()
-
-	var parsed []*FileSymbols
-	for _, sym := range results {
-		if sym != nil {
-			parsed = append(parsed, sym)
 		}
-	}
-	return parsed
+		return sym
+	})
 }

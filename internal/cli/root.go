@@ -56,6 +56,8 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 				out = m.StringDetail()
 			case "lines":
 				out = m.StringLines()
+			case "xml":
+				out = m.StringXML()
 			default:
 				out = m.String()
 			}
@@ -65,7 +67,7 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	}
 
 	cmd.Flags().IntVarP(&tokens, "tokens", "t", 2048, "Token budget")
-	cmd.Flags().StringVarP(&format, "format", "f", "compact", "Output format: compact, verbose, detail, lines")
+	cmd.Flags().StringVarP(&format, "format", "f", "compact", "Output format: compact, verbose, detail, lines, xml")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 
 	return cmd

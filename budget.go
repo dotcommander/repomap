@@ -32,7 +32,7 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 	headerCost := 0
 	cutoff := len(ranked)
 	for i, f := range ranked {
-		cost := len(f.Path) + 20 // path + annotation + newline overhead
+		cost := len(f.Path) + 30 // path + annotation + newline overhead
 		if headerCost+cost > headerCap {
 			cutoff = i
 			break
@@ -69,14 +69,21 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 		}
 	}
 
-	// Phase 3: Top 10 structs/interfaces by file score get field expansion.
+	promoteFieldExpansion(ranked, cutoff, budgetBytes, used)
+	return ranked
+}
+
+// promoteFieldExpansion upgrades up to 10 top-ranked DetailLevel-2 files to
+// DetailLevel 3 (field expansion) while honoring the remaining byte budget.
+// Mutates ranked in place.
+func promoteFieldExpansion(ranked []RankedFile, cutoff, budgetBytes, used int) {
 	promoted := 0
 	for i := 0; i < cutoff && promoted < 10; i++ {
 		if ranked[i].DetailLevel < 2 {
 			continue
 		}
 		for _, s := range ranked[i].Symbols {
-			if (s.Kind == "struct" || s.Kind == "interface") && s.Signature != "" && s.Signature != "{}" {
+			if s.HasFields() {
 				// Estimate field expansion cost.
 				fieldCost := len(s.Signature) + 10
 				if used+fieldCost <= budgetBytes {
@@ -88,24 +95,16 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 			}
 		}
 	}
-
-	return ranked
 }
 
-// categoryBit maps a category name to a bit position (0-9).
-// Categories match categoryOrder in render.go.
-var categoryBit = map[string]uint16{
-	"tests":      1 << 0,
-	"types":      1 << 1,
-	"interfaces": 1 << 2,
-	"classes":    1 << 3,
-	"enums":      1 << 4,
-	"funcs":      1 << 5,
-	"methods":    1 << 6,
-	"consts":     1 << 7,
-	"vars":       1 << 8,
-	"other":      1 << 9,
-}
+// categoryBit maps category names to a unique bit, derived from categoryOrder.
+var categoryBit = func() map[string]uint16 {
+	m := make(map[string]uint16, len(categoryOrder))
+	for i, cat := range categoryOrder {
+		m[cat.key] = 1 << i
+	}
+	return m
+}()
 
 // countGroups returns the number of distinct symbol categories in the given symbols.
 // Uses a bitmask to avoid heap allocation.

@@ -1,0 +1,15 @@
+# Compiled binary
+/repomap
+
+# Build artifacts
+*.test
+*.out
+coverage.*
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local cache
+/.cache/

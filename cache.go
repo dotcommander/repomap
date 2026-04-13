@@ -9,6 +9,31 @@ import (
 	"time"
 )
 
+// outputCache lazily computes and caches formatted output strings.
+type outputCache struct {
+	compact *string
+	verbose *string
+	detail  *string
+	lines   *string
+	xml     *string
+}
+
+func (c *outputCache) get(ptr **string, fn func() string) string {
+	if *ptr == nil {
+		s := fn()
+		*ptr = &s
+	}
+	return **ptr
+}
+
+func (c *outputCache) reset() {
+	c.compact = nil
+	c.verbose = nil
+	c.detail = nil
+	c.lines = nil
+	c.xml = nil
+}
+
 // diskCache is the on-disk format for a cached repomap build.
 type diskCache struct {
 	Version     int                  `json:"version"`
@@ -20,7 +45,7 @@ type diskCache struct {
 	Ranked      []RankedFile         `json:"ranked"`
 }
 
-const cacheVersion = 2
+const cacheVersion = 4
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -30,21 +55,19 @@ func (m *Map) SaveCache(cacheDir string) error {
 		return nil
 	}
 	// Compute lazy strings if not yet cached, so they are persisted.
-	if m.output == nil {
-		s := FormatMap(m.ranked, m.config.MaxTokens, false, false)
-		m.output = &s
-	}
-	if m.outputLines == nil {
-		s := FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
-		m.outputLines = &s
-	}
+	compact := m.outputs.get(&m.outputs.compact, func() string {
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false)
+	})
+	lines := m.outputs.get(&m.outputs.lines, func() string {
+		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
+	})
 	entry := diskCache{
 		Version:     cacheVersion,
 		Root:        m.root,
 		BuiltAt:     m.builtAt,
 		Mtimes:      m.mtimes,
-		Output:      *m.output,
-		OutputLines: *m.outputLines,
+		Output:      compact,
+		OutputLines: lines,
 		Ranked:      m.ranked,
 	}
 	m.mu.Unlock()
@@ -55,18 +78,8 @@ func (m *Map) SaveCache(cacheDir string) error {
 	}
 
 	path := cachePath(cacheDir, m.root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create cache dir: %w", err)
-	}
-
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		os.Remove(tmp)
+	if err := atomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write cache: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("rename cache: %w", err)
 	}
 	return nil
 }
@@ -90,8 +103,8 @@ func (m *Map) LoadCache(cacheDir string) bool {
 
 	m.mu.Lock()
 	m.ranked = entry.Ranked
-	m.output = &entry.Output
-	m.outputLines = &entry.OutputLines
+	m.outputs.compact = &entry.Output
+	m.outputs.lines = &entry.OutputLines
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
 	m.mu.Unlock()

@@ -32,100 +32,92 @@ var (
 
 // parseRust processes Rust lines.
 func parseRust(lines []string, fs *FileSymbols) {
-	inBlockComment := false
-
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		inBlockComment = trackBlockComment(trimmed, inBlockComment)
-		if inBlockComment {
-			continue
+	scanLines(lines, func(e lineEntry) bool {
+		if tryAppendSymbol(rustPubAsync, e, "fn", true, fs) {
+			return true
 		}
-
-		if m := rustPubAsync.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "fn", Line: lineIdx + 1})
-			continue
+		if m := rustPubItem.FindStringSubmatch(e.trimmed); m != nil {
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Exported: true, Line: e.idx + 1})
+			return true
 		}
-		if m := rustPubItem.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Line: lineIdx + 1})
-			continue
+		if tryAppendSymbol(rustImpl, e, "impl", true, fs) {
+			return true
 		}
-		if m := rustImpl.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "impl", Line: lineIdx + 1})
-			continue
-		}
-		if m := rustUse.FindStringSubmatch(trimmed); m != nil {
-			fs.Imports = append(fs.Imports, strings.TrimSpace(m[1]))
-		}
-	}
+		tryAppendImport(rustUse, e, fs)
+		return true
+	})
 }
 
 // parseC processes C/C++ lines.
 func parseC(lines []string, fs *FileSymbols) {
-	inBlockComment := false
-
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		inBlockComment = trackBlockComment(trimmed, inBlockComment)
-		if inBlockComment {
-			continue
-		}
-
+	scanLines(lines, func(e lineEntry) bool {
 		// Skip preprocessor directives other than #include
-		if strings.HasPrefix(trimmed, "#") {
-			if m := cInclude.FindStringSubmatch(trimmed); m != nil {
+		if strings.HasPrefix(e.trimmed, "#") {
+			if m := cInclude.FindStringSubmatch(e.trimmed); m != nil {
 				fs.Imports = append(fs.Imports, m[1])
 			}
-			continue
+			return true
 		}
 
-		if m := cTagDecl.FindStringSubmatch(trimmed); m != nil {
-			kind := strings.Fields(trimmed)[0] // struct / class / enum / typedef
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Line: lineIdx + 1})
-			continue
+		if m := cTagDecl.FindStringSubmatch(e.trimmed); m != nil {
+			kind := strings.Fields(e.trimmed)[0] // struct / class / enum / typedef
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
+			return true
 		}
 
 		// Function declarations: must start at column 0 (no leading whitespace)
 		// and contain a '('.
-		if line == trimmed && strings.Contains(line, "(") {
-			if m := cFunc.FindStringSubmatch(trimmed); m != nil {
-				fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "function", Line: lineIdx + 1})
+		if e.line == e.trimmed && strings.Contains(e.line, "(") {
+			if m := cFunc.FindStringSubmatch(e.trimmed); m != nil {
+				fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "function", Exported: true, Line: e.idx + 1})
 			}
 		}
-	}
+		return true
+	})
 }
 
 // parseJava processes Java lines.
 func parseJava(lines []string, fs *FileSymbols) {
-	inBlockComment := false
-
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		inBlockComment = trackBlockComment(trimmed, inBlockComment)
-		if inBlockComment {
-			continue
+	scanLines(lines, func(e lineEntry) bool {
+		if tryAppendImport(javaImport, e, fs) {
+			return true
 		}
-
-		if m := javaImport.FindStringSubmatch(trimmed); m != nil {
-			fs.Imports = append(fs.Imports, strings.TrimSpace(m[1]))
-			continue
-		}
-		if m := javaTypeDecl.FindStringSubmatch(trimmed); m != nil {
+		if m := javaTypeDecl.FindStringSubmatch(e.trimmed); m != nil {
 			// Determine the kind from the keyword preceding the name
 			kind := "class"
 			for _, kw := range []string{"interface", "enum", "record"} {
-				if strings.Contains(trimmed, kw) {
+				if strings.Contains(e.trimmed, kw) {
 					kind = kw
 					break
 				}
 			}
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
+			return true
+		}
+		tryAppendSymbol(javaMethodDecl, e, "method", true, fs)
+		return true
+	})
+}
+
+// lineEntry represents a non-comment line yielded by scanLines.
+type lineEntry struct {
+	idx     int    // 0-based line index
+	line    string // original line (with whitespace)
+	trimmed string // trimmed line
+}
+
+// scanLines iterates over lines, skipping block comments (/* ... */).
+// It calls fn for each non-comment line. If fn returns false, iteration stops.
+func scanLines(lines []string, fn func(entry lineEntry) bool) {
+	inBlockComment := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		inBlockComment = trackBlockComment(trimmed, inBlockComment)
+		if inBlockComment {
 			continue
 		}
-		if m := javaMethodDecl.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "method", Line: lineIdx + 1})
+		if !fn(lineEntry{idx: i, line: line, trimmed: trimmed}) {
+			break
 		}
 	}
 }
@@ -147,4 +139,24 @@ func trackBlockComment(trimmed string, inBlockComment bool) bool {
 		}
 	}
 	return false
+}
+
+// tryAppendSymbol matches a regex and appends a symbol if found.
+func tryAppendSymbol(re *regexp.Regexp, e lineEntry, kind string, exported bool, fs *FileSymbols) bool {
+	m := re.FindStringSubmatch(e.trimmed)
+	if m == nil {
+		return false
+	}
+	fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: exported, Line: e.idx + 1})
+	return true
+}
+
+// tryAppendImport matches a regex and appends an import if found.
+func tryAppendImport(re *regexp.Regexp, e lineEntry, fs *FileSymbols) bool {
+	m := re.FindStringSubmatch(e.trimmed)
+	if m == nil {
+		return false
+	}
+	fs.Imports = append(fs.Imports, strings.TrimSpace(m[1]))
+	return true
 }

@@ -24,66 +24,41 @@ var (
 
 // parsePHP processes PHP lines.
 func parsePHP(lines []string, fs *FileSymbols) {
-	inBlockComment := false
-
-	for lineIdx, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "<?php" || trimmed == "?>" || trimmed == "<?" {
-			continue
+	scanLines(lines, func(e lineEntry) bool {
+		if e.trimmed == "<?php" || e.trimmed == "?>" || e.trimmed == "<?" {
+			return true
+		}
+		if strings.HasPrefix(e.trimmed, "//") || strings.HasPrefix(e.trimmed, "#") {
+			return true
 		}
 
-		inBlockComment = trackBlockComment(trimmed, inBlockComment)
-		if inBlockComment {
-			continue
-		}
-
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		if m := phpNamespace.FindStringSubmatch(trimmed); m != nil {
+		if m := phpNamespace.FindStringSubmatch(e.trimmed); m != nil {
 			fs.Package = strings.TrimSpace(m[1])
-			continue
+			return true
 		}
-		if m := phpUse.FindStringSubmatch(trimmed); m != nil {
-			fs.Imports = append(fs.Imports, strings.TrimSpace(m[1]))
-			continue
+		if tryAppendImport(phpUse, e, fs) {
+			return true
 		}
-		if m := phpClass.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "class", Exported: true, Line: lineIdx + 1})
-			continue
-		}
-		if m := phpInterface.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "interface", Exported: true, Line: lineIdx + 1})
-			continue
-		}
-		if m := phpTrait.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "trait", Exported: true, Line: lineIdx + 1})
-			continue
-		}
-		if m := phpEnum.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "enum", Exported: true, Line: lineIdx + 1})
-			continue
-		}
-		if m := phpFunction.FindStringSubmatch(trimmed); m != nil {
-			// Skip magic methods and constructors
+		if m := phpFunction.FindStringSubmatch(e.trimmed); m != nil {
 			if strings.HasPrefix(m[1], "__") {
-				continue
+				return true
 			}
 			kind := "function"
-			// If indented (inside a class), treat as method
-			if len(line) > len(trimmed) {
+			if len(e.line) > len(e.trimmed) {
 				kind = "method"
 			}
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: lineIdx + 1})
-			continue
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
+			return true
 		}
-		if m := phpConst.FindStringSubmatch(trimmed); m != nil {
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: "constant", Exported: true, Line: lineIdx + 1})
-			continue
+		if tryAppendSymbol(phpClass, e, "class", true, fs) ||
+			tryAppendSymbol(phpInterface, e, "interface", true, fs) ||
+			tryAppendSymbol(phpTrait, e, "trait", true, fs) ||
+			tryAppendSymbol(phpEnum, e, "enum", true, fs) ||
+			tryAppendSymbol(phpConst, e, "constant", true, fs) {
+			return true
 		}
-	}
+		return true
+	})
 }
 
 // parseRuby processes Ruby lines.
@@ -95,7 +70,7 @@ func parseRuby(lines []string, fs *FileSymbols) {
 		}
 		if m := rubyDecl.FindStringSubmatch(trimmed); m != nil {
 			kind := strings.Fields(trimmed)[0] // def / class / module
-			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Line: lineIdx + 1})
+			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: lineIdx + 1})
 		}
 	}
 }
