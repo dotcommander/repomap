@@ -465,13 +465,13 @@ func clusterReasons(paths []string, edges []edge) []string {
 		inCluster[p] = true
 	}
 	seen := make(map[string]bool)
-	var out []string
 	order := []string{"test-pair", "symbol-dep", "co-change", "sibling"}
 	for _, e := range edges {
 		if inCluster[e.A] && inCluster[e.B] && !seen[e.Reason] {
 			seen[e.Reason] = true
 		}
 	}
+	var out []string
 	for _, r := range order {
 		if seen[r] {
 			out = append(out, r)

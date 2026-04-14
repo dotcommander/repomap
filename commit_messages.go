@@ -93,7 +93,7 @@ func parseSymbolsFromSource(path, language, src string) map[string]bool {
 		}
 		return out
 	}
-	// Go uses AST; parse via an in-memory approach.
+	// "go" is not in langParsers — it uses AST via parseGoSymbolsFromSource.
 	if language == "go" {
 		return parseGoSymbolsFromSource(path, src)
 	}
