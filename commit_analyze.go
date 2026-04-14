@@ -12,6 +12,10 @@ import (
 	"strings"
 )
 
+// DefaultConfidenceCutoff is the clustering confidence threshold used when
+// callers leave AnalyzeOptions.ConfidenceCutoff at zero.
+const DefaultConfidenceCutoff = 0.75
+
 // AnalyzeOptions configures a commit-analyze run.
 type AnalyzeOptions struct {
 	Root             string  // repo root (usually ".")
@@ -34,7 +38,7 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	}
 	root = abs
 	if opts.ConfidenceCutoff == 0 {
-		opts.ConfidenceCutoff = 0.75
+		opts.ConfidenceCutoff = DefaultConfidenceCutoff
 	}
 
 	tmpdir := opts.Tmpdir
@@ -111,7 +115,7 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	histStyle := classifyHistoryStyle(gs.HistoryRaw)
 
 	// Plan file.
-	plan := renderPlan(groups, opts.Tag, bumps)
+	plan := renderPlan(groups)
 	if err := writeFile(refs.Plan, []byte(plan)); err != nil {
 		return nil, fmt.Errorf("write plan: %w", err)
 	}
@@ -284,7 +288,7 @@ func makeTmpdir() (string, error) {
 //
 // Release gate (--tag + go.mod bump) is left to the agent to apply before
 // invoking commit-execute.sh; the tool reports it via dep_bumps, not the plan.
-func renderPlan(groups []CommitGroup, tag bool, bumps []DepBump) string {
+func renderPlan(groups []CommitGroup) string {
 	var b strings.Builder
 	for _, g := range groups {
 		b.WriteString("COMMIT\n")
@@ -295,15 +299,6 @@ func renderPlan(groups []CommitGroup, tag bool, bumps []DepBump) string {
 	}
 	b.WriteString("END\n")
 	return b.String()
-}
-
-func hasGoMod(bumps []DepBump) bool {
-	for _, b := range bumps {
-		if b.Manager == "go" {
-			return true
-		}
-	}
-	return false
 }
 
 func planHash(plan string) string {

@@ -69,6 +69,6 @@ Typical usage from a commit agent:
 	cmd.Flags().BoolVar(&tag, "tag", false, "Activate release gate (go.mod tidy before commit)")
 	cmd.Flags().BoolVar(&pretty, "pretty", false, "Pretty-print JSON (default: compact)")
 	cmd.Flags().StringVar(&tmpdir, "tmpdir", "", "Override temp directory (for tests)")
-	cmd.Flags().Float64Var(&confidence, "confidence", 0.75, "Clustering confidence cutoff (0.0–1.0)")
+	cmd.Flags().Float64Var(&confidence, "confidence", repomap.DefaultConfidenceCutoff, "Clustering confidence cutoff (0.0–1.0)")
 	return cmd
 }

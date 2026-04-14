@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -43,8 +43,8 @@ func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, p
 				removed = append(removed, name)
 			}
 		}
-		sort.Strings(added)
-		sort.Strings(removed)
+		slices.Sort(added)
+		slices.Sort(removed)
 		if len(added) == 0 && len(removed) == 0 {
 			continue
 		}
@@ -394,7 +394,7 @@ func extractBumpChanges(path, diff string) []string {
 			seen[p.name] = true
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

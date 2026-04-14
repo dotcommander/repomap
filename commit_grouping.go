@@ -3,7 +3,8 @@ package repomap
 import (
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -17,7 +18,7 @@ func classifyFiles(files []fileChange) {
 		f.IsTest = isTestFile(f.Path)
 		f.IsConfig = isConfigFile(f.Path)
 		f.IsArtifact = isArtifactFile(f.Path)
-		f.IsDep = isDepFile(f.Path)
+		f.IsDep = depManager(f.Path) != ""
 		f.Type = inferType(f)
 	}
 }
@@ -51,21 +52,6 @@ func isArtifactFile(path string) bool {
 		if re.MatchString(base) || re.MatchString(path) {
 			return true
 		}
-	}
-	return false
-}
-
-// isDepFile matches dependency manifests whose bumps are recognized specially.
-func isDepFile(path string) bool {
-	switch filepath.Base(path) {
-	case "go.mod", "go.sum",
-		"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
-		"Cargo.toml", "Cargo.lock",
-		"plugin.json", "marketplace.json",
-		"requirements.txt", "Pipfile", "Pipfile.lock", "pyproject.toml",
-		"Gemfile", "Gemfile.lock",
-		"composer.json", "composer.lock":
-		return true
 	}
 	return false
 }
@@ -119,14 +105,14 @@ func buildGroups(gs *gitState, symbols map[string]*FileSymbols, threshold float6
 		groups = append(groups, grp)
 	}
 	// Deterministic order: by first-file path.
-	sort.Slice(groups, func(i, j int) bool {
-		if len(groups[i].Files) == 0 {
-			return true
+	slices.SortFunc(groups, func(a, b CommitGroup) int {
+		if len(a.Files) == 0 {
+			return -1
 		}
-		if len(groups[j].Files) == 0 {
-			return false
+		if len(b.Files) == 0 {
+			return 1
 		}
-		return groups[i].Files[0] < groups[j].Files[0]
+		return strings.Compare(a.Files[0], b.Files[0])
 	})
 	// Re-ID after sort so g1..gN matches display order.
 	for i := range groups {
@@ -136,7 +122,7 @@ func buildGroups(gs *gitState, symbols map[string]*FileSymbols, threshold float6
 }
 
 func groupID(i int) string {
-	return "g" + itoa(i+1)
+	return "g" + strconv.Itoa(i+1)
 }
 
 // buildEdges computes weighted edges between dirty files. Edge weight is the
@@ -332,11 +318,11 @@ func connectedComponents(files []fileChange, edges []edge, threshold float64) []
 	// their first element.
 	clusters := make([][]string, 0, len(buckets))
 	for _, paths := range buckets {
-		sort.Strings(paths)
+		slices.Sort(paths)
 		clusters = append(clusters, paths)
 	}
-	sort.Slice(clusters, func(i, j int) bool {
-		return clusters[i][0] < clusters[j][0]
+	slices.SortFunc(clusters, func(a, b []string) int {
+		return strings.Compare(a[0], b[0])
 	})
 	return clusters
 }
@@ -507,27 +493,4 @@ func hasStrongEdge(paths []string, edges []edge) bool {
 		}
 	}
 	return false
-}
-
-// itoa is a tiny wrapper so we don't pull in strconv just for group IDs.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		b[i] = '-'
-	}
-	return string(b[i:])
 }

@@ -148,6 +148,40 @@ func runGitleaks(ctx context.Context, root string, files []string) []Finding {
 	return out
 }
 
+// scanFileForSecrets opens a single file and returns all regex findings within it.
+func scanFileForSecrets(abs, rel string, rules []*regexp.Regexp, class, kind, detail string) []Finding {
+	f, err := os.Open(abs)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	var out []Finding
+	lineNo := 0
+	for scanner.Scan() {
+		lineNo++
+		line := scanner.Text()
+		for _, re := range rules {
+			if re.MatchString(line) {
+				if kind == "pii" && isPlaceholderPath(line) {
+					break
+				}
+				out = append(out, Finding{
+					Class:   class,
+					Kind:    kind,
+					File:    rel,
+					Line:    lineNo,
+					Snippet: truncSnippet(line),
+					Detail:  detail,
+				})
+				break // one finding per line is enough
+			}
+		}
+	}
+	return out
+}
+
 // runRegexPass scans every file in `files` for any of the `rules`. One
 // compiled regex per category (OR'd) keeps this O(files × bytes).
 func runRegexPass(root string, files []string, rules []*regexp.Regexp, class, kind, detail string) []Finding {
@@ -157,34 +191,7 @@ func runRegexPass(root string, files []string, rules []*regexp.Regexp, class, ki
 	var out []Finding
 	for _, p := range files {
 		abs := filepath.Join(root, p)
-		f, err := os.Open(abs)
-		if err != nil {
-			continue
-		}
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
-		lineNo := 0
-		for scanner.Scan() {
-			lineNo++
-			line := scanner.Text()
-			for _, re := range rules {
-				if re.MatchString(line) {
-					if kind == "pii" && isPlaceholderPath(line) {
-						break
-					}
-					out = append(out, Finding{
-						Class:   class,
-						Kind:    kind,
-						File:    p,
-						Line:    lineNo,
-						Snippet: truncSnippet(line),
-						Detail:  detail,
-					})
-					break // one finding per line is enough
-				}
-			}
-		}
-		f.Close()
+		out = append(out, scanFileForSecrets(abs, p, rules, class, kind, detail)...)
 	}
 	return out
 }
@@ -207,13 +214,15 @@ var placeholderPathFragments = []string{
 	"/Users/<", "/home/<", // angle-bracket placeholders
 }
 
-// truncSnippet caps a snippet at 100 chars to keep findings.json small.
+// truncSnippet caps a snippet at 100 runes to keep findings.json small.
 func truncSnippet(s string) string {
+	const max = 100
 	s = strings.TrimSpace(s)
-	if len(s) > 100 {
-		return s[:100] + "…"
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
 	}
-	return s
+	return string(runes[:max]) + "…"
 }
 
 // writeFindings writes findings to refs.findings as a JSON array.
