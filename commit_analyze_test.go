@@ -57,6 +57,10 @@ func runGitT(t *testing.T, root string, args ...string) {
 // Test_Analyze_HappyPath: a test-pair + a config change form two groups,
 // both high confidence, messages non-generic.
 func Test_Analyze_HappyPath(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	root := initTestRepo(t,
 		map[string]string{
 			"go.mod":          "module fixture\ngo 1.22\n",
@@ -100,6 +104,10 @@ func Test_Analyze_HappyPath(t *testing.T) {
 
 // Test_Analyze_CleanRepo: no dirty files => early_exit.
 func Test_Analyze_CleanRepo(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	root := initTestRepo(t,
 		map[string]string{"README.md": "# clean\n"},
 		nil,
@@ -115,6 +123,10 @@ func Test_Analyze_CleanRepo(t *testing.T) {
 
 // Test_Analyze_Secrets: a live AWS access key in a config file must FLAG.
 func Test_Analyze_Secrets(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	root := initTestRepo(t,
 		map[string]string{"config.yaml": "key: value\n"},
 		map[string]string{"config.yaml": "key: value\naws_access_key: AKIAIOSFODNN7EXAMPLE\n"},
@@ -133,6 +145,10 @@ func Test_Analyze_Secrets(t *testing.T) {
 
 // Test_Analyze_PlaceholderPaths: /Users/you/ should NOT flag as PII.
 func Test_Analyze_PlaceholderPaths(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	root := initTestRepo(t,
 		map[string]string{"docs.md": "# Docs\n"},
 		map[string]string{"docs.md": "# Docs\n\nInstall at /Users/you/bin/tool.\n"},
@@ -150,6 +166,10 @@ func Test_Analyze_PlaceholderPaths(t *testing.T) {
 
 // Test_Analyze_DepBump: go.mod version bump is detected.
 func Test_Analyze_DepBump(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	root := initTestRepo(t,
 		map[string]string{
 			"go.mod": "module fixture\n\ngo 1.22\n\nrequire github.com/pkg/errors v0.9.0\n",
@@ -167,6 +187,125 @@ func Test_Analyze_DepBump(t *testing.T) {
 	}
 	if got.DepBumps[0].Manager != "go" {
 		t.Errorf("manager = %q, want %q", got.DepBumps[0].Manager, "go")
+	}
+}
+
+// Test_Analyze_TagAndSubjects: latest_tag + recent_subjects are emitted so the
+// agent never re-runs `git log` / `git tag` for style or version lookup.
+func Test_Analyze_TagAndSubjects(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{"README.md": "# Fixture\n"},
+		nil,
+	)
+	// Two more commits with conventional-style subjects; tag the last one.
+	writeFixture(t, root, "a.txt", "a\n")
+	runGitT(t, root, "add", "-A")
+	runGitT(t, root, "commit", "-q", "-m", "feat(core): add a")
+	writeFixture(t, root, "b.txt", "b\n")
+	runGitT(t, root, "add", "-A")
+	runGitT(t, root, "commit", "-q", "-m", "fix(core): patch b")
+	runGitT(t, root, "tag", "v0.2.0")
+	// Dirty the tree so analyze doesn't early-exit.
+	writeFixture(t, root, "README.md", "# Fixture\n\nchanged\n")
+
+	got, err := AnalyzeCommit(context.Background(), AnalyzeOptions{Root: root})
+	if err != nil {
+		t.Fatalf("AnalyzeCommit: %v", err)
+	}
+	if got.LatestTag != "v0.2.0" {
+		t.Errorf("LatestTag = %q, want %q", got.LatestTag, "v0.2.0")
+	}
+	if len(got.RecentSubjects) == 0 {
+		t.Fatalf("RecentSubjects empty; expected recent commit subjects")
+	}
+	if len(got.RecentSubjects) > 5 {
+		t.Errorf("RecentSubjects = %d entries, want ≤5", len(got.RecentSubjects))
+	}
+	if !strings.HasPrefix(got.RecentSubjects[0], "fix(core)") {
+		t.Errorf("RecentSubjects[0] = %q, want newest-first conventional subject", got.RecentSubjects[0])
+	}
+}
+
+// Test_Analyze_NoTag_NoHistory: fresh repo with one commit, no tags — LatestTag
+// must be empty (agent signal: propose initial v0.1.0).
+func Test_Analyze_NoTag_NoHistory(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{"README.md": "# fresh\n"},
+		map[string]string{"README.md": "# fresh\n\nmodified\n"},
+	)
+	got, err := AnalyzeCommit(context.Background(), AnalyzeOptions{Root: root})
+	if err != nil {
+		t.Fatalf("AnalyzeCommit: %v", err)
+	}
+	if got.LatestTag != "" {
+		t.Errorf("LatestTag = %q, want empty on untagged repo", got.LatestTag)
+	}
+}
+
+// Test_Analyze_Visibility_None_PIISafe: a personal repo with no origin should
+// get "safe" default_action on PII REVIEW findings (emails/localhost), so the
+// agent can skip per-finding adjudication.
+func Test_Analyze_Visibility_None_PIISafe(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{"README.md": "# readme\n"},
+		map[string]string{"README.md": "# readme\n\nping me at dev@example.com on localhost:8080\n"},
+	)
+	got, err := AnalyzeCommit(context.Background(), AnalyzeOptions{Root: root})
+	if err != nil {
+		t.Fatalf("AnalyzeCommit: %v", err)
+	}
+	if got.Remote.Visibility != "none" {
+		t.Fatalf("Remote.Visibility = %q, want %q (no origin remote)", got.Remote.Visibility, "none")
+	}
+	if got.Secrets.AmbiguousCount != 0 {
+		t.Errorf("AmbiguousCount = %d, want 0 (personal repo: PII REVIEWs should be safe)", got.Secrets.AmbiguousCount)
+	}
+	findings := readFindings(t, got.Refs.Findings)
+	if len(findings) == 0 {
+		t.Fatalf("expected PII REVIEW findings for email/localhost")
+	}
+	for _, f := range findings {
+		if f.Kind == "pii" && f.Class == "REVIEW" && f.DefaultAction != "safe" {
+			t.Errorf("PII REVIEW finding %q default_action = %q, want %q", f.Snippet, f.DefaultAction, "safe")
+		}
+	}
+}
+
+// Test_Analyze_Visibility_FlagAlwaysFix: FLAG findings always get default_action=fix
+// regardless of visibility — live secrets are never "safe".
+func Test_Analyze_Visibility_FlagAlwaysFix(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{"config.yaml": "key: value\n"},
+		map[string]string{"config.yaml": "key: value\naws_access_key: AKIAIOSFODNN7EXAMPLE\n"},
+	)
+	got, err := AnalyzeCommit(context.Background(), AnalyzeOptions{Root: root})
+	if err != nil {
+		t.Fatalf("AnalyzeCommit: %v", err)
+	}
+	if got.Secrets.FixCount < 1 {
+		t.Errorf("FixCount = %d, want >=1 (AKIA key must be fix)", got.Secrets.FixCount)
+	}
+	findings := readFindings(t, got.Refs.Findings)
+	for _, f := range findings {
+		if f.Class == "FLAG" && f.DefaultAction != "fix" {
+			t.Errorf("FLAG finding %q default_action = %q, want %q", f.Snippet, f.DefaultAction, "fix")
+		}
 	}
 }
 

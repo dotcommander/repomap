@@ -22,6 +22,8 @@ type gitState struct {
 	CoChange    map[string]map[string]int // file -> file -> co-commit count (last 500 commits)
 	Tags        []string                  // descending semver
 	HasUpstream bool
+	OriginURL   string // origin remote URL; empty if no origin
+	Visibility  string // public | private | none | unknown
 }
 
 // collectGitState shells the git commands we need. Returns an error only for
@@ -81,7 +83,79 @@ func collectGitState(ctx context.Context, root string) (*gitState, error) {
 		}
 	}
 
+	// Origin + visibility. Drives Finding.DefaultAction strictness: no remote =
+	// personal repo (lenient); public remote = strict; unknown = strict.
+	gs.OriginURL, gs.Visibility = detectVisibility(ctx, root)
+
 	return gs, nil
+}
+
+// detectVisibility classifies the origin remote. Logic:
+//   - no origin                         → ("", "none")
+//   - origin exists, `gh` authenticated → probe gh repo view for github.com URLs
+//   - otherwise                         → (url, "unknown")  — caller treats as strict
+//
+// Network-light: gh probe is skipped when origin is not github.com or gh is
+// missing; both paths short-circuit to "unknown" so analyze never stalls on
+// flaky network.
+func detectVisibility(ctx context.Context, root string) (url, vis string) {
+	out, err := runGit(ctx, root, "remote", "get-url", "origin")
+	if err != nil {
+		return "", "none"
+	}
+	url = strings.TrimSpace(out)
+	if url == "" {
+		return "", "none"
+	}
+	if !isGitHubURL(url) {
+		return url, "unknown"
+	}
+	slug := githubSlug(url)
+	if slug == "" {
+		return url, "unknown"
+	}
+	if _, err := exec.LookPath("gh"); err != nil {
+		return url, "unknown"
+	}
+	cmd := exec.CommandContext(ctx, "gh", "repo", "view", slug, "--json", "visibility", "-q", ".visibility")
+	raw, err := cmd.Output()
+	if err != nil {
+		return url, "unknown"
+	}
+	switch strings.ToLower(strings.TrimSpace(string(raw))) {
+	case "public":
+		return url, "public"
+	case "private", "internal":
+		return url, "private"
+	}
+	return url, "unknown"
+}
+
+// isGitHubURL returns true for SSH or HTTPS origins on github.com.
+func isGitHubURL(url string) bool {
+	return strings.Contains(url, "github.com:") || strings.Contains(url, "github.com/")
+}
+
+// githubSlug extracts "owner/repo" from a github.com URL.
+// Handles: git@github.com:owner/repo.git, https://github.com/owner/repo(.git),
+// ssh://git@github.com/owner/repo.
+func githubSlug(url string) string {
+	rest := url
+	switch {
+	case strings.HasPrefix(rest, "git@github.com:"):
+		rest = strings.TrimPrefix(rest, "git@github.com:")
+	case strings.Contains(rest, "github.com/"):
+		_, rest, _ = strings.Cut(rest, "github.com/")
+	default:
+		return ""
+	}
+	rest = strings.TrimSuffix(rest, ".git")
+	rest = strings.TrimSuffix(rest, "/")
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
 }
 
 // runGit invokes git with the given args inside root, returns stdout.

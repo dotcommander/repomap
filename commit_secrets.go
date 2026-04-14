@@ -17,7 +17,12 @@ import (
 // scanSecrets runs all content-review passes over the changeset and returns
 // a Findings slice + SecretsSummary. Mirrors commit-content-review.sh — port
 // is verbatim on pattern set, optimized by scanning files once per pass.
-func scanSecrets(ctx context.Context, root string, files []fileChange) ([]Finding, SecretsSummary) {
+//
+// visibility drives Finding.DefaultAction: "none" (personal repo, no remote)
+// is lenient — PII paths and dev-history markers auto-resolve to "safe". Any
+// other visibility is strict — REVIEW findings default to "review" so the
+// agent adjudicates them.
+func scanSecrets(ctx context.Context, root string, files []fileChange, visibility string) ([]Finding, SecretsSummary) {
 	scanFiles := filterScannable(root, files)
 	var findings []Finding
 
@@ -32,10 +37,12 @@ func scanSecrets(ctx context.Context, root string, files []fileChange) ([]Findin
 	findings = append(findings, runRegexPass(root, scanFiles, devHistoryFlagRules, "FLAG", "dev_history", "dev history")...)
 	findings = append(findings, runRegexPass(root, scanFiles, devHistoryReviewRules, "REVIEW", "dev_history", "dev history (review)")...)
 
-	sum := SecretsSummary{
-		Clean: true,
-	}
-	for _, f := range findings {
+	// Adjudicate each finding with a deterministic DefaultAction so the agent
+	// can process them without a per-finding LLM round-trip.
+	sum := SecretsSummary{Clean: true}
+	for i := range findings {
+		findings[i].DefaultAction = defaultAction(findings[i], visibility)
+		f := findings[i]
 		switch f.Class {
 		case "FLAG":
 			sum.FlagCount++
@@ -46,8 +53,54 @@ func scanSecrets(ctx context.Context, root string, files []fileChange) ([]Findin
 		case "REVIEW":
 			sum.ReviewCount++
 		}
+		switch f.DefaultAction {
+		case "fix":
+			sum.FixCount++
+		case "safe":
+			sum.SafeCount++
+		case "review":
+			sum.AmbiguousCount++
+		}
 	}
 	return findings, sum
+}
+
+// defaultAction adjudicates a single finding into one of:
+//
+//	fix    — auto-replace with a safe placeholder (all FLAGs + public-repo PII REVIEWs)
+//	safe   — leave as-is (lenient defaults on personal/private repos)
+//	review — needs LLM judgment (fallback for anything we can't adjudicate)
+//
+// Policy by (class, kind, visibility):
+//
+//	FLAG/*                   → fix       (always; deterministic secret/PII hits)
+//	REVIEW/secret            → review    (regex credentials are ambiguous everywhere)
+//	REVIEW/pii    + public   → review    (emails/IPs on public repos are risky)
+//	REVIEW/pii    + private  → safe      (team-internal PII is fine)
+//	REVIEW/pii    + none     → safe      (personal repo; paths/emails expected)
+//	REVIEW/pii    + unknown  → review    (strict fallback)
+//	REVIEW/dev_history + *   → safe      (TODOs/draft markers are not leaks)
+func defaultAction(f Finding, visibility string) string {
+	if f.Class == "FLAG" {
+		return "fix"
+	}
+	// class == REVIEW
+	switch f.Kind {
+	case "dev_history":
+		return "safe"
+	case "secret":
+		return "review"
+	case "pii":
+		switch visibility {
+		case "none", "private":
+			return "safe"
+		case "public":
+			return "review"
+		default:
+			return "review"
+		}
+	}
+	return "review"
 }
 
 // filterScannable drops files that shouldn't be grep'd: deletions, binaries,

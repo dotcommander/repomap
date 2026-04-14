@@ -73,6 +73,8 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 			EarlyExit:   true,
 			EarlyReason: "no changes in working tree",
 			Complexity:  "simple",
+			Remote:      RemoteInfo{OriginURL: gs.OriginURL, Visibility: gs.Visibility},
+			Secrets:     SecretsSummary{Clean: true},
 			Refs:        refs,
 		}, nil
 	}
@@ -99,8 +101,9 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	// Dep bumps.
 	bumps := detectDepBumps(ctx, root, gs.Files)
 
-	// Secrets scan.
-	findings, summary := scanSecrets(ctx, root, gs.Files)
+	// Secrets scan. Visibility is passed in so findings get a deterministic
+	// default_action that the agent can act on without per-finding LLM calls.
+	findings, summary := scanSecrets(ctx, root, gs.Files, gs.Visibility)
 	if err := writeFindings(refs.Findings, findings); err != nil {
 		return nil, fmt.Errorf("write findings: %w", err)
 	}
@@ -114,6 +117,17 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	artifacts := collectArtifacts(gs.Files)
 	histStyle := classifyHistoryStyle(gs.HistoryRaw)
 
+	// Surface tag + recent subjects so the agent never needs to re-run
+	// `git log` / `git tag` just for style inference or version lookup.
+	var latestTag string
+	if len(gs.Tags) > 0 {
+		latestTag = gs.Tags[0]
+	}
+	recentSubjects := splitLines(gs.HistoryRaw)
+	if len(recentSubjects) > 5 {
+		recentSubjects = recentSubjects[:5]
+	}
+
 	// Plan file.
 	plan := renderPlan(groups)
 	if err := writeFile(refs.Plan, []byte(plan)); err != nil {
@@ -121,19 +135,22 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	}
 
 	analysis := &CommitAnalysis{
-		Version:      1,
-		Tmpdir:       tmpdir,
-		EarlyExit:    false,
-		Complexity:   classifyComplexity(gs.Files, groups),
-		Counts:       countFiles(gs.Files),
-		HistoryStyle: histStyle,
-		Secrets:      summary,
-		Artifacts:    artifacts,
-		ConfigFiles:  configFiles,
-		DepBumps:     bumps,
-		Groups:       groups,
-		PlanHash:     planHash(plan),
-		Refs:         refs,
+		Version:        1,
+		Tmpdir:         tmpdir,
+		EarlyExit:      false,
+		Complexity:     classifyComplexity(gs.Files, groups),
+		Counts:         countFiles(gs.Files),
+		HistoryStyle:   histStyle,
+		LatestTag:      latestTag,
+		RecentSubjects: recentSubjects,
+		Remote:         RemoteInfo{OriginURL: gs.OriginURL, Visibility: gs.Visibility},
+		Secrets:        summary,
+		Artifacts:      artifacts,
+		ConfigFiles:    configFiles,
+		DepBumps:       bumps,
+		Groups:         groups,
+		PlanHash:       planHash(plan),
+		Refs:           refs,
 	}
 	return analysis, nil
 }

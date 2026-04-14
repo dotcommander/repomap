@@ -5,21 +5,24 @@ package repomap
 // untracked content, plan text, full findings) are written to disk and
 // referenced by Refs paths so the agent can read them on demand.
 type CommitAnalysis struct {
-	Version      int            `json:"version"`
-	Tmpdir       string         `json:"tmpdir"`
-	EarlyExit    bool           `json:"early_exit"`
-	EarlyReason  string         `json:"early_reason,omitempty"`
-	Complexity   string         `json:"complexity"` // simple | medium | complex
-	Counts       CommitCounts   `json:"counts"`
-	HistoryStyle string         `json:"history_style"` // conventional | mixed | freeform
-	Secrets      SecretsSummary `json:"secrets"`
-	Artifacts    []string       `json:"artifacts"`    // paths recommended for .gitignore
-	ConfigFiles  []string       `json:"config_files"` // .md/.yaml/.toml/.json/.env*/.cfg/.ini/.conf in changeset
-	DepBumps     []DepBump      `json:"dep_bumps"`
-	Groups       []CommitGroup  `json:"groups"`
-	PlanHash     string         `json:"plan_hash"`
-	Refs         CommitRefs     `json:"refs"`
-	Diagnostics  []string       `json:"diagnostics,omitempty"` // non-fatal warnings
+	Version        int            `json:"version"`
+	Tmpdir         string         `json:"tmpdir"`
+	EarlyExit      bool           `json:"early_exit"`
+	EarlyReason    string         `json:"early_reason,omitempty"`
+	Complexity     string         `json:"complexity"` // simple | medium | complex
+	Counts         CommitCounts   `json:"counts"`
+	HistoryStyle   string         `json:"history_style"`             // conventional | mixed | freeform
+	LatestTag      string         `json:"latest_tag,omitempty"`      // most recent semver tag; empty if none
+	RecentSubjects []string       `json:"recent_subjects,omitempty"` // top-5 commit subjects from HEAD (style sample)
+	Remote         RemoteInfo     `json:"remote"`                    // origin URL + visibility class; drives finding default_action
+	Secrets        SecretsSummary `json:"secrets"`
+	Artifacts      []string       `json:"artifacts"`    // paths recommended for .gitignore
+	ConfigFiles    []string       `json:"config_files"` // .md/.yaml/.toml/.json/.env*/.cfg/.ini/.conf in changeset
+	DepBumps       []DepBump      `json:"dep_bumps"`
+	Groups         []CommitGroup  `json:"groups"`
+	PlanHash       string         `json:"plan_hash"`
+	Refs           CommitRefs     `json:"refs"`
+	Diagnostics    []string       `json:"diagnostics,omitempty"` // non-fatal warnings
 }
 
 // CommitCounts gives a per-status file tally.
@@ -31,12 +34,24 @@ type CommitCounts struct {
 }
 
 // SecretsSummary is a compact gate for Phase 1 in the agent: if Clean is true
-// and ReviewCount is zero, the agent can skip detailed LLM review.
+// and AmbiguousCount is zero, the agent can skip LLM review entirely —
+// default_action handles every finding deterministically.
 type SecretsSummary struct {
 	Clean            bool `json:"clean"`             // no FLAG findings (deterministic)
 	GitleaksFindings int  `json:"gitleaks_findings"` // total flagged by gitleaks
-	ReviewCount      int  `json:"review_count"`      // ambiguous findings needing LLM judgment
+	ReviewCount      int  `json:"review_count"`      // findings originally classed REVIEW (pre-adjudication)
 	FlagCount        int  `json:"flag_count"`        // deterministic findings (auto-fixable)
+	FixCount         int  `json:"fix_count"`         // findings with default_action=fix (auto-handled)
+	SafeCount        int  `json:"safe_count"`        // findings with default_action=safe (auto-cleared)
+	AmbiguousCount   int  `json:"ambiguous_count"`   // findings with default_action=review (need LLM judgment)
+}
+
+// RemoteInfo records the origin remote and its visibility class. Used to pick
+// the strictness of default_action on REVIEW findings: a personal repo with no
+// remote gets lenient defaults; github.com/* public repos get strict defaults.
+type RemoteInfo struct {
+	OriginURL  string `json:"origin_url,omitempty"`
+	Visibility string `json:"visibility"` // public | private | none | unknown
 }
 
 // DepBump captures a recognized dependency version change in package manifests.
@@ -96,13 +111,17 @@ type edge struct {
 }
 
 // Finding is one secret/PII/dev-history hit emitted by commit_secrets.go.
+// DefaultAction is the deterministic adjudication the agent should follow
+// unless it has a reason to override — it collapses the per-finding LLM loop
+// that previously re-examined every REVIEW hit.
 type Finding struct {
-	Class   string `json:"class"` // FLAG | REVIEW | CLEAR
-	Kind    string `json:"kind"`  // secret | pii | dev_history | path | email | etc.
-	File    string `json:"file"`
-	Line    int    `json:"line,omitempty"`
-	Snippet string `json:"snippet,omitempty"`
-	Detail  string `json:"detail,omitempty"`
+	Class         string `json:"class"` // FLAG | REVIEW | CLEAR
+	Kind          string `json:"kind"`  // secret | pii | dev_history | path | email | etc.
+	File          string `json:"file"`
+	Line          int    `json:"line,omitempty"`
+	Snippet       string `json:"snippet,omitempty"`
+	Detail        string `json:"detail,omitempty"`
+	DefaultAction string `json:"default_action"` // fix | safe | review
 }
 
 // symbolDelta captures additions/removals/renames detected by diffing pre- and
