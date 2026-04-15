@@ -95,6 +95,10 @@ One package. No internal taxonomy of subpackages. Files named after what they do
 
 Docs live in `docs/`. Read them in the order they're numbered.
 
+## Acknowledgments
+
+The repository map concept was pioneered by [aider.chat](https://aider.chat/) — an AI pair programming tool that introduced the idea of distilling a codebase into a compact symbol map that fits in an LLM context window.
+
 ## License
 
-MIT.
+[MIT](LICENSE)
