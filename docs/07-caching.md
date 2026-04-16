@@ -69,9 +69,20 @@ There's one rule: **the cache is stale if any tracked mtime changed.**
 
 Staleness is debounced at 30 seconds. If you call `Stale` twice inside that window, the second call returns `false` without touching the filesystem. This makes it safe to call on a hot path.
 
+## Incremental rebuild
+
+When the disk cache contains a saved HEAD commit SHA (`LastSHA`), `Build` re-parses only the files changed between that commit and HEAD (via `git diff --name-status`), plus any untracked files respecting `.gitignore`. This makes repeated builds on large repos nearly instantaneous when few files changed.
+
+Falls through to a full rebuild if:
+- The cached SHA is unreachable (e.g., after a rebase or force-push)
+- More than 30% of cached files changed (rank recomputation dominates at that point)
+- The directory is not inside a git repo
+
+Any git failure triggers a silent full rebuild — correctness is always preferred over speed.
+
 ## Cache versioning
 
-The disk format has a version number (`cacheVersion = 4`). A mismatched version causes `LoadCache` to return an error; fall back to a full `Build`.
+The disk format has a version number (`cacheVersion = 6`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. The v5→v6 bump (which added `LastSHA` and `GitRoot` fields) triggers a one-time full rebuild for existing users.
 
 ## When caching hurts
 

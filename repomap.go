@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -40,14 +41,15 @@ func DefaultConfig() Config {
 
 // Map holds the built repository map state.
 type Map struct {
-	root     string
-	config   Config
-	cacheDir string // if set, Build saves cache here
-	mu       sync.RWMutex
-	ranked   []RankedFile
-	builtAt  time.Time
-	mtimes   map[string]time.Time // path → mtime at last build
-	outputs  outputCache
+	root      string
+	config    Config
+	blocklist *BlocklistConfig
+	cacheDir  string // if set, Build saves cache here
+	mu        sync.RWMutex
+	ranked    []RankedFile
+	builtAt   time.Time
+	mtimes    map[string]time.Time // path → mtime at last build
+	outputs   outputCache
 
 	tsAvailable    bool // tree-sitter parsing available
 	ctagsAvailable bool // ctags binary available
@@ -61,9 +63,14 @@ func New(root string, cfg Config) *Map {
 	if cfg.MaxTokensNoCtx == 0 {
 		cfg.MaxTokensNoCtx = defaultMaxTokensNoCtx
 	}
+	bl, _ := LoadBlocklistConfig(root)
+	if bl == nil {
+		bl = &BlocklistConfig{}
+	}
 	return &Map{
 		root:           root,
 		config:         cfg,
+		blocklist:      bl,
 		tsAvailable:    TreeSitterAvailable(),
 		ctagsAvailable: CtagsAvailable(),
 	}
@@ -75,8 +82,25 @@ func (m *Map) SetCacheDir(dir string) {
 }
 
 // Build performs a full scan → parse → rank pipeline.
+// When cacheDir is set, first tries an incremental rebuild via git diff
+// against the cached HEAD SHA. Falls through to full rebuild on any
+// eligibility failure — correctness over speed.
 // Safe for concurrent use.
 func (m *Map) Build(ctx context.Context) error {
+	if m.cacheDir != "" {
+		if ok, changed := m.LoadCacheIncremental(ctx, m.cacheDir); ok {
+			if err := m.applyIncremental(ctx, changed); err == nil {
+				return nil
+			}
+			// Incremental merge failed — clear state and fall through.
+			m.mu.Lock()
+			m.ranked = nil
+			m.mtimes = nil
+			m.outputs.reset()
+			m.mu.Unlock()
+		}
+	}
+
 	files, err := ScanFiles(ctx, m.root)
 	if err != nil {
 		return err
@@ -103,6 +127,108 @@ func (m *Map) Build(ctx context.Context) error {
 		_ = m.SaveCache(m.cacheDir) // best-effort
 	}
 
+	return nil
+}
+
+// applyIncremental re-parses only the changed paths, merges them into the
+// already-hydrated m.ranked, re-detects implementations over the full merged
+// set, re-ranks, and saves the cache. Returns an error if re-parsing fails
+// entirely; caller must fall through to a full rebuild.
+func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
+	if len(changedRel) == 0 {
+		// Nothing to re-parse — cache is authoritative. Still refresh builtAt
+		// and save so LastSHA advances if HEAD moved without touching tracked
+		// files (rare but possible).
+		m.mu.Lock()
+		m.builtAt = time.Now()
+		m.mu.Unlock()
+		if m.cacheDir != "" {
+			_ = m.SaveCache(m.cacheDir)
+		}
+		return nil
+	}
+
+	// Build FileInfo list for changed paths that still exist and have a
+	// recognised language. Silently skip unknown extensions / missing files —
+	// deletions are already applied to m.ranked by LoadCacheIncremental.
+	infos := make([]FileInfo, 0, len(changedRel))
+	for _, rel := range changedRel {
+		abs := m.absPath(rel)
+		info, err := os.Stat(abs)
+		if err != nil {
+			continue // deleted or unreadable — drop silently
+		}
+		if info.IsDir() {
+			continue
+		}
+		if tooBig(abs) || isBuildArtifact(rel) || inSkipDir(rel) {
+			continue
+		}
+		lang := LanguageFor(filepath.Ext(rel))
+		if lang == "" {
+			continue
+		}
+		infos = append(infos, FileInfo{Path: rel, Language: lang})
+	}
+
+	var parsed []*FileSymbols
+	var newMtimes map[string]time.Time
+	if len(infos) > 0 {
+		var err error
+		parsed, newMtimes, err = m.parseFiles(ctx, infos)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Build a set of paths being replaced so we can skip them from cached ranked.
+	relNew := make(map[string]struct{}, len(parsed))
+	for _, fs := range parsed {
+		if fs != nil {
+			relNew[fs.Path] = struct{}{}
+		}
+	}
+
+	m.mu.Lock()
+	// Carry forward existing RankedFiles (modified paths were already dropped
+	// from m.ranked by LoadCacheIncremental.dropPaths; this is defensive).
+	existing := make([]*FileSymbols, 0, len(m.ranked)+len(parsed))
+	for _, rf := range m.ranked {
+		if rf.FileSymbols == nil {
+			continue
+		}
+		if _, re := relNew[rf.Path]; re {
+			continue // replaced by freshly parsed version (defensive)
+		}
+		existing = append(existing, rf.FileSymbols)
+	}
+	for _, fs := range parsed {
+		if fs != nil {
+			existing = append(existing, fs)
+		}
+	}
+	// Refresh mtimes for newly parsed files.
+	if m.mtimes == nil {
+		m.mtimes = make(map[string]time.Time, len(existing))
+	}
+	for path, t := range newMtimes {
+		m.mtimes[path] = t
+	}
+	m.mu.Unlock()
+
+	// DetectImplementations must see the FULL merged set, not just parsed subset.
+	DetectImplementations(existing)
+	ranked := RankFiles(existing)
+
+	m.mu.Lock()
+	m.ranked = ranked
+	m.builtAt = time.Now()
+	m.outputs.reset()
+	m.mu.Unlock()
+
+	if m.cacheDir != "" {
+		_ = m.SaveCache(m.cacheDir)
+	}
 	return nil
 }
 

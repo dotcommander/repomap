@@ -159,6 +159,7 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 // source file and returns path → symbols. Deletions and unknown languages
 // are skipped.
 func parseDirtyFiles(root string, files []fileChange) map[string]*FileSymbols {
+	bl, _ := LoadBlocklistConfig(root)
 	out := make(map[string]*FileSymbols, len(files))
 	for _, f := range files {
 		if f.Status == "D" || f.IndexStatus == "D" {
@@ -170,11 +171,13 @@ func parseDirtyFiles(root string, files []fileChange) map[string]*FileSymbols {
 		abs := filepath.Join(root, f.Path)
 		if f.Language == "go" {
 			if sym, err := ParseGoFile(abs, root); err == nil && sym != nil {
+				bl.filterSymbols(sym)
 				out[f.Path] = sym
 			}
 			continue
 		}
 		if sym, err := ParseGenericFile(abs, root, f.Language); err == nil && sym != nil {
+			bl.filterSymbols(sym)
 			out[f.Path] = sym
 		}
 	}

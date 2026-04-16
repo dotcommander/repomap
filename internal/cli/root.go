@@ -71,6 +71,8 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 
 	cmd.AddCommand(newCommitCmd())
+	cmd.AddCommand(newInitCmd())
+	cmd.AddCommand(newFindCmd())
 
 	return cmd
 }

@@ -69,9 +69,36 @@ repomap -f xml                      # structured output for programmatic consume
 repomap --json                      # verbose output split into JSON lines
 ```
 
+## Quickstart
+
+```bash
+repomap init                        # scaffold .repomap.yaml + post-commit hook
+repomap init --no-hook              # config only
+repomap init --force                # overwrite existing
+```
+
+`repomap init` writes `.repomap.yaml` at the project root and installs a
+git `post-commit` hook that refreshes the cache in the background after
+every commit, so `repomap` stays instant. Idempotent — re-running without
+`--force` skips existing files.
+
 ## Languages
 
 Go, Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, PHP, HTML, CSS. Go parses through `go/ast` directly. The rest go through tree-sitter when the grammar is present, ctags when it is not, regex when neither exists. Quality degrades gracefully; the map is never empty because a parser was missing.
+
+## Configuration
+
+Create `.repomap.yaml` at the project root to filter symbols from the output:
+
+```yaml
+method_blocklist:
+  - "Test*"           # glob: drop anything starting with "Test"
+  - "*Mock"           # glob: drop anything ending in "Mock"
+  - "/^pb_/"          # regex: drop generated protobuf methods
+```
+
+Patterns wrapped in `/.../` are Go regex; others are `path.Match` globs.
+Absent file = no filtering.
 
 ## Library
 

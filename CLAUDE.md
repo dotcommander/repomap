@@ -56,6 +56,13 @@ Single Go package (`repomap`) with a Cobra CLI in `internal/cli/`. Entry point: 
 
 Defined in `language.go` as a single `languageDefs` slice. To add a language: add an entry there, then optionally add a tree-sitter registration in a new `parser_ts_<lang>.go`. The regex parsers in `parser_generic.go` handle remaining languages by pattern.
 
+### Configuration
+
+Optional `.repomap.yaml` at project root filters symbols at parse time:
+- `method_blocklist`: list of glob (`Test*`) or regex (`/^pb_/`) patterns
+- Loader in `config.go`; filter applied in `parse_dispatch.go` and `commit_analyze.go`
+- Absent file = no-op
+
 ## Testing Patterns
 
 - `testify` (assert/require), `t.Parallel()` on all tests

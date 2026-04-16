@@ -1,6 +1,7 @@
 package repomap
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -43,9 +44,11 @@ type diskCache struct {
 	Output      string               `json:"output"`
 	OutputLines string               `json:"output_lines"`
 	Ranked      []RankedFile         `json:"ranked"`
+	LastSHA     string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
+	GitRoot     bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
 }
 
-const cacheVersion = 5
+const cacheVersion = 6
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -69,6 +72,12 @@ func (m *Map) SaveCache(cacheDir string) error {
 		Output:      compact,
 		OutputLines: lines,
 		Ranked:      m.ranked,
+	}
+	if isInsideGitRepo(m.root) {
+		entry.GitRoot = true
+		if sha, err := gitHeadSHA(context.Background(), m.root); err == nil {
+			entry.LastSHA = sha
+		}
 	}
 	m.mu.Unlock()
 
