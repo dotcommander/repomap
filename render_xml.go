@@ -83,6 +83,9 @@ func xmlFileBlock(b *strings.Builder, f RankedFile) {
 	if f.ParseMethod != "" {
 		attrs += fmt.Sprintf(` parsed="%s"`, xmlEscape(f.ParseMethod))
 	}
+	if len(f.Boundaries) > 0 {
+		attrs += fmt.Sprintf(` boundaries="%s"`, xmlEscape(strings.Join(f.Boundaries, ",")))
+	}
 
 	// Diagnostic attrs — minImportedBy=1 emits raw counts (XML is machine-read).
 	// Tag/ParseMethod attrs above already cover the full values; skip diagnostics

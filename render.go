@@ -88,7 +88,7 @@ func buildHeader(files []RankedFile, totalFiles, totalSymbols int) string {
 // formatFileBlockVerbose returns a verbose block showing all symbols without summarization.
 func formatFileBlockVerbose(f RankedFile) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLineDetail(f))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		names := make([]string, 0, len(g.syms))
@@ -122,7 +122,7 @@ func formatFileBlockSummary(f RankedFile) string {
 // formatFileBlockDetail returns a detailed block showing signatures and struct fields.
 func formatFileBlockDetail(f RankedFile) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLineDetail(f))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		slices.SortFunc(g.syms, func(a, b Symbol) int {
@@ -193,6 +193,7 @@ func fileDiagnostics(f RankedFile, minImportedBy int) []fileDiagnostic {
 }
 
 // formatFileLine returns the header line for a file block (path + tag/badge annotations).
+// Does NOT include boundary labels — use formatFileLineVerbose for detail/verbose modes.
 func formatFileLine(f RankedFile) string {
 	diags := fileDiagnostics(f, 2)
 	if len(diags) == 0 {
@@ -201,6 +202,21 @@ func formatFileLine(f RankedFile) string {
 	labels := make([]string, len(diags))
 	for i, d := range diags {
 		labels[i] = d.Label
+	}
+	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(labels, ", "))
+}
+
+// formatFileLineDetail returns the header line for detail/verbose file blocks,
+// including boundary labels when present. Compact mode uses formatFileLine instead.
+func formatFileLineDetail(f RankedFile) string {
+	diags := fileDiagnostics(f, 2)
+	labels := make([]string, 0, len(diags)+len(f.Boundaries))
+	for _, d := range diags {
+		labels = append(labels, d.Label)
+	}
+	labels = append(labels, f.Boundaries...)
+	if len(labels) == 0 {
+		return f.Path + "\n"
 	}
 	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(labels, ", "))
 }

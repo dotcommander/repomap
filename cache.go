@@ -45,7 +45,7 @@ type diskCache struct {
 	Ranked      []RankedFile         `json:"ranked"`
 }
 
-const cacheVersion = 4
+const cacheVersion = 5
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {

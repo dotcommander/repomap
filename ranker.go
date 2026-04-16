@@ -9,12 +9,13 @@ import (
 // RankedFile is a FileSymbols with an importance score.
 type RankedFile struct {
 	*FileSymbols
-	Score       int    // higher = more important
-	Tag         string // e.g. "entry", ""
-	DetailLevel int    // set by BudgetFiles: -1=omit, 0=header, 1=summary, 2=symbols, 3=symbols+fields
-	ImportedBy  int    // number of files that import this file's package
-	DependsOn   int    // number of internal imports (fan-out coupling proxy)
-	Untested    bool   // true if package lacks test coverage
+	Score       int      // higher = more important
+	Tag         string   // e.g. "entry", ""
+	DetailLevel int      // set by BudgetFiles: -1=omit, 0=header, 1=summary, 2=symbols, 3=symbols+fields
+	ImportedBy  int      // number of files that import this file's package
+	DependsOn   int      // number of internal imports (fan-out coupling proxy)
+	Untested    bool     // true if package lacks test coverage
+	Boundaries  []string `json:"boundaries,omitempty"` // semantic boundary labels, e.g. ["HTTP", "Postgres"]
 }
 
 // RankFiles scores and sorts files by importance.
@@ -30,6 +31,7 @@ func RankFiles(files []*FileSymbols) []RankedFile {
 	applyDepthPenalty(ranked)
 	applyReferenceCounts(ranked, files)
 	applyDiagnosticSignals(ranked, files)
+	applyBoundaryBoost(ranked)
 
 	slices.SortFunc(ranked, func(a, b RankedFile) int {
 		if b.Score != a.Score {
@@ -296,4 +298,16 @@ func shouldTagUntested(f RankedFile, covered map[string]bool) bool {
 	}
 
 	return !covered[diagnosticPackageKey(f.FileSymbols)]
+}
+
+// applyBoundaryBoost classifies each file's import list into boundary labels,
+// stores them on the RankedFile, and adds a capped score bump.
+func applyBoundaryBoost(ranked []RankedFile) {
+	for i := range ranked {
+		labels, bump := classifyBoundaries(ranked[i].Imports)
+		if len(labels) > 0 {
+			ranked[i].Boundaries = labels
+			ranked[i].Score += bump
+		}
+	}
 }
