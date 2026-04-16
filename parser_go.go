@@ -61,6 +61,14 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 		}
 	}
 
+	// Fallback pass: if no symbols were collected (e.g. internal packages where
+	// all logic lives in unexported functions), collect unexported functions and
+	// methods whose body spans ≥5 lines. Exported=false ensures applySymbolBonus
+	// does not inflate the file's score.
+	if len(fs.Symbols) == 0 {
+		fs.Symbols = collectUnexportedFallback(fset, file.Decls)
+	}
+
 	return fs, nil
 }
 
@@ -166,14 +174,13 @@ func extractFunc(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
 
 	sym := Symbol{
 		Name:     d.Name.Name,
-		Kind:     "function",
 		Exported: true,
 		Line:     fset.Position(d.Name.Pos()).Line,
 		EndLine:  fset.Position(d.End()).Line,
 	}
 
+	sym.Kind = kindFor(d.Recv)
 	if d.Recv != nil && len(d.Recv.List) > 0 {
-		sym.Kind = "method"
 		sym.Receiver = receiverString(d.Recv.List[0])
 	}
 
@@ -182,6 +189,57 @@ func extractFunc(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
 	sym.ResultCount = fieldListCount(d.Type.Results)
 	sym.Doc = firstSentence(d.Doc, d.Name.Name)
 	return sym, true
+}
+
+// collectUnexportedFallback scans decls for unexported functions and methods
+// whose body spans ≥5 lines and returns them as Symbols with Exported=false.
+// It is called only when the main exported-symbol pass produced nothing.
+func collectUnexportedFallback(fset *token.FileSet, decls []ast.Decl) []Symbol {
+	var syms []Symbol
+	for _, decl := range decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		if isExported(fn.Name.Name) {
+			continue // main loop would have caught this; skip to avoid double-add
+		}
+		lines := fset.Position(fn.Body.Rbrace).Line - fset.Position(fn.Body.Lbrace).Line
+		if lines < 5 {
+			continue
+		}
+		syms = append(syms, buildFallbackSymbol(fset, fn))
+	}
+	return syms
+}
+
+// buildFallbackSymbol constructs a Symbol for an unexported function or method.
+// It mirrors extractFunc but skips the export gate and sets Exported=false.
+// Callers must verify fn.Body != nil and body-line threshold before calling.
+func buildFallbackSymbol(fset *token.FileSet, fn *ast.FuncDecl) Symbol {
+	sym := Symbol{
+		Name:        fn.Name.Name,
+		Exported:    false,
+		Line:        fset.Position(fn.Name.Pos()).Line,
+		EndLine:     fset.Position(fn.End()).Line,
+		Signature:   funcSignature(fn.Type),
+		ParamCount:  fieldListCount(fn.Type.Params),
+		ResultCount: fieldListCount(fn.Type.Results),
+		Doc:         firstSentence(fn.Doc, fn.Name.Name),
+	}
+	sym.Kind = kindFor(fn.Recv)
+	if fn.Recv != nil && len(fn.Recv.List) > 0 {
+		sym.Receiver = receiverString(fn.Recv.List[0])
+	}
+	return sym
+}
+
+// kindFor returns "method" when recv is non-empty, "function" otherwise.
+func kindFor(recv *ast.FieldList) string {
+	if recv != nil && len(recv.List) > 0 {
+		return "method"
+	}
+	return "function"
 }
 
 // fieldListCount counts individual items in an AST field list, accounting
