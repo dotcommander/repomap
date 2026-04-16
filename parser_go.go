@@ -15,7 +15,7 @@ import (
 // path is absolute, root is the project root for relative path calculation.
 func ParseGoFile(path, root string) (*FileSymbols, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, 0)
+	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -52,6 +52,7 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 					Exported: false,
 					Line:     fset.Position(d.Name.Pos()).Line,
 					EndLine:  fset.Position(d.End()).Line,
+					Doc:      firstSentence(d.Doc, d.Name.Name),
 				})
 			}
 		case *ast.GenDecl:
@@ -179,6 +180,7 @@ func extractFunc(fset *token.FileSet, d *ast.FuncDecl) (Symbol, bool) {
 	sym.Signature = funcSignature(d.Type)
 	sym.ParamCount = fieldListCount(d.Type.Params)
 	sym.ResultCount = fieldListCount(d.Type.Results)
+	sym.Doc = firstSentence(d.Doc, d.Name.Name)
 	return sym, true
 }
 
@@ -207,6 +209,52 @@ func receiverString(field *ast.Field) string {
 	return typeString(field.Type)
 }
 
+// specDoc returns the doc comment for a spec within a GenDecl.
+// Prefers the spec-level doc (e.g. TypeSpec.Doc or ValueSpec.Doc) if non-nil,
+// otherwise falls back to the parent GenDecl doc (used for single-spec blocks).
+func specDoc(parent *ast.GenDecl, spec ast.Spec) *ast.CommentGroup {
+	switch s := spec.(type) {
+	case *ast.TypeSpec:
+		if s.Doc != nil {
+			return s.Doc
+		}
+	case *ast.ValueSpec:
+		if s.Doc != nil {
+			return s.Doc
+		}
+	}
+	return parent.Doc
+}
+
+// firstSentence extracts a one-line subtitle from a Go doc comment.
+// Strips the conventional leading identifier name ("Foo does X" -> "does X"),
+// takes content up to the first '.', newline, or 60 chars, and rejects
+// results shorter than 5 chars as noise.
+func firstSentence(cg *ast.CommentGroup, name string) string {
+	if cg == nil {
+		return ""
+	}
+	text := cg.Text() // stdlib: strips "// " and joins lines
+	text = strings.TrimSpace(text)
+	// Strip conventional "Name " prefix.
+	if strings.HasPrefix(text, name+" ") {
+		text = text[len(name)+1:]
+	}
+	// Take first sentence or line.
+	if i := strings.IndexAny(text, ".\n"); i >= 0 {
+		text = text[:i]
+	}
+	text = strings.TrimSpace(text)
+	// Rune-safe truncation at 60 chars.
+	if runes := []rune(text); len(runes) > 60 {
+		text = string(runes[:60])
+	}
+	if len(text) < 5 {
+		return ""
+	}
+	return text
+}
+
 // extractGenDecl extracts symbols from a general declaration (type, const, var).
 func extractGenDecl(fset *token.FileSet, d *ast.GenDecl) []Symbol {
 	var syms []Symbol
@@ -230,7 +278,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl) []Symbol {
 				signature = interfaceMethods(t)
 				memberCount = fieldListCount(t.Methods)
 			}
-			syms = append(syms, Symbol{Name: ts.Name.Name, Kind: kind, Exported: true, Signature: signature, Line: fset.Position(ts.Name.Pos()).Line, EndLine: fset.Position(ts.End()).Line, ParamCount: memberCount})
+			syms = append(syms, Symbol{Name: ts.Name.Name, Kind: kind, Exported: true, Signature: signature, Line: fset.Position(ts.Name.Pos()).Line, EndLine: fset.Position(ts.End()).Line, ParamCount: memberCount, Doc: firstSentence(specDoc(d, ts), ts.Name.Name)})
 		}
 	case token.CONST, token.VAR:
 		kind := "constant"
@@ -244,7 +292,7 @@ func extractGenDecl(fset *token.FileSet, d *ast.GenDecl) []Symbol {
 			}
 			for _, name := range vs.Names {
 				if isExported(name.Name) {
-					syms = append(syms, Symbol{Name: name.Name, Kind: kind, Exported: true, Line: fset.Position(name.Pos()).Line, EndLine: fset.Position(vs.End()).Line})
+					syms = append(syms, Symbol{Name: name.Name, Kind: kind, Exported: true, Line: fset.Position(name.Pos()).Line, EndLine: fset.Position(vs.End()).Line, Doc: firstSentence(specDoc(d, vs), name.Name)})
 				}
 			}
 		}

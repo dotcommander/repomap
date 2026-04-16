@@ -12,6 +12,7 @@ type Symbol struct {
 	ParamCount  int      // parameter count (funcs/methods); method count (interfaces); 0 otherwise
 	ResultCount int      // return value count (funcs/methods only); 0 otherwise
 	Implements  []string // interface names this type implements (structs only; Go-module-local)
+	Doc         string   `json:"doc,omitempty"` // first-sentence of the Go doc comment (empty if none)
 }
 
 // HasFields reports whether the symbol is a struct or interface with

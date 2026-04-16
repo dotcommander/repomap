@@ -129,7 +129,7 @@ func formatFileBlockDetail(f RankedFile) string {
 			return strings.Compare(a.Name, b.Name)
 		})
 
-		var lines []string
+		fmt.Fprintf(&b, "  %s:\n", g.label)
 		for _, s := range g.syms {
 			var line string
 			switch {
@@ -146,12 +146,10 @@ func formatFileBlockDetail(f RankedFile) string {
 			default:
 				line = s.Name + annotationTag(s)
 			}
-			lines = append(lines, line)
-		}
-
-		fmt.Fprintf(&b, "  %s:\n", g.label)
-		for _, line := range lines {
 			fmt.Fprintf(&b, "    %s\n", line)
+			if s.Doc != "" {
+				fmt.Fprintf(&b, "      // %s\n", s.Doc)
+			}
 		}
 	}
 	fmt.Fprint(&b, "\n")

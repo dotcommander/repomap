@@ -144,6 +144,9 @@ func xmlSymbols(b *strings.Builder, syms []Symbol) {
 		if len(s.Implements) > 0 {
 			attr += fmt.Sprintf(` implements="%s"`, xmlEscape(strings.Join(s.Implements, ",")))
 		}
+		if s.Doc != "" {
+			attr += fmt.Sprintf(` doc="%s"`, xmlEscape(s.Doc))
+		}
 
 		if s.Signature != "" {
 			fmt.Fprintf(b, "      <sym %s>%s</sym>\n", attr, xmlEscape(s.Signature))
