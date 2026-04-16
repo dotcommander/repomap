@@ -152,6 +152,14 @@ func (m *Map) StringXML() string {
 	})
 }
 
+// Ranked returns the ranked file list built by Build.
+// Returns nil if Build has not been called.
+func (m *Map) Ranked() []RankedFile {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.ranked
+}
+
 // BuiltAt returns the time of the last successful build, or zero time if never built.
 func (m *Map) BuiltAt() time.Time {
 	m.mu.RLock()
