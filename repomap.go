@@ -286,6 +286,11 @@ func (m *Map) Ranked() []RankedFile {
 	return m.ranked
 }
 
+// Config returns the configuration this Map was created with.
+func (m *Map) Config() Config {
+	return m.config
+}
+
 // BuiltAt returns the time of the last successful build, or zero time if never built.
 func (m *Map) BuiltAt() time.Time {
 	m.mu.RLock()
