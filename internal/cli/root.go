@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,10 +19,18 @@ func Execute() error {
 	return newRootCmd().Execute()
 }
 
+// jsonOutput is the versioned envelope for --json output.
+// Increment SchemaVersion on any breaking change to the lines format.
+type jsonOutput struct {
+	SchemaVersion int      `json:"schema_version"`
+	Lines         []string `json:"lines"`
+}
+
 func newRootCmd() *cobra.Command {
 	var tokens int
 	var format string
 	var asJSON bool
+	var jsonLegacy bool
 
 	// --calls flags
 	var callsMode bool
@@ -60,16 +69,17 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 			}
 
 			if !callsMode {
-				return renderStandard(m, format, asJSON)
+				return renderStandard(m, format, asJSON, jsonLegacy)
 			}
 
-			return renderWithCalls(cmd.Context(), m, format, asJSON, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
+			return renderWithCalls(cmd.Context(), m, format, asJSON, jsonLegacy, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
 		},
 	}
 
 	cmd.Flags().IntVarP(&tokens, "tokens", "t", 2048, "Token budget")
 	cmd.Flags().StringVarP(&format, "format", "f", "compact", "Output format: compact, verbose, detail, lines, xml")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
+	cmd.Flags().BoolVar(&jsonLegacy, "json-legacy", false, "Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release.")
 
 	cmd.Flags().BoolVar(&callsMode, "calls", false, "Expand exported symbols with caller information via gopls")
 	cmd.Flags().IntVar(&callsThreshold, "calls-threshold", 2, "Only expand symbols in files with at least N importers")
@@ -92,9 +102,9 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	return cmd
 }
 
-func renderStandard(m *repomap.Map, format string, asJSON bool) error {
+func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool) error {
 	if asJSON {
-		return printJSON(m)
+		return printJSON(os.Stdout, m, jsonLegacy)
 	}
 
 	var out string
@@ -119,6 +129,7 @@ func renderWithCalls(
 	m *repomap.Map,
 	format string,
 	asJSON bool,
+	jsonLegacy bool,
 	root string,
 	threshold, limit int,
 	includeTests bool,
@@ -156,7 +167,7 @@ func renderWithCalls(
 		}
 	}
 
-	return renderCallsOutput(m, format, asJSON, ranked, callers, limit)
+	return renderCallsOutput(os.Stdout, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }
 
 func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, error) {
@@ -201,9 +212,11 @@ func buildProgressFn(isTTY bool) func(done, total int) {
 }
 
 func renderCallsOutput(
+	w io.Writer,
 	m *repomap.Map,
 	format string,
 	asJSON bool,
+	jsonLegacy bool,
 	ranked []repomap.RankedFile,
 	callers repomap.SymbolCallers,
 	limit int,
@@ -212,23 +225,26 @@ func renderCallsOutput(
 	case asJSON:
 		verbose := repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit)
 		lines := strings.Split(strings.TrimRight(verbose, "\n"), "\n")
-		enc := json.NewEncoder(os.Stdout)
+		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		return enc.Encode(lines)
+		if jsonLegacy {
+			return enc.Encode(lines)
+		}
+		return enc.Encode(jsonOutput{SchemaVersion: 1, Lines: lines})
 	case format == "verbose":
-		fmt.Print(repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit))
 	case format == "detail":
-		fmt.Print(repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit))
 	case format == "lines":
 		// lines format doesn't integrate callers — fall back to standard.
-		fmt.Print(m.StringLines())
+		fmt.Fprint(w, m.StringLines())
 	case format == "xml":
 		// xml format doesn't integrate callers — fall back to standard.
-		fmt.Print(m.StringXML())
+		fmt.Fprint(w, m.StringXML())
 	default:
 		// compact
 		maxTokens := m.Config().MaxTokens
-		fmt.Print(repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit))
 	}
 	return nil
 }
@@ -241,10 +257,13 @@ func isTTYStderr() bool {
 	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
-func printJSON(m *repomap.Map) error {
+func printJSON(w io.Writer, m *repomap.Map, legacy bool) error {
 	verbose := m.StringVerbose()
 	lines := strings.Split(strings.TrimRight(verbose, "\n"), "\n")
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(lines)
+	if legacy {
+		return enc.Encode(lines)
+	}
+	return enc.Encode(jsonOutput{SchemaVersion: 1, Lines: lines})
 }
