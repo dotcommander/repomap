@@ -11,11 +11,23 @@ repomap/cmd/repomap → repomap/internal/cli
 repomap/internal/cli → repomap
 
 cmd/repomap/main.go [entry]
-  funcs: main
+  func main()
 
 repomap.go [imported by 1]
-  types: Config, Map (2 total)
-  methods: Build, SetCacheDir, Stale, String, StringDetail, StringLines, StringVerbose, StringXML
+  type Config{MaxTokens int, MaxTokensNoCtx int, ...}
+    // holds options for a Map build
+  type Map
+    // is the top-level orchestrator. Thread-safe.
+  func New(root string, cfg Config) *Map
+    // creates a Map for root with the given config
+  func (m *Map) Build(ctx context.Context) error
+    // scans, parses, ranks, and budgets the repository
+  func (m *Map) String() string
+  func (m *Map) StringCompact() string
+  func (m *Map) StringVerbose() string
+  func (m *Map) StringDetail() string
+  func (m *Map) StringLines() string
+  func (m *Map) StringXML() string
 ```
 
 That is the point.
@@ -59,15 +71,30 @@ go build -o repomap ./cmd/repomap
 ## Use
 
 ```bash
-repomap                             # current directory, 2048 tokens, compact
+repomap                             # current directory, 2048 tokens, enriched default
 repomap ./src                       # target a subtree
 repomap -t 4096                     # wider budget
+repomap -f compact                  # lean orientation: file paths + symbol names only
 repomap -f verbose                  # every symbol, no summarization
-repomap -f detail                   # add signatures and struct fields
+repomap -f detail                   # signatures and struct fields (same as default, no budget cap)
 repomap -f lines                    # actual source lines, not summaries
 repomap -f xml                      # structured output for programmatic consumers
-repomap --json                      # verbose output split into JSON lines
+repomap --json                      # JSON envelope {schema_version:1, lines:[...]}
+repomap --json --json-legacy        # bare []string JSON (pre-v0.7.0 compat)
 ```
+
+### Output formats
+
+| Format | What it shows | Budget enforced |
+|--------|---------------|----------------|
+| *(default)* | Paths, exported symbol names, typed signatures, godoc first sentence, typed struct fields | Yes |
+| `compact` | Paths + exported symbol names only — lean orientation mode | Yes |
+| `verbose` | All symbols, names only, no summarization | No |
+| `detail` | All symbols, signatures, and struct fields | No |
+| `lines` | Actual source lines | No |
+| `xml` | Structured XML for programmatic consumers | No |
+
+**Budget guarantee**: repomap never truncates a file mid-symbol. Files either render fully at their assigned detail level or drop to a lower level or are omitted — token budget is honored exactly. The footer reports how many files were omitted.
 
 ## Quickstart
 
@@ -112,7 +139,9 @@ if err := m.Build(context.Background()); err != nil {
 fmt.Print(m.String())
 ```
 
-Every format has a method: `String`, `StringVerbose`, `StringDetail`, `StringLines`, `StringXML`. Results cache per format; call them as often as you like.
+Every format has a method: `String`, `StringCompact`, `StringVerbose`, `StringDetail`, `StringLines`, `StringXML`. Results cache per format; call them as often as you like.
+
+`String()` is the enriched default: full typed signatures, godoc first sentences, and typed struct fields for exported symbols, within the token budget. `StringCompact()` is the lean orientation mode — symbol names only, no signatures or docs.
 
 `m.Stale()` reports whether source files have changed since the last build. Rebuild when it returns true.
 
