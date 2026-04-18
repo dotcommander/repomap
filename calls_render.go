@@ -187,7 +187,8 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 	}
 
 	if shownFiles < totalFiles {
-		fmt.Fprintf(&b, "(%d symbols across %d files, showing top %d)\n", totalSymbols, totalFiles, shownFiles)
+		omitted := totalFiles - shownFiles
+		fmt.Fprintf(&b, "(%d files omitted — increase -t or use -f compact)\n", omitted)
 	}
 
 	return b.String()

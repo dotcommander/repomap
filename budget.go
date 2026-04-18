@@ -45,7 +45,10 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 		ranked[i].DetailLevel = -1
 	}
 
-	// Phase 2: Walk files in rank order, upgrade detail levels within budget.
+	// Phase 2: Walk files in rank order, assign detail levels within budget.
+	// Invariant: a file at DetailLevel=2 gets ALL enriched content or is demoted.
+	// Never assign DetailLevel=2 with partial content — the LLM consumer must
+	// either see a file in full or know (via footer) that it was omitted.
 	used := headerCost
 	for i := 0; i < cutoff; i++ {
 		if len(ranked[i].Symbols) == 0 {
@@ -56,21 +59,61 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 		// Estimate cost of summary line (~30 bytes per group).
 		groups := countGroups(ranked[i].Path, ranked[i].Symbols)
 		summaryCost := groups * 30
+
+		// Try enriched (DetailLevel=2) FIRST using the all-or-nothing cost.
+		enriched := enrichedCost(ranked[i].Symbols)
+		if used+enriched <= budgetBytes {
+			ranked[i].DetailLevel = 2
+			used += enriched
+			continue
+		}
+
+		// Fall back to summary if it fits.
 		if used+summaryCost <= budgetBytes {
 			ranked[i].DetailLevel = 1
 			used += summaryCost
+			continue
 		}
 
-		// Try upgrading to full symbols — estimate ~20 bytes per symbol.
-		symbolCost := len(ranked[i].Symbols) * 20
-		if used+symbolCost-summaryCost <= budgetBytes {
-			ranked[i].DetailLevel = 2
-			used += symbolCost - summaryCost
-		}
+		// Neither fits — omit. Header bytes were already counted in Phase 1; we
+		// leave them "spent" even though the file won't render. This is
+		// conservative and correct: over-omitting under tight budgets is the
+		// documented v0.7.0 tradeoff per the Risk table in the parent spec.
+		ranked[i].DetailLevel = -1
 	}
 
 	promoteFieldExpansion(ranked, cutoff, budgetBytes, used)
 	return ranked
+}
+
+// enrichedCost estimates the byte length of a file's rendered output under the
+// v0.7.0 enriched-default format (Item 1 in v0.7.0-output-quality.md): for each
+// exported symbol, a name+signature line, optional godoc subtitle, and an
+// optional field block for structs/interfaces. Unexported symbols contribute
+// zero since the default renderer excludes them.
+//
+// The estimate MUST track formatFileBlockDefault's actual output within ±10%
+// once Item 1 lands. See TestEnrichedCost_MatchesRenderer.
+func enrichedCost(syms []Symbol) int {
+	cost := 0
+	for _, s := range syms {
+		if !s.Exported {
+			continue
+		}
+		// Name line: "  " + kindKeyword + " " + Name + Signature + "\n"
+		// kindKeyword worst-case is "func"/"type"/"const" (~4 bytes). Use 6 as constant
+		// slack: 2 indent + 4 keyword approx + 1 space + 1 newline = 8.
+		cost += 8 + len(s.Name) + len(s.Signature)
+		// Godoc subtitle: "    // " + Doc + "\n" = 8 + len(Doc)
+		if s.Doc != "" {
+			cost += 8 + len(s.Doc)
+		}
+		// Struct/interface field block: "    " + Signature + "\n" (when HasFields)
+		if s.HasFields() {
+			cost += 5 + len(s.Signature)
+		}
+	}
+	return cost
 }
 
 // promoteFieldExpansion upgrades up to 10 top-ranked DetailLevel-2 files to

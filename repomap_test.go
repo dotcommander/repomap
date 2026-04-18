@@ -365,9 +365,10 @@ func TestFormatMap_TokenBudget(t *testing.T) {
 	out := FormatMap(files, 3, false, false)
 	assert.NotEmpty(t, out)
 
-	// Footer must appear because not all content fits.
-	assert.Contains(t, out, "symbols across", "truncated output must contain footer")
-	assert.Contains(t, out, "showing top", "truncated output must contain 'showing top N'")
+	// Footer must appear because not all content fits. v0.7.0 format: omission
+	// count + recovery hint.
+	assert.Contains(t, out, "files omitted", "truncated output must contain omission footer")
+	assert.Contains(t, out, "increase -t", "truncated output must contain recovery hint")
 }
 
 // TestFormatMap_Empty verifies that an empty slice returns "".
