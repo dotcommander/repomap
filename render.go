@@ -245,6 +245,70 @@ func formatFileBlockCompact(f RankedFile, topTypes map[string]bool) string {
 	return b.String()
 }
 
+// formatFileBlockDefault renders the enriched default block for an LLM consumer:
+// exported symbol names + signatures + godoc first line + exported struct fields.
+// Symbols are ordered by renderKindWeight descending, then alphabetically for ties.
+// Unexported symbols are omitted.
+func formatFileBlockDefault(f RankedFile) string {
+	var b strings.Builder
+	fmt.Fprint(&b, formatFileLine(f))
+
+	// Sort symbols: high renderKindWeight first, then alphabetically within the same weight.
+	syms := make([]Symbol, len(f.Symbols))
+	copy(syms, f.Symbols)
+	slices.SortStableFunc(syms, func(a, b Symbol) int {
+		wa, wb := renderKindWeight(a.Kind, a.Exported), renderKindWeight(b.Kind, b.Exported)
+		if wa != wb {
+			return wb - wa // descending by weight
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	for _, s := range syms {
+		if !s.Exported {
+			continue
+		}
+		var line string
+		switch {
+		case s.Kind == "method" && s.Receiver != "":
+			line = fmt.Sprintf("  func (%s) %s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s))
+		case s.Signature != "" && s.Signature != "{}":
+			line = fmt.Sprintf("  %s %s%s%s", kindKeyword(s.Kind), s.Name, s.Signature, annotationTag(s))
+		default:
+			line = fmt.Sprintf("  %s %s%s", kindKeyword(s.Kind), s.Name, annotationTag(s))
+		}
+		fmt.Fprintln(&b, line)
+		if s.Doc != "" {
+			fmt.Fprintf(&b, "    // %s\n", s.Doc)
+		}
+	}
+	fmt.Fprint(&b, "\n")
+	return b.String()
+}
+
+// kindKeyword maps a symbol kind to its Go syntax keyword for display.
+// Unknown kinds fall back to the raw kind string so output is never empty.
+func kindKeyword(kind string) string {
+	switch kind {
+	case "function", "fn":
+		return "func"
+	case "struct", "class":
+		return "type"
+	case "interface":
+		return "type"
+	case "type":
+		return "type"
+	case "method":
+		return "func"
+	case "constant", "const":
+		return "const"
+	case "variable", "var", "static":
+		return "var"
+	default:
+		return kind
+	}
+}
+
 // formatFileHeaderOnly returns a minimal block for files with no exported symbols.
 func formatFileHeaderOnly(f RankedFile) string {
 	var b strings.Builder
@@ -257,22 +321,17 @@ func formatFileHeaderOnly(f RankedFile) string {
 }
 
 // formatDetail renders the file at its assigned DetailLevel.
+// DetailLevel 2 and 3 both dispatch to formatFileBlockDefault (enriched default).
+// DetailLevel 3 aliasing DetailLevel 2 is intentional for v0.7.0;
+// distinction deferred to v0.8.0 (e.g. unexported fields at level 3).
 func (f RankedFile) formatDetail() string {
 	switch f.DetailLevel {
 	case 0:
 		return formatFileHeaderOnly(f)
 	case 1:
 		return formatFileBlockSummary(f)
-	case 2:
-		return formatFileBlockCompact(f, nil)
-	case 3:
-		top := make(map[string]bool)
-		for _, s := range f.Symbols {
-			if s.HasFields() {
-				top[s.Name] = true
-			}
-		}
-		return formatFileBlockCompact(f, top)
+	case 2, 3:
+		return formatFileBlockDefault(f)
 	default:
 		return ""
 	}

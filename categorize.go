@@ -89,6 +89,29 @@ func symbolCategory(path string, s Symbol) string {
 	return "other"
 }
 
+// renderKindWeight returns the display-ordering priority for a symbol within a file.
+// Higher weight = rendered first. Exported symbols always outrank unexported.
+// Weights reflect architectural information density for LLM consumption.
+func renderKindWeight(kind string, exported bool) int {
+	if !exported {
+		return 1
+	}
+	switch kind {
+	case "struct", "interface":
+		return 10
+	case "type":
+		return 8
+	case "function", "fn":
+		return 6
+	case "method":
+		return 5
+	case "constant", "const", "variable", "var", "static":
+		return 3
+	default:
+		return 2
+	}
+}
+
 // categorizeByKind groups symbols by their category key.
 func categorizeByKind(path string, syms []Symbol) map[string][]Symbol {
 	m := make(map[string][]Symbol)

@@ -499,7 +499,7 @@ func TestFormatMap_Verbose(t *testing.T) {
 	makeFile := func(path string, nSymbols int) RankedFile {
 		syms := make([]Symbol, nSymbols)
 		for i := range nSymbols {
-			syms[i] = Symbol{Name: fmt.Sprintf("Symbol%d", i), Kind: "function"}
+			syms[i] = Symbol{Name: fmt.Sprintf("Symbol%d", i), Kind: "function", Exported: true}
 		}
 		return RankedFile{
 			FileSymbols: &FileSymbols{Path: path, Symbols: syms},
@@ -512,15 +512,16 @@ func TestFormatMap_Verbose(t *testing.T) {
 		makeFile("small.go", 2),
 	}
 
-	// Compressed mode should have "..." for truncation
-	compressed := FormatMap(files, 8192, false, false)
-	assert.Contains(t, compressed, "...")
-	assert.Contains(t, compressed, "(10 total)")
+	// Default (budget) mode shows exported symbol names directly (no category summaries).
+	defaultOut := FormatMap(files, 8192, false, false)
+	assert.Contains(t, defaultOut, "Symbol0")
+	assert.Contains(t, defaultOut, "Symbol9")
 
-	// Verbose mode should show all symbols without "..."
+	// Verbose mode shows all symbols grouped by category.
 	verbose := FormatMap(files, 8192, true, false)
-	assert.NotContains(t, verbose, "...")
-	assert.Contains(t, verbose, "Symbol9") // Last symbol should be visible
+	assert.Contains(t, verbose, "Symbol9") // Last symbol must be visible
+	// Verbose uses group labels, not the enriched default format.
+	assert.Contains(t, verbose, "funcs:")
 }
 
 // TestParseGoFile_PackageMain verifies that main() and init() are captured
@@ -574,7 +575,7 @@ func TestFormatMap_ZeroSymbolFiles(t *testing.T) {
 	withSymbols := RankedFile{
 		FileSymbols: &FileSymbols{
 			Path:    "core/types.go",
-			Symbols: []Symbol{{Name: "Agent", Kind: "struct"}},
+			Symbols: []Symbol{{Name: "Agent", Kind: "struct", Exported: true}},
 		},
 		Score: 30,
 	}

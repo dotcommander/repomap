@@ -93,10 +93,10 @@ func TestDocSubtitleRendering_FormatMap(t *testing.T) {
 		assert.NotContains(t, out, "//")
 	})
 
-	t.Run("compact mode no subtitle", func(t *testing.T) {
+	t.Run("default mode emits subtitle", func(t *testing.T) {
 		t.Parallel()
 		out := FormatMap(files, 0, false, false)
-		assert.NotContains(t, out, "//")
+		assert.Contains(t, out, "// starts the main server loop")
 	})
 }
 
