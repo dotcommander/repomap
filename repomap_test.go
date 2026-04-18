@@ -317,7 +317,8 @@ func TestFormatMap(t *testing.T) {
 	}
 	low := RankedFile{
 		FileSymbols: &FileSymbols{
-			Path: "util/misc.go",
+			Path:     "util/misc.go",
+			Language: "go",
 			Symbols: []Symbol{
 				{Name: "Helper", Kind: "function"},
 			},

@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -324,4 +325,157 @@ func TestFormatFileBlockDefault(t *testing.T) {
 			}
 		})
 	}
+}
+
+// makeRankedFileWithLang is like makeRankedFile but allows specifying the language.
+func makeRankedFileWithLang(path, lang string, detailLevel int, syms []Symbol) RankedFile {
+	return RankedFile{
+		FileSymbols: &FileSymbols{
+			Path:     path,
+			Language: lang,
+			Symbols:  syms,
+		},
+		DetailLevel: detailLevel,
+		Score:       10,
+	}
+}
+
+// TestDocTag verifies that docTag returns "" for Go files and " [doc: n/a]" for all others.
+func TestDocTag(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		lang string
+		want string
+	}{
+		{"go file: no tag", "go", ""},
+		{"php file: doc n/a tag", "php", " [doc: n/a]"},
+		{"typescript file: doc n/a tag", "typescript", " [doc: n/a]"},
+		{"python file: doc n/a tag", "python", " [doc: n/a]"},
+		{"rust file: doc n/a tag", "rust", " [doc: n/a]"},
+		{"empty/unknown language: doc n/a tag", "", " [doc: n/a]"},
+		{"jsx file: doc n/a tag", "jsx", " [doc: n/a]"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := makeRankedFileWithLang("file.ext", tc.lang, 2, nil)
+			assert.Equal(t, tc.want, docTag(f))
+		})
+	}
+}
+
+// TestFormatFileBlockDefault_DocNATag verifies that the [doc: n/a] tag appears on
+// non-Go file headers and is absent on Go file headers.
+func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
+	t.Parallel()
+
+	sym := Symbol{Name: "Handle", Kind: "function", Signature: "()", Exported: true}
+
+	t.Run("go file header: no doc n/a tag", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("server/handler.go", "go", 2, []Symbol{sym})
+		out := formatFileBlockDefault(f)
+		assert.Contains(t, out, "server/handler.go")
+		assert.NotContains(t, out, "[doc: n/a]")
+	})
+
+	t.Run("php file header: doc n/a tag present", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("src/Controller.php", "php", 2, []Symbol{sym})
+		out := formatFileBlockDefault(f)
+		assert.Contains(t, out, "src/Controller.php")
+		assert.Contains(t, out, "[doc: n/a]")
+	})
+
+	t.Run("typescript file header: doc n/a tag present", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("lib/utils.ts", "typescript", 2, []Symbol{sym})
+		out := formatFileBlockDefault(f)
+		assert.Contains(t, out, "lib/utils.ts")
+		assert.Contains(t, out, "[doc: n/a]")
+	})
+
+	t.Run("empty language: doc n/a tag present", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("misc/script", "", 2, []Symbol{sym})
+		out := formatFileBlockDefault(f)
+		assert.Contains(t, out, "misc/script")
+		assert.Contains(t, out, "[doc: n/a]")
+	})
+
+	t.Run("doc n/a tag on same header line as path", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("app/router.php", "php", 2, []Symbol{sym})
+		// The file header is always the first line; verify path and tag appear together.
+		line := formatFileLineDefault(f)
+		assert.Contains(t, line, "app/router.php", "header line should contain file path")
+		assert.Contains(t, line, "[doc: n/a]", "header line should contain doc tag")
+	})
+
+	t.Run("doc n/a tag combined with imported-by badge", func(t *testing.T) {
+		t.Parallel()
+		f := makeRankedFileWithLang("lib/base.rb", "ruby", 2, []Symbol{sym})
+		f.ImportedBy = 3
+		out := formatFileBlockDefault(f)
+		// Header should contain path, imported-by badge, and doc n/a tag.
+		assert.Contains(t, out, "lib/base.rb")
+		assert.Contains(t, out, "imported by 3")
+		assert.Contains(t, out, "[doc: n/a]")
+	})
+}
+
+// TestFormatFileBlockDefault_GoDocEndToEnd verifies the full pipeline from
+// parsing a Go source with a doc comment through to rendered output.
+func TestFormatFileBlockDefault_GoDocEndToEnd(t *testing.T) {
+	t.Parallel()
+
+	const src = `package mypkg
+
+// Foo returns the bar value for the given key.
+func Foo(key string) int { return 0 }
+
+// Bar is an exported type.
+type Bar struct{ X int }
+`
+
+	// Write source to a temp file so ParseGoFile can read it from disk.
+	dir := t.TempDir()
+	srcPath := dir + "/foo.go"
+	require.NoError(t, os.WriteFile(srcPath, []byte(src), 0o600))
+
+	fs, err := ParseGoFile(srcPath, dir)
+	require.NoError(t, err)
+	require.NotNil(t, fs)
+
+	var fooDoc, barDoc string
+	for _, s := range fs.Symbols {
+		switch s.Name {
+		case "Foo":
+			fooDoc = s.Doc
+		case "Bar":
+			barDoc = s.Doc
+		}
+	}
+
+	// Verify the parser captured doc comments.
+	assert.NotEmpty(t, fooDoc, "Foo should have a doc comment")
+	assert.NotEmpty(t, barDoc, "Bar should have a doc comment")
+
+	rf := RankedFile{
+		FileSymbols: fs,
+		DetailLevel: 2,
+		Score:       10,
+	}
+
+	out := formatFileBlockDefault(rf)
+
+	// File header must not carry [doc: n/a] for Go.
+	assert.NotContains(t, out, "[doc: n/a]")
+
+	// Doc comment must appear beneath the symbol line.
+	assert.Contains(t, out, "// "+fooDoc, "rendered output should contain Foo doc line")
+	assert.Contains(t, out, "// "+barDoc, "rendered output should contain Bar doc line")
 }

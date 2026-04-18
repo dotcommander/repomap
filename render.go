@@ -245,13 +245,36 @@ func formatFileBlockCompact(f RankedFile, topTypes map[string]bool) string {
 	return b.String()
 }
 
+// docTag returns a parenthetical tag annotating whether doc-line extraction
+// is available for this file's language. Go is fully supported; all other
+// languages omit doc lines, and their file header carries "[doc: n/a]".
+func docTag(f RankedFile) string {
+	if f.Language == "go" {
+		return ""
+	}
+	return " [doc: n/a]"
+}
+
+// formatFileLineDefault returns the header line for the enriched default block,
+// appending [doc: n/a] for non-Go files where doc extraction is unavailable.
+func formatFileLineDefault(f RankedFile) string {
+	tag := docTag(f)
+	if tag == "" {
+		return formatFileLine(f)
+	}
+	// Insert docTag before the trailing newline.
+	base := formatFileLine(f)
+	// base ends with "\n"; trim it, append tag, restore newline.
+	return strings.TrimSuffix(base, "\n") + tag + "\n"
+}
+
 // formatFileBlockDefault renders the enriched default block for an LLM consumer:
 // exported symbol names + signatures + godoc first line + exported struct fields.
 // Symbols are ordered by renderKindWeight descending, then alphabetically for ties.
 // Unexported symbols are omitted.
 func formatFileBlockDefault(f RankedFile) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLineDefault(f))
 
 	// Sort symbols: high renderKindWeight first, then alphabetically within the same weight.
 	syms := make([]Symbol, len(f.Symbols))
