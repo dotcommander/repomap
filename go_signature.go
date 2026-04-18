@@ -5,31 +5,18 @@ import (
 	"strings"
 )
 
-// funcSignature builds "(param, param, ...) ReturnType" from a FuncType.
-// Uses param names only when the full signature with types exceeds 40 chars;
-// otherwise includes types for clarity.
+// funcSignature builds "(param type, param type, ...) ReturnType" from a FuncType.
+// Always includes full type annotations — LLMs need parameter types to write
+// correct call sites; names-only signatures are insufficient.
 func funcSignature(ft *ast.FuncType) string {
-	paramsShort := paramList(ft.Params, false)
+	params := paramList(ft.Params, true)
 	returnStr := returnString(ft.Results)
 
-	short := "(" + paramsShort + ")"
+	sig := "(" + params + ")"
 	if returnStr != "" {
-		short += " " + returnStr
+		sig += " " + returnStr
 	}
-
-	if len(short) <= 40 {
-		// Try with types — if it still fits, prefer the richer form.
-		paramsLong := paramList(ft.Params, true)
-		long := "(" + paramsLong + ")"
-		if returnStr != "" {
-			long += " " + returnStr
-		}
-		if len(long) <= 40 {
-			return long
-		}
-	}
-
-	return short
+	return sig
 }
 
 // paramList formats parameters. If withTypes is true, includes type

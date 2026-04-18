@@ -88,12 +88,16 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 
 // enrichedCost estimates the byte length of a file's rendered output under the
 // v0.7.0 enriched-default format (Item 1 in v0.7.0-output-quality.md): for each
-// exported symbol, a name+signature line, optional godoc subtitle, and an
-// optional field block for structs/interfaces. Unexported symbols contribute
-// zero since the default renderer excludes them.
+// exported symbol, a name+signature line and an optional godoc subtitle.
+// Unexported symbols contribute zero since the default renderer excludes them.
 //
-// The estimate MUST track formatFileBlockDefault's actual output within ±10%
-// once Item 1 lands. See TestEnrichedCost_MatchesRenderer.
+// Struct/interface symbols render their compact field list inline on the name line
+// (e.g. "  type Config{Name, ID}") rather than as a separate field block.
+// enrichedCost reflects this: it counts the signature once in the name-line cost
+// and does NOT add a separate field-block term.
+//
+// The estimate MUST track formatFileBlockDefault's actual output within ±10%.
+// See TestEnrichedCost_MatchesRenderer.
 func enrichedCost(syms []Symbol) int {
 	cost := 0
 	for _, s := range syms {
@@ -101,16 +105,17 @@ func enrichedCost(syms []Symbol) int {
 			continue
 		}
 		// Name line: "  " + kindKeyword + " " + Name + Signature + "\n"
-		// kindKeyword worst-case is "func"/"type"/"const" (~4 bytes). Use 6 as constant
-		// slack: 2 indent + 4 keyword approx + 1 space + 1 newline = 8.
+		// kindKeyword is at most 5 bytes ("const"). Use 8 as total overhead:
+		// 2 (indent) + 4 (keyword approx) + 1 (space) + 1 (newline) = 8.
 		cost += 8 + len(s.Name) + len(s.Signature)
+		// Methods render as "  func (*Receiver) Name(sig)\n".
+		// The receiver adds "(*" + Receiver + ") " = len(Receiver) + 4 bytes beyond the base.
+		if s.Kind == "method" && s.Receiver != "" {
+			cost += len(s.Receiver) + 4
+		}
 		// Godoc subtitle: "    // " + Doc + "\n" = 8 + len(Doc)
 		if s.Doc != "" {
 			cost += 8 + len(s.Doc)
-		}
-		// Struct/interface field block: "    " + Signature + "\n" (when HasFields)
-		if s.HasFields() {
-			cost += 5 + len(s.Signature)
 		}
 	}
 	return cost

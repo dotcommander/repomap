@@ -66,18 +66,21 @@ func TestEnrichedCost_DocAdded(t *testing.T) {
 	assert.GreaterOrEqual(t, withDoc, withoutDoc+8+len(doc))
 }
 
-// TestEnrichedCost_StructFields verifies that a struct with fields adds field-block cost.
+// TestEnrichedCost_StructFields verifies that a struct's compact field list is counted
+// as part of the name line only — no separate field-block term.
+//
+// formatFileBlockDefault renders struct symbols inline: "  type Config{Name, ID}\n"
+// The signature appears once on the name line; enrichedCost must not double-count it.
 func TestEnrichedCost_StructFields(t *testing.T) {
 	t.Parallel()
-	sig := "{ A int\nB string }"
-	// HasFields returns true when Kind is struct/interface, Signature non-empty and not "{}".
+	// Use the compact field-name format that parser_go.go actually produces.
+	sig := "{Name, ID}"
 	sym := mkSym("Config", "struct", sig, "", true)
 	require.True(t, sym.HasFields(), "test setup: HasFields must be true for this symbol")
 
-	// A struct symbol contributes: name line + field block.
-	// name line: 8 + len(Name) + len(Signature)
-	// field block: 5 + len(Signature)
-	expected := 8 + len(sym.Name) + len(sig) + 5 + len(sig)
+	// Name line only: 8 + len(Name) + len(Signature)
+	// No separate field block — the signature appears inline on the name line.
+	expected := 8 + len(sym.Name) + len(sig)
 	assert.Equal(t, expected, enrichedCost([]Symbol{sym}))
 }
 
@@ -207,25 +210,75 @@ func TestBudgetAllOrNothing_NoPartialLevel2(t *testing.T) {
 	assert.Equal(t, 0, level2Count, "no file should get DetailLevel=2 when enriched cost exceeds budget")
 }
 
-// TestEnrichedCost_MatchesRenderer is a forward-looking regression test that
-// verifies enrichedCost stays within ±10% of formatFileBlockDefault's actual
-// output length once Item 1 lands.
+// TestEnrichedCost_MatchesRenderer verifies enrichedCost stays within ±10% of
+// formatFileBlockDefault's actual output length. This is the regression guard
+// that ensures budget decisions match what the renderer actually produces.
 //
-// TODO(v0.7.0-item1): remove t.Skip when formatFileBlockDefault is implemented.
+// Three symbol mixes are tested: functions only, functions+doc, and a struct+func mix.
+// The path overhead (e.g. "test.go\n") is excluded from the comparison because
+// enrichedCost estimates symbol cost only — the caller adds the path separately.
 func TestEnrichedCost_MatchesRenderer(t *testing.T) {
-	t.Skip("activate when Item 1 lands — see v0.7.0-output-quality.md §1")
 	t.Parallel()
 
-	// Once Item 1 exists, construct a RankedFile with known exported symbols,
-	// render it via formatFileBlockDefault(f), and assert:
-	//   len(rendered) >= int(float64(enrichedCost(f.Symbols)) * 0.90)
-	//   len(rendered) <= int(float64(enrichedCost(f.Symbols)) * 1.10)
-	//
-	// Example setup (uncomment and adapt when Item 1 merges):
-	//
-	//   f := mkRankedFunc("test.go", 3, 15, 10)
-	//   rendered := formatFileBlockDefault(f)
-	//   cost := enrichedCost(f.Symbols)
-	//   assert.GreaterOrEqual(t, len(rendered), int(float64(cost)*0.90))
-	//   assert.LessOrEqual(t, len(rendered), int(float64(cost)*1.10))
+	// helper strips the first line (file path header) from formatFileBlockDefault output
+	// so we compare only the symbol lines against enrichedCost.
+	symbolLines := func(rendered string) string {
+		idx := strings.IndexByte(rendered, '\n')
+		if idx < 0 {
+			return rendered
+		}
+		return rendered[idx+1:]
+	}
+
+	checkWithin10Pct := func(t *testing.T, syms []Symbol, path string) {
+		t.Helper()
+		f := RankedFile{FileSymbols: &FileSymbols{Path: path, Language: "go", Symbols: syms}}
+		rendered := symbolLines(formatFileBlockDefault(f))
+		cost := enrichedCost(syms)
+		actual := len(rendered)
+		lo := int(float64(cost) * 0.90)
+		hi := int(float64(cost) * 1.10)
+		assert.GreaterOrEqual(t, actual, lo,
+			"rendered len %d is below 90%% of enrichedCost %d (lo=%d)", actual, cost, lo)
+		assert.LessOrEqual(t, actual, hi,
+			"rendered len %d exceeds 110%% of enrichedCost %d (hi=%d)", actual, cost, hi)
+	}
+
+	t.Run("functions only", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			mkSym("Run", "function", "(ctx context.Context) error", "", true),
+			mkSym("Stop", "function", "()", "", true),
+			mkSym("New", "function", "(cfg Config) *Server", "", true),
+		}
+		checkWithin10Pct(t, syms, "server.go")
+	})
+
+	t.Run("functions with doc", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			mkSym("Start", "function", "(addr string) error", "listens and serves HTTP", true),
+			mkSym("Shutdown", "function", "(ctx context.Context) error", "gracefully stops the server", true),
+		}
+		checkWithin10Pct(t, syms, "http.go")
+	})
+
+	t.Run("struct and function mix", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			mkSym("Config", "struct", "{Host, Port}", "holds server settings", true),
+			mkSym("New", "function", "(cfg Config) *Server", "creates a new server", true),
+			mkSym("helper", "function", "()", "", false), // unexported — excluded from both sides
+		}
+		checkWithin10Pct(t, syms, "pkg.go")
+	})
+
+	t.Run("mixed with receiver method", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			{Name: "Build", Kind: "method", Receiver: "*Builder", Signature: "(opts Options) error", Exported: true},
+			mkSym("Options", "struct", "{Timeout, MaxRetry}", "", true),
+		}
+		checkWithin10Pct(t, syms, "builder.go")
+	})
 }
