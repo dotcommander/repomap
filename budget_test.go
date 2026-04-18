@@ -66,15 +66,15 @@ func TestEnrichedCost_DocAdded(t *testing.T) {
 	assert.GreaterOrEqual(t, withDoc, withoutDoc+8+len(doc))
 }
 
-// TestEnrichedCost_StructFields verifies that a struct's compact field list is counted
+// TestEnrichedCost_StructFields verifies that a struct's typed field list is counted
 // as part of the name line only — no separate field-block term.
 //
-// formatFileBlockDefault renders struct symbols inline: "  type Config{Name, ID}\n"
+// formatFileBlockDefault renders struct symbols inline: "  type Config{Name string, ID int}\n"
 // The signature appears once on the name line; enrichedCost must not double-count it.
 func TestEnrichedCost_StructFields(t *testing.T) {
 	t.Parallel()
-	// Use the compact field-name format that parser_go.go actually produces.
-	sig := "{Name, ID}"
+	// Use the typed field format that parser_go.go now produces (fields with types).
+	sig := "{Name string, ID int}"
 	sym := mkSym("Config", "struct", sig, "", true)
 	require.True(t, sym.HasFields(), "test setup: HasFields must be true for this symbol")
 
@@ -266,7 +266,7 @@ func TestEnrichedCost_MatchesRenderer(t *testing.T) {
 	t.Run("struct and function mix", func(t *testing.T) {
 		t.Parallel()
 		syms := []Symbol{
-			mkSym("Config", "struct", "{Host, Port}", "holds server settings", true),
+			mkSym("Config", "struct", "{Host string, Port int}", "holds server settings", true),
 			mkSym("New", "function", "(cfg Config) *Server", "creates a new server", true),
 			mkSym("helper", "function", "()", "", false), // unexported — excluded from both sides
 		}
@@ -277,7 +277,7 @@ func TestEnrichedCost_MatchesRenderer(t *testing.T) {
 		t.Parallel()
 		syms := []Symbol{
 			{Name: "Build", Kind: "method", Receiver: "*Builder", Signature: "(opts Options) error", Exported: true},
-			mkSym("Options", "struct", "{Timeout, MaxRetry}", "", true),
+			mkSym("Options", "struct", "{Timeout time.Duration, MaxRetry int}", "", true),
 		}
 		checkWithin10Pct(t, syms, "builder.go")
 	})

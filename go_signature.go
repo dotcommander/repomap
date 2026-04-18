@@ -124,6 +124,7 @@ func typeString(expr ast.Expr) string {
 
 // exportedNames extracts exported field/method names from a FieldList.
 // Returns a compact representation like "{Name1, Name2}" or "{}" if empty.
+// Used by interfaceMethods where type annotations are not applicable.
 func exportedNames(fl *ast.FieldList) string {
 	if fl == nil {
 		return "{}"
@@ -152,8 +153,42 @@ func exportedNames(fl *ast.FieldList) string {
 	return "{" + strings.Join(names, ", ") + "}"
 }
 
+// exportedFieldsWithTypes extracts exported struct field names with their types.
+// Returns a compact representation like "{Name string, ID int}" or "{}" if empty.
+// Embedded exported types are included by name only (no type suffix).
+// Multiple names sharing one type (e.g. "X, Y int") are expanded to individual
+// "Name type" entries so LLMs see the full data shape without ambiguity.
+func exportedFieldsWithTypes(fl *ast.FieldList) string {
+	if fl == nil {
+		return "{}"
+	}
+
+	var fields []string
+	for _, field := range fl.List {
+		typ := typeString(field.Type)
+		// Embedded type (no field names) — include exported embedding by name only.
+		if len(field.Names) == 0 {
+			if ident, ok := field.Type.(*ast.Ident); ok && isExported(ident.Name) {
+				fields = append(fields, ident.Name)
+			}
+			continue
+		}
+		// Named fields: emit "Name type" for each exported name.
+		for _, name := range field.Names {
+			if isExported(name.Name) {
+				fields = append(fields, name.Name+" "+typ)
+			}
+		}
+	}
+
+	if len(fields) == 0 {
+		return "{}"
+	}
+	return "{" + strings.Join(fields, ", ") + "}"
+}
+
 func structFields(st *ast.StructType) string {
-	return exportedNames(st.Fields)
+	return exportedFieldsWithTypes(st.Fields)
 }
 
 func interfaceMethods(it *ast.InterfaceType) string {

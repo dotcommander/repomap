@@ -217,13 +217,41 @@ func TestFormatFileBlockDefault(t *testing.T) {
 			shouldNotContain: []string{"{}"},
 		},
 		{
-			name: "struct with compact field signature rendered inline",
+			name: "struct with typed field signature rendered inline",
 			syms: []Symbol{
-				{Name: "Config", Kind: "struct", Signature: "{Host, Port}", Exported: true},
+				{Name: "Config", Kind: "struct", Signature: "{Host string, Port int}", Exported: true},
 			},
-			// Signature != "" and != "{}", so rendered inline: "  type Config{Host, Port}"
-			shouldContain:    []string{"type Config", "{Host, Port}"},
+			// Signature != "" and != "{}", so rendered inline: "  type Config{Host string, Port int}"
+			shouldContain:    []string{"type Config", "{Host string, Port int}"},
 			shouldNotContain: nil,
+		},
+		{
+			// Parser emits only exported fields; unexported fields are dropped at parse time.
+			// The Signature stored on the Symbol already contains only exported fields.
+			// The renderer shows whatever is in Signature — this test verifies the render path.
+			name: "struct signature with only exported fields rendered correctly",
+			syms: []Symbol{
+				{Name: "Server", Kind: "struct", Signature: "{Host string, Port int}", Exported: true},
+			},
+			shouldContain:    []string{"type Server", "Host string", "Port int"},
+			shouldNotContain: []string{"unexported"},
+		},
+		{
+			name: "struct with complex types in fields",
+			syms: []Symbol{
+				{Name: "RankedFile", Kind: "struct", Signature: "{Tags []string, Meta map[string]int, Next *Node}", Exported: true},
+			},
+			shouldContain:    []string{"type RankedFile", "Tags []string", "Meta map[string]int", "Next *Node"},
+			shouldNotContain: nil,
+		},
+		{
+			name: "struct with empty fields: no field suffix",
+			syms: []Symbol{
+				{Name: "Empty", Kind: "struct", Signature: "{}", Exported: true},
+			},
+			// Signature == "{}" → default branch: "  type Empty" (no field block appended)
+			shouldContain:    []string{"type Empty"},
+			shouldNotContain: []string{"{}"},
 		},
 		{
 			name: "type alias rendered with type keyword",

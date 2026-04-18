@@ -91,8 +91,8 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 // exported symbol, a name+signature line and an optional godoc subtitle.
 // Unexported symbols contribute zero since the default renderer excludes them.
 //
-// Struct/interface symbols render their compact field list inline on the name line
-// (e.g. "  type Config{Name, ID}") rather than as a separate field block.
+// Struct/interface symbols render their typed field list inline on the name line
+// (e.g. "  type Config{Name string, ID int}") rather than as a separate field block.
 // enrichedCost reflects this: it counts the signature once in the name-line cost
 // and does NOT add a separate field-block term.
 //
