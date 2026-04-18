@@ -77,7 +77,7 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	}
 
 	cmd.Flags().IntVarP(&tokens, "tokens", "t", 2048, "Token budget")
-	cmd.Flags().StringVarP(&format, "format", "f", "compact", "Output format: compact, verbose, detail, lines, xml")
+	cmd.Flags().StringVarP(&format, "format", "f", "", "Output format: compact (orientation: names only), verbose, detail, lines, xml (default: enriched — signatures + godoc + fields)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 	cmd.Flags().BoolVar(&jsonLegacy, "json-legacy", false, "Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release.")
 
@@ -109,6 +109,8 @@ func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool)
 
 	var out string
 	switch format {
+	case "compact":
+		out = m.StringCompact() // lean orientation: path + exported names only
 	case "verbose":
 		out = m.StringVerbose()
 	case "detail":
@@ -118,7 +120,7 @@ func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool)
 	case "xml":
 		out = m.StringXML()
 	default:
-		out = m.String()
+		out = m.String() // enriched default: signatures + godoc + fields
 	}
 	fmt.Print(out)
 	return nil
@@ -235,6 +237,9 @@ func renderCallsOutput(
 		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit))
 	case format == "detail":
 		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit))
+	case format == "compact":
+		// lean orientation — callers not shown in compact mode.
+		fmt.Fprint(w, m.StringCompact())
 	case format == "lines":
 		// lines format doesn't integrate callers — fall back to standard.
 		fmt.Fprint(w, m.StringLines())
@@ -242,7 +247,7 @@ func renderCallsOutput(
 		// xml format doesn't integrate callers — fall back to standard.
 		fmt.Fprint(w, m.StringXML())
 	default:
-		// compact
+		// enriched default with callers.
 		maxTokens := m.Config().MaxTokens
 		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit))
 	}

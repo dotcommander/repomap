@@ -65,6 +65,80 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool) string {
 	return b.String()
 }
 
+// FormatMapCompact formats ranked files into the lean orientation mode:
+// path + exported symbol names only, NO signatures, NO godoc, NO struct fields.
+// Budget is applied using compactCost so more files fit vs. the enriched default.
+// Returns empty string if no files have symbols.
+func FormatMapCompact(files []RankedFile, maxTokens int) string {
+	totalFiles, totalSymbols := countTotals(files)
+	if totalFiles == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
+
+	// Budget mode using compact cost — more files fit vs. enriched default.
+	files = BudgetFilesCompact(files, maxTokens)
+
+	var headerOnly []string
+	shownFiles := 0
+	for _, f := range files {
+		if f.DetailLevel < 0 {
+			continue
+		}
+		if f.DetailLevel == 0 && len(f.Symbols) == 0 && f.Tag == "" {
+			headerOnly = append(headerOnly, f.Path)
+			shownFiles++
+			continue
+		}
+		switch f.DetailLevel {
+		case 0:
+			fmt.Fprint(&b, formatFileHeaderOnly(f))
+		case 1:
+			fmt.Fprint(&b, formatFileBlockSummary(f))
+		default:
+			fmt.Fprint(&b, formatFileBlockLean(f))
+		}
+		shownFiles++
+	}
+
+	if len(headerOnly) > 0 {
+		fmt.Fprint(&b, formatCollapsedPaths(headerOnly))
+	}
+
+	if shownFiles < totalFiles {
+		omitted := totalFiles - shownFiles
+		fmt.Fprintf(&b, "(%d files omitted — increase -t)\n", omitted)
+	}
+
+	return b.String()
+}
+
+// formatFileBlockLean renders the lean orientation block for -f compact:
+// path + exported symbol names only — no signatures, no godoc, no struct fields.
+// Symbols are grouped as comma-separated names on a single indented line per category
+// (using existing orderedGroups machinery) to keep the output scannable.
+func formatFileBlockLean(f RankedFile) string {
+	var b strings.Builder
+	fmt.Fprint(&b, formatFileLine(f))
+
+	for _, g := range orderedGroups(f.Path, f.Symbols) {
+		names := make([]string, 0, len(g.syms))
+		for _, s := range g.syms {
+			if s.Exported {
+				names = append(names, s.Name)
+			}
+		}
+		slices.Sort(names)
+		if len(names) > 0 {
+			fmt.Fprintf(&b, "  %s: %s\n", g.label, strings.Join(names, ", "))
+		}
+	}
+	fmt.Fprint(&b, "\n")
+	return b.String()
+}
+
 // countTotals returns the total number of files and the total symbol count.
 func countTotals(files []RankedFile) (int, int) {
 	nSymbols := 0

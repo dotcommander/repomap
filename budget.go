@@ -121,6 +121,103 @@ func enrichedCost(syms []Symbol) int {
 	return cost
 }
 
+// compactCost estimates the byte length of a file's rendered output under the
+// lean orientation mode (m.StringCompact / -f compact): for each exported symbol,
+// a single name-only line ("  kindKeyword Name\n"). No signatures, no doc, no fields.
+// Unexported symbols are excluded by the compact renderer and contribute zero cost.
+//
+// compactCost is strictly less than enrichedCost for any file with exported symbols,
+// so compact mode fits more files within the same token budget.
+func compactCost(syms []Symbol) int {
+	cost := 0
+	for _, s := range syms {
+		if !s.Exported {
+			continue
+		}
+		// "  " + kindKeyword (≤5 bytes) + " " + Name + "\n"
+		// 8 bytes of fixed overhead (indent, keyword approx, space, newline).
+		cost += 8 + len(s.Name)
+	}
+	return cost
+}
+
+// BudgetFilesCompact assigns DetailLevel to each RankedFile using compactCost estimates,
+// matching the lean orientation renderer (path + exported symbol names only).
+// When maxTokens is 0, all files get DetailLevel 2 (unlimited mode).
+//
+// This is separate from BudgetFiles (which uses enrichedCost) so compact-mode callers
+// get accurate budgeting without rewriting the enriched budget loop.
+func BudgetFilesCompact(ranked []RankedFile, maxTokens int) []RankedFile {
+	return budgetFilesWithCost(ranked, maxTokens, compactCost)
+}
+
+// budgetFilesWithCost is the shared budget loop parameterised by cost function.
+// BudgetFiles (enriched default) and BudgetFilesCompact (lean orientation) both use it.
+func budgetFilesWithCost(ranked []RankedFile, maxTokens int, costFn func([]Symbol) int) []RankedFile {
+	if len(ranked) == 0 {
+		return ranked
+	}
+
+	// Unlimited mode: everything gets full symbols.
+	if maxTokens == 0 {
+		for i := range ranked {
+			ranked[i].DetailLevel = 2
+		}
+		return ranked
+	}
+
+	budgetBytes := maxTokens * 4
+
+	// Phase 1: Estimate header cost per file, cap at 70% of budget.
+	headerCap := budgetBytes * 70 / 100
+	headerCost := 0
+	cutoff := len(ranked)
+	for i, f := range ranked {
+		cost := len(f.Path) + 30
+		if headerCost+cost > headerCap {
+			cutoff = i
+			break
+		}
+		headerCost += cost
+	}
+
+	// Files beyond cutoff are omitted.
+	for i := cutoff; i < len(ranked); i++ {
+		ranked[i].DetailLevel = -1
+	}
+
+	// Phase 2: Walk files in rank order, assign detail levels within budget.
+	used := headerCost
+	for i := 0; i < cutoff; i++ {
+		if len(ranked[i].Symbols) == 0 {
+			ranked[i].DetailLevel = 0
+			continue
+		}
+
+		groups := countGroups(ranked[i].Path, ranked[i].Symbols)
+		summaryCost := groups * 30
+
+		// Try full detail (level 2) using the caller-supplied cost function.
+		fullCost := costFn(ranked[i].Symbols)
+		if used+fullCost <= budgetBytes {
+			ranked[i].DetailLevel = 2
+			used += fullCost
+			continue
+		}
+
+		// Fall back to summary if it fits.
+		if used+summaryCost <= budgetBytes {
+			ranked[i].DetailLevel = 1
+			used += summaryCost
+			continue
+		}
+
+		ranked[i].DetailLevel = -1
+	}
+
+	return ranked
+}
+
 // promoteFieldExpansion upgrades up to 10 top-ranked DetailLevel-2 files to
 // DetailLevel 3 (field expansion) while honoring the remaining byte budget.
 // Mutates ranked in place.

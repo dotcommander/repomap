@@ -479,3 +479,103 @@ type Bar struct{ X int }
 	assert.Contains(t, out, "// "+fooDoc, "rendered output should contain Foo doc line")
 	assert.Contains(t, out, "// "+barDoc, "rendered output should contain Bar doc line")
 }
+
+// TestFormatFileBlockLean covers the lean orientation renderer:
+// path + exported symbol names only — no signatures, no godoc, no struct fields.
+func TestFormatFileBlockLean(t *testing.T) {
+	t.Parallel()
+
+	syms := []Symbol{
+		{Name: "Run", Kind: "function", Signature: "(ctx context.Context) error", Exported: true, Doc: "starts the server"},
+		{Name: "Config", Kind: "struct", Signature: "{Host string, Port int}", Exported: true, Doc: "holds server config"},
+		{Name: "helper", Kind: "function", Signature: "(x int) bool", Exported: false, Doc: "internal only"},
+	}
+	f := makeRankedFile("server/main.go", 2, syms)
+	out := formatFileBlockLean(f)
+
+	// Path header must appear.
+	assert.Contains(t, out, "server/main.go")
+
+	// Exported symbol names must appear.
+	assert.Contains(t, out, "Run", "exported function name must appear")
+	assert.Contains(t, out, "Config", "exported struct name must appear")
+
+	// Unexported symbol must not appear.
+	assert.NotContains(t, out, "helper", "unexported symbol must be omitted")
+
+	// No signatures.
+	assert.NotContains(t, out, "context.Context", "signature must not appear in lean mode")
+	assert.NotContains(t, out, "Host string", "struct fields must not appear in lean mode")
+
+	// No godoc.
+	assert.NotContains(t, out, "//", "godoc must not appear in lean mode")
+}
+
+// TestFormatMapCompact_NamesOnly verifies FormatMapCompact renders names only (no sigs).
+func TestFormatMapCompact_NamesOnly(t *testing.T) {
+	t.Parallel()
+
+	syms := []Symbol{
+		{Name: "BudgetFiles", Kind: "function", Signature: "(ranked []RankedFile, maxTokens int) []RankedFile", Exported: true, Doc: "assigns detail levels"},
+		{Name: "RankedFile", Kind: "struct", Signature: "{Score float64, DetailLevel int}", Exported: true},
+	}
+	files := []RankedFile{makeRankedFile("budget.go", 2, syms)}
+
+	out := FormatMapCompact(files, 4096)
+
+	// Names must appear.
+	assert.Contains(t, out, "BudgetFiles")
+	assert.Contains(t, out, "RankedFile")
+
+	// Signatures and docs must not appear.
+	assert.NotContains(t, out, "ranked []RankedFile", "function signature must not appear in compact mode")
+	assert.NotContains(t, out, "Score float64", "struct fields must not appear in compact mode")
+	assert.NotContains(t, out, "assigns detail levels", "godoc must not appear in compact mode")
+	assert.NotContains(t, out, "//", "no comment lines in compact mode")
+}
+
+// TestFormatMapCompact_DefaultModeUnchanged verifies FormatMap (default) still includes
+// signatures while FormatMapCompact does not — regression guard for Items 1-4.
+func TestFormatMapCompact_DefaultModeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	syms := []Symbol{
+		{Name: "New", Kind: "function", Signature: "(cfg Config) *Server", Exported: true, Doc: "creates a server"},
+	}
+	files := []RankedFile{makeRankedFile("server.go", 2, syms)}
+
+	defaultOut := FormatMap(files, 0, false, false)
+	compactOut := FormatMapCompact(files, 4096)
+
+	// Default must include the signature.
+	assert.Contains(t, defaultOut, "(cfg Config) *Server",
+		"default mode must include function signature")
+
+	// Compact must NOT include the signature.
+	assert.NotContains(t, compactOut, "(cfg Config) *Server",
+		"compact mode must omit function signature")
+
+	// Both must include the symbol name.
+	assert.Contains(t, defaultOut, "New")
+	assert.Contains(t, compactOut, "New")
+}
+
+// TestFormatMapCompact_BudgetHonored verifies that compact mode respects the token budget.
+func TestFormatMapCompact_BudgetHonored(t *testing.T) {
+	t.Parallel()
+
+	// Create a file with many symbols.
+	syms := make([]Symbol, 20)
+	for i := range syms {
+		syms[i] = Symbol{Name: string(rune('A' + i)), Kind: "function", Signature: "(x int) error", Exported: true}
+	}
+	files := []RankedFile{makeRankedFile("big.go", 2, syms)}
+
+	// Very tight budget — should still honour it (output bytes ≤ budget*4 approximately).
+	const budget = 32 // tokens
+	out := FormatMapCompact(files, budget)
+
+	// Output must not grossly exceed budget (allow 2x for headers/overhead).
+	assert.LessOrEqual(t, len(out), budget*4*2,
+		"compact output must not grossly exceed token budget")
+}

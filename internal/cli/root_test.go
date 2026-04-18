@@ -175,3 +175,81 @@ func TestRootCmd_JSONLegacyHasNoShortForm(t *testing.T) {
 	require.NotNil(t, legacyFlag)
 	assert.Empty(t, legacyFlag.Shorthand, "--json-legacy must have no short form")
 }
+
+// TestCompactModeOrientation_NamesOnly verifies that StringCompact (the -f compact backend)
+// produces lean output (names only, no function signatures).
+func TestCompactModeOrientation_NamesOnly(t *testing.T) {
+	t.Parallel()
+	root := findRootTestRepo(t)
+	m := buildTestMap(t, root)
+
+	out := m.StringCompact()
+	require.NotEmpty(t, out, "compact output must not be empty")
+
+	// Compact mode must NOT include function signatures (parenthesised param lists).
+	// context.Context is a typed parameter that appears in enriched signatures
+	// but not in the lean names-only compact output.
+	assert.NotContains(t, out, "context.Context",
+		"compact mode must not include typed signatures")
+}
+
+// TestCompactModeOrientation_ContainsNames verifies that compact mode
+// includes exported symbol names from the repomap package itself.
+func TestCompactModeOrientation_ContainsNames(t *testing.T) {
+	t.Parallel()
+	root := findRootTestRepo(t)
+	m := buildTestMap(t, root)
+
+	out := m.StringCompact()
+	// BudgetFiles is a high-ranked exported function — must appear in compact mode.
+	assert.Contains(t, out, "BudgetFiles",
+		"compact mode must include exported symbol names")
+}
+
+// TestDefaultModeContainsSymbols verifies that the default format (m.String()) includes
+// exported symbol names and signatures — regression guard ensuring Items 1-4 behaviour is intact.
+func TestDefaultModeContainsSymbols(t *testing.T) {
+	t.Parallel()
+	root := findRootTestRepo(t)
+	m := buildTestMap(t, root)
+
+	out := m.String()
+	require.NotEmpty(t, out, "default output must not be empty")
+
+	// repomap.go is a top-ranked file that should appear at level 2 in the default output.
+	// It has a known exported function with a typed signature.
+	assert.Contains(t, out, "New",
+		"default mode must include exported symbol names from top-ranked files")
+
+	// Default mode must include at least some parenthesised signatures — the hallmark
+	// of the enriched format vs. the lean compact format.
+	assert.Contains(t, out, "func (*Map)",
+		"default mode must include method signatures in enriched format")
+}
+
+// TestCompactModeFlagDefault verifies that the -f flag has empty default
+// so the default path falls through to enriched rendering.
+func TestCompactModeFlagDefault(t *testing.T) {
+	t.Parallel()
+	cmd := newRootCmd()
+
+	formatFlag := cmd.Flags().Lookup("format")
+	require.NotNil(t, formatFlag, "-f/--format flag must be registered")
+	assert.Equal(t, "", formatFlag.DefValue,
+		"-f flag default must be empty so default rendering is enriched")
+}
+
+// TestCompactModeVerboseUnaffected verifies that verbose output is richer than compact —
+// regression guard ensuring -f verbose is not degraded by the compact mode split.
+func TestCompactModeVerboseUnaffected(t *testing.T) {
+	t.Parallel()
+	root := findRootTestRepo(t)
+	m := buildTestMap(t, root)
+
+	verbose := m.StringVerbose()
+	compact := m.StringCompact()
+
+	// Verbose must be richer than compact (more content).
+	assert.Greater(t, len(verbose), len(compact),
+		"verbose output must be longer than compact output")
+}

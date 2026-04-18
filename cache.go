@@ -12,11 +12,12 @@ import (
 
 // outputCache lazily computes and caches formatted output strings.
 type outputCache struct {
-	compact *string
-	verbose *string
-	detail  *string
-	lines   *string
-	xml     *string
+	compact     *string // enriched default (m.String())
+	verbose     *string
+	detail      *string
+	lines       *string
+	xml         *string
+	orientation *string // lean compact / orientation mode (m.StringCompact())
 }
 
 func (c *outputCache) get(ptr **string, fn func() string) string {
@@ -33,6 +34,7 @@ func (c *outputCache) reset() {
 	c.detail = nil
 	c.lines = nil
 	c.xml = nil
+	c.orientation = nil
 }
 
 // diskCache is the on-disk format for a cached repomap build.

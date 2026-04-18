@@ -282,3 +282,104 @@ func TestEnrichedCost_MatchesRenderer(t *testing.T) {
 		checkWithin10Pct(t, syms, "builder.go")
 	})
 }
+
+// TestCompactCost_StrictlyLessThanEnriched verifies that compactCost is always
+// strictly less than enrichedCost for files with exported symbols that have signatures or doc.
+func TestCompactCost_StrictlyLessThanEnriched(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		syms []Symbol
+	}{
+		{
+			name: "function with signature",
+			syms: []Symbol{mkSym("Run", "function", "(ctx context.Context) error", "", true)},
+		},
+		{
+			name: "function with signature and doc",
+			syms: []Symbol{mkSym("Start", "function", "(addr string) error", "starts the server", true)},
+		},
+		{
+			name: "struct with fields",
+			syms: []Symbol{mkSym("Config", "struct", "{Host string, Port int}", "", true)},
+		},
+		{
+			name: "mixed exported symbols",
+			syms: []Symbol{
+				mkSym("New", "function", "(cfg Config) *Server", "creates a server", true),
+				mkSym("Config", "struct", "{Host string, Port int}", "", true),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			compact := compactCost(tc.syms)
+			enriched := enrichedCost(tc.syms)
+			assert.Less(t, compact, enriched,
+				"compactCost (%d) must be strictly less than enrichedCost (%d)", compact, enriched)
+		})
+	}
+}
+
+// TestCompactCost_ZeroUnexported verifies that unexported symbols contribute zero cost.
+func TestCompactCost_ZeroUnexported(t *testing.T) {
+	t.Parallel()
+	syms := []Symbol{
+		mkSym("a", "function", "()", "", false),
+		mkSym("b", "struct", "{X int}", "", false),
+	}
+	assert.Equal(t, 0, compactCost(syms), "unexported symbols must not contribute to compactCost")
+}
+
+// TestCompactCost_ExportedCounted verifies basic counting for a single exported symbol.
+func TestCompactCost_ExportedCounted(t *testing.T) {
+	t.Parallel()
+	sym := mkSym("Run", "function", "(ctx context.Context) error", "starts the loop", true)
+	cost := compactCost([]Symbol{sym})
+	// Minimum: 8 + len("Run") = 11
+	assert.GreaterOrEqual(t, cost, 8+len(sym.Name),
+		"compactCost must include name overhead")
+	// Must NOT include signature or doc bytes.
+	assert.Less(t, cost, 8+len(sym.Name)+len(sym.Signature)+len(sym.Doc),
+		"compactCost must not include signature or doc bytes")
+}
+
+// TestBudgetFilesCompact_FitsMoreThanEnriched verifies that compact budgeting
+// fits more files at level 2 within the same token budget compared to enriched budgeting.
+func TestBudgetFilesCompact_FitsMoreThanEnriched(t *testing.T) {
+	t.Parallel()
+
+	// Build 5 files each with 10 functions with long signatures and doc.
+	// These will overflow enrichedCost budget but fit under compactCost budget.
+	files := make([]RankedFile, 5)
+	for i := range files {
+		files[i] = mkRankedFunc("file.go", 10, 30, 20)
+	}
+	// Clone for each budget call (BudgetFiles mutates the slice).
+	enrichedInput := make([]RankedFile, len(files))
+	compactInput := make([]RankedFile, len(files))
+	copy(enrichedInput, files)
+	copy(compactInput, files)
+
+	const budget = 150 // tokens — tight enough to stress the difference
+
+	enrichedResult := BudgetFiles(enrichedInput, budget)
+	compactResult := BudgetFilesCompact(compactInput, budget)
+
+	enrichedLevel2 := 0
+	compactLevel2 := 0
+	for i := range files {
+		if enrichedResult[i].DetailLevel == 2 {
+			enrichedLevel2++
+		}
+		if compactResult[i].DetailLevel == 2 {
+			compactLevel2++
+		}
+	}
+
+	assert.GreaterOrEqual(t, compactLevel2, enrichedLevel2,
+		"compact budget must fit at least as many files at level 2 as enriched budget")
+}

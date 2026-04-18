@@ -242,6 +242,18 @@ func (m *Map) String() string {
 	})
 }
 
+// StringCompact returns the lean orientation output: path + exported symbol names only.
+// No signatures, no godoc, no struct fields. Budget is applied using compactCost so
+// more files fit vs. the enriched default (m.String()).
+// Returns empty string if Build has not been called or produced no symbols.
+func (m *Map) StringCompact() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.outputs.get(&m.outputs.orientation, func() string {
+		return FormatMapCompact(m.ranked, m.config.MaxTokens)
+	})
+}
+
 // StringVerbose returns the full verbose map output (all symbols, no summarization).
 func (m *Map) StringVerbose() string {
 	m.mu.Lock()
