@@ -25,7 +25,10 @@ func ScanInventory(ctx context.Context, root string) (*Inventory, error) {
 	var files []FileMetrics
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return nil
+			if errors.Is(walkErr, os.ErrPermission) || errors.Is(walkErr, os.ErrNotExist) {
+				return nil // skip inaccessible entries; best-effort scan
+			}
+			return walkErr
 		}
 		select {
 		case <-ctx.Done():
@@ -44,11 +47,17 @@ func ScanInventory(ctx context.Context, root string) (*Inventory, error) {
 		}
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) {
+				return nil // skip inaccessible file; best-effort scan
+			}
+			return err
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			if errors.Is(err, os.ErrPermission) || errors.Is(err, os.ErrNotExist) {
+				return nil // skip unreadable file; best-effort scan
+			}
+			return err
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {

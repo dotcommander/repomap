@@ -95,7 +95,7 @@ func (lspqQuerier) Refs(ctx context.Context, file string, line int, symbol strin
 
 	cmd.Stdout = pw
 	if err := cmd.Start(); err != nil {
-		pw.Close()
+		_ = pw.Close()
 		return nil, fmt.Errorf("lspq start: %w", err)
 	}
 
@@ -104,7 +104,7 @@ func (lspqQuerier) Refs(ctx context.Context, file string, line int, symbol strin
 	errCh := make(chan error, 1)
 	go func() {
 		data, err := io.ReadAll(io.LimitReader(pr, lspqMaxBytes))
-		pr.Close()
+		_ = pr.Close()
 		if err != nil {
 			errCh <- err
 			return
@@ -113,7 +113,7 @@ func (lspqQuerier) Refs(ctx context.Context, file string, line int, symbol strin
 	}()
 
 	waitErr := cmd.Wait()
-	pw.Close()
+	_ = pw.Close()
 
 	var data []byte
 	select {

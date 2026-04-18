@@ -96,9 +96,12 @@ func writeConfig(out io.Writer, root string, force bool) error {
 func writeHook(out io.Writer, root string, force bool) error {
 	gitDir := filepath.Join(root, ".git")
 	info, err := os.Stat(gitDir)
-	if err != nil || !info.IsDir() {
+	if os.IsNotExist(err) || (err == nil && !info.IsDir()) {
 		fmt.Fprintf(out, "skip  .git/hooks/post-commit (not a git repo)\n")
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", gitDir, err)
 	}
 	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {

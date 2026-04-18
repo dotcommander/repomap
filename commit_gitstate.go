@@ -415,13 +415,14 @@ func splitLines(s string) []string {
 
 // gitShowAt returns the contents of `path` at revision `rev` (or "HEAD"). Used
 // by commit_messages.go to extract the pre-change parser snapshot for symbol
-// diffing. Returns ("", nil) for files that didn't exist at that revision.
+// diffing. Returns ("", err) for files that didn't exist at that revision; callers
+// that treat missing-at-revision as an empty result should use the blank identifier.
 func gitShowAt(ctx context.Context, root, rev, path string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", root, "show", rev+":"+path)
 	out, err := cmd.Output()
 	if err != nil {
 		// Most likely "fatal: path X exists on disk, but not in HEAD" — file is new.
-		return "", nil
+		return "", err
 	}
 	return string(out), nil
 }
