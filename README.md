@@ -111,7 +111,7 @@ every commit, so `repomap` stays instant. Idempotent — re-running without
 
 ## Languages
 
-Go, Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, PHP, HTML, CSS. Go parses through `go/ast` directly. The rest go through tree-sitter when the grammar is present, ctags when it is not, regex when neither exists. Quality degrades gracefully; the map is never empty because a parser was missing.
+Go, PHP, Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, HTML, CSS. Go parses through `go/ast` directly; PHP parses through tree-sitter with full 8.x coverage (signatures, visibility, constructor property promotion, PHPDoc). The rest go through tree-sitter when the grammar is present, ctags when it is not, regex when neither exists. Quality degrades gracefully; the map is never empty because a parser was missing.
 
 ## Configuration
 

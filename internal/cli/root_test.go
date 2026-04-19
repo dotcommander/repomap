@@ -201,8 +201,8 @@ func TestCompactModeOrientation_ContainsNames(t *testing.T) {
 	m := buildTestMap(t, root)
 
 	out := m.StringCompact()
-	// BudgetFiles is a high-ranked exported function — must appear in compact mode.
-	assert.Contains(t, out, "BudgetFiles",
+	// New is the top-ranked exported function from repomap.go — stable canary for compact mode.
+	assert.Contains(t, out, "New",
 		"compact mode must include exported symbol names")
 }
 

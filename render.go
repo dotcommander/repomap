@@ -320,13 +320,15 @@ func formatFileBlockCompact(f RankedFile, topTypes map[string]bool) string {
 }
 
 // docTag returns a parenthetical tag annotating whether doc-line extraction
-// is available for this file's language. Go is fully supported; all other
-// languages omit doc lines, and their file header carries "[doc: n/a]".
+// is available for this file's language. Go and PHP are fully supported;
+// all other languages omit doc lines, and their file header carries "[doc: n/a]".
 func docTag(f RankedFile) string {
-	if f.Language == "go" {
+	switch f.Language {
+	case "go", "php":
 		return ""
+	default:
+		return " [doc: n/a]"
 	}
-	return " [doc: n/a]"
 }
 
 // formatFileLineDefault returns the header line for the enriched default block,
@@ -361,12 +363,17 @@ func formatFileBlockDefault(f RankedFile) string {
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	isPHP := f.Language == "php"
 	for _, s := range syms {
 		if !s.Exported {
 			continue
 		}
 		var line string
 		switch {
+		case isPHP && s.Signature != "":
+			// PHP signatures are self-contained (include keyword + name + params).
+			// Rendering "  <signature>" avoids double-printing keyword or name.
+			line = fmt.Sprintf("  %s%s", s.Signature, annotationTag(s))
 		case s.Kind == "method" && s.Receiver != "":
 			line = fmt.Sprintf("  func (%s) %s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s))
 		case s.Signature != "" && s.Signature != "{}":

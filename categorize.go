@@ -7,18 +7,25 @@ import (
 
 // kindToCategory maps symbol kinds to their display category.
 var kindToCategory = map[string]string{
-	"struct":    "types",
-	"type":      "types",
+	// Go kinds
+	"struct":   "types",
+	"type":     "types",
+	"function": "funcs",
+	"fn":       "funcs",
+	"method":   "methods",
+	"constant": "consts",
+	"const":    "consts",
+	"variable": "vars",
+	"static":   "vars",
+	// Shared Go + PHP
 	"interface": "interfaces",
-	"class":     "classes",
 	"enum":      "enums",
-	"function":  "funcs",
-	"fn":        "funcs",
-	"method":    "methods",
-	"constant":  "consts",
-	"const":     "consts",
-	"variable":  "vars",
-	"static":    "vars",
+	// PHP-specific kinds
+	"class":     "classes",
+	"trait":     "types",
+	"case":      "consts",
+	"property":  "vars",
+	"namespace": "other",
 }
 
 // categoryOrder defines the display order for symbol categories.
@@ -92,21 +99,38 @@ func symbolCategory(path string, s Symbol) string {
 // renderKindWeight returns the display-ordering priority for a symbol within a file.
 // Higher weight = rendered first. Exported symbols always outrank unexported.
 // Weights reflect architectural information density for LLM consumption.
+//
+// Go and PHP kinds are handled by the same switch — symmetric weights where
+// concepts align (class=struct=10, enum=type=8, property=var=3).
 func renderKindWeight(kind string, exported bool) int {
 	if !exported {
 		return 1
 	}
 	switch kind {
-	case "struct", "interface":
+	// Weight 10 — primary compositional units
+	case "struct", "interface", "class":
 		return 10
-	case "type":
+	// Weight 9 — horizontal reuse (PHP trait)
+	case "trait":
+		return 9
+	// Weight 8 — type definitions
+	case "type", "enum":
 		return 8
+	// Weight 6 — free functions
 	case "function", "fn":
 		return 6
+	// Weight 5 — class-bound behaviour
 	case "method":
 		return 5
-	case "constant", "const", "variable", "var", "static":
+	// Weight 4 — enum values (above const: they are the enum's reason to exist)
+	case "case":
+		return 4
+	// Weight 3 — named values and fields
+	case "constant", "const", "variable", "var", "static", "property":
 		return 3
+	// Weight 0 — namespace: header-only, position controlled by line order
+	case "namespace":
+		return 0
 	default:
 		return 2
 	}

@@ -4,6 +4,41 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.8.0 — 2026-04-18
+
+### PHP parity with Go
+
+PHP files now render at the same fidelity as Go: full signatures with visibility, types, defaults; class headers with `extends` / `implements`; properties and constants visible; PHPDoc first sentences inlined.
+
+- **Tree-sitter PHP parser** replacing the regex fallback. Covers PHP 8.x grammar: classes, interfaces, traits, enums (including backed enums and cases), functions, methods, properties, constants, namespaces.
+- **Visibility-in-signature** — `public function foo(): string`, `private readonly LoggerInterface $logger`. No schema change; visibility lives where it renders.
+- **Constructor property promotion** extracted as real properties — `private readonly LoggerInterface $logger = new NullLogger()` appears in the property list, signatures byte-identical to non-promoted declarations.
+- **PHPDoc extraction** — first sentence of `/** */` blocks rendered as subtitle; @-tags stripped. No `[doc: n/a]` noise on PHP files.
+- **Kind-weighted ordering** for PHP: class/interface first, then trait, enum, function, method, case, property, const.
+
+Before (v0.7.0) vs after (v0.8.0) on LLPhant `src/Chat/OpenAIChat.php`:
+
+```
+# v0.7.0
+src/Chat/OpenAIChat.php [untested] [doc: n/a]
+  func __construct
+  func generateText
+  func getLastResponse
+  type OpenAIChat
+
+# v0.8.0
+src/Chat/OpenAIChat.php [untested]
+  class OpenAIChat implements ChatInterface [440L]
+  public function __construct(OpenAIConfig $config = new OpenAIConfig(), private readonly LoggerInterface $logger = new NullLogger())
+  public function generateText(string $prompt): string
+  public function getLastResponse(): ?CreateResponse
+  public ?FunctionInfo $lastFunctionCalled = null
+```
+
+Symbol count on the same codebase: 968 → 1398 (+44%) within the same 2048-token budget.
+
+---
+
 ## v0.7.0 — 2026-04-18
 
 ### LLM-first output quality

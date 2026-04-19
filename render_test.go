@@ -350,7 +350,7 @@ func TestDocTag(t *testing.T) {
 		want string
 	}{
 		{"go file: no tag", "go", ""},
-		{"php file: doc n/a tag", "php", " [doc: n/a]"},
+		{"php file: no tag (PHPDoc extraction supported)", "php", ""},
 		{"typescript file: doc n/a tag", "typescript", " [doc: n/a]"},
 		{"python file: doc n/a tag", "python", " [doc: n/a]"},
 		{"rust file: doc n/a tag", "rust", " [doc: n/a]"},
@@ -382,12 +382,12 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 		assert.NotContains(t, out, "[doc: n/a]")
 	})
 
-	t.Run("php file header: doc n/a tag present", func(t *testing.T) {
+	t.Run("php file header: no doc n/a tag (PHPDoc extraction supported)", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("src/Controller.php", "php", 2, []Symbol{sym})
 		out := formatFileBlockDefault(f)
 		assert.Contains(t, out, "src/Controller.php")
-		assert.Contains(t, out, "[doc: n/a]")
+		assert.NotContains(t, out, "[doc: n/a]")
 	})
 
 	t.Run("typescript file header: doc n/a tag present", func(t *testing.T) {
@@ -406,13 +406,13 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 		assert.Contains(t, out, "[doc: n/a]")
 	})
 
-	t.Run("doc n/a tag on same header line as path", func(t *testing.T) {
+	t.Run("no doc n/a tag on php header line (PHPDoc supported)", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("app/router.php", "php", 2, []Symbol{sym})
-		// The file header is always the first line; verify path and tag appear together.
+		// PHP now supports PHPDoc extraction — no [doc: n/a] tag on the header line.
 		line := formatFileLineDefault(f)
 		assert.Contains(t, line, "app/router.php", "header line should contain file path")
-		assert.Contains(t, line, "[doc: n/a]", "header line should contain doc tag")
+		assert.NotContains(t, line, "[doc: n/a]", "PHP header must not carry doc tag")
 	})
 
 	t.Run("doc n/a tag combined with imported-by badge", func(t *testing.T) {

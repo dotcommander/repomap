@@ -29,7 +29,7 @@ func TestRenderKindWeight(t *testing.T) {
 		{"exported var", "var", true, 3},
 		{"exported static", "static", true, 3},
 		{"exported unknown kind", "macro", true, 2},
-		{"exported class", "class", true, 2},
+		{"exported class", "class", true, 10},
 		// Unexported always returns 1, regardless of kind.
 		{"unexported struct", "struct", false, 1},
 		{"unexported function", "function", false, 1},
@@ -57,6 +57,60 @@ func TestRenderKindWeight_OrderingProperty(t *testing.T) {
 	assert.Greater(t, renderKindWeight("method", true), renderKindWeight("const", true), "method > const")
 	assert.Greater(t, renderKindWeight("const", true), renderKindWeight("macro", true), "const > unknown exported")
 	assert.Greater(t, renderKindWeight("macro", true), renderKindWeight("struct", false), "any exported > unexported")
+}
+
+// TestRenderKindWeightPHP verifies PHP-specific kind weights. Go weights must
+// remain unchanged; PHP weights must follow the spec table.
+func TestRenderKindWeightPHP(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		kind     string
+		exported bool
+		want     int
+	}{
+		// PHP exported weights per spec.
+		{"php class", "class", true, 10},
+		{"php interface", "interface", true, 10},
+		{"php trait", "trait", true, 9},
+		{"php enum", "enum", true, 8},
+		{"php function", "function", true, 6},
+		{"php method", "method", true, 5},
+		{"php case", "case", true, 4},
+		{"php property", "property", true, 3},
+		{"php const", "const", true, 3},
+		{"php namespace", "namespace", true, 0},
+		// Unexported PHP symbols always return 1.
+		{"unexported php class", "class", false, 1},
+		{"unexported php trait", "trait", false, 1},
+		{"unexported php enum", "enum", false, 1},
+		{"unexported php case", "case", false, 1},
+		{"unexported php property", "property", false, 1},
+		{"unexported php namespace", "namespace", false, 1},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := renderKindWeight(tc.kind, tc.exported)
+			assert.Equal(t, tc.want, got, "renderKindWeight(%q, %v)", tc.kind, tc.exported)
+		})
+	}
+
+	// Verify PHP ordering invariants match spec rationale.
+	assert.Greater(t, renderKindWeight("class", true), renderKindWeight("trait", true), "class > trait")
+	assert.Greater(t, renderKindWeight("trait", true), renderKindWeight("enum", true), "trait > enum")
+	assert.Greater(t, renderKindWeight("enum", true), renderKindWeight("function", true), "enum > function")
+	assert.Greater(t, renderKindWeight("function", true), renderKindWeight("method", true), "function > method")
+	assert.Greater(t, renderKindWeight("method", true), renderKindWeight("case", true), "method > case")
+	assert.Greater(t, renderKindWeight("case", true), renderKindWeight("property", true), "case > property")
+	assert.Equal(t, renderKindWeight("property", true), renderKindWeight("const", true), "property == const (both 3)")
+	// Go weights must be unchanged.
+	assert.Equal(t, 10, renderKindWeight("struct", true), "Go struct unchanged at 10")
+	assert.Equal(t, 10, renderKindWeight("interface", true), "Go interface unchanged at 10")
+	assert.Equal(t, 8, renderKindWeight("type", true), "Go type unchanged at 8")
+	assert.Equal(t, 6, renderKindWeight("fn", true), "Go fn unchanged at 6")
 }
 
 // TestKindWeightSymbolOrdering is an integration test that builds a FileSymbols

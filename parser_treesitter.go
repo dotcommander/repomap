@@ -46,6 +46,11 @@ var tsSymbolQueries map[string]string
 // tsImportQueries maps language IDs to S-expression queries for finding imports.
 var tsImportQueries map[string]string
 
+// tsCustomParsers maps language IDs to custom full-file parsers.
+// A custom parser bypasses the generic extractSymbols/extractImports path and
+// owns the entire FileSymbols construction. Register via registerTSCustom.
+var tsCustomParsers map[string]func(content []byte, relPath string) *FileSymbols
+
 // registerTS adds a language to all tree-sitter registries.
 func registerTS(lang string, provider tsLangProvider, symQ, impQ string) {
 	tsRegistry[lang] = provider
@@ -53,13 +58,24 @@ func registerTS(lang string, provider tsLangProvider, symQ, impQ string) {
 	tsImportQueries[lang] = impQ
 }
 
+// registerTSCustom registers a language that uses a custom parser instead of
+// the generic query + extractSymbols path. The language is still added to
+// tsRegistry (so it's dispatched by parseTreeSitterFiles) but the custom
+// parser takes precedence in parseWithTreeSitter.
+func registerTSCustom(lang string, provider tsLangProvider, parser func(content []byte, relPath string) *FileSymbols) {
+	tsRegistry[lang] = provider
+	tsCustomParsers[lang] = parser
+}
+
 func init() {
 	tsRegistry = make(map[string]tsLangProvider)
 	tsSymbolQueries = make(map[string]string)
 	tsImportQueries = make(map[string]string)
+	tsCustomParsers = make(map[string]func(content []byte, relPath string) *FileSymbols)
 
 	registerTSCFamily()
 	registerTSJava()
+	registerTSPHP()
 	registerTSPython()
 	registerTSRust()
 	registerTSTypeScript()
@@ -67,8 +83,14 @@ func init() {
 }
 
 // parseWithTreeSitter parses a single file using tree-sitter.
+// Custom parsers (registered via registerTSCustom) take precedence over the
+// generic extractSymbols/extractImports path.
 // Returns nil if the language has no tree-sitter grammar registered.
 func parseWithTreeSitter(content []byte, lang string, relPath string) *FileSymbols {
+	if custom, ok := tsCustomParsers[lang]; ok {
+		return custom(content, relPath)
+	}
+
 	provider, ok := tsRegistry[lang]
 	if !ok {
 		return nil
