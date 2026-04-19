@@ -58,6 +58,13 @@ func ParseGenericFile(path, root, language string) (*FileSymbols, error) {
 		fn(lines, fs)
 	}
 
+	// Derive ImportPath for languages where we can determine a logical module
+	// identity from filesystem layout or declarations. This enables symbol-dep
+	// edges in commit grouping across non-Go files.
+	if fs.ImportPath == "" {
+		fs.ImportPath = deriveImportPath(path, root, language, lines)
+	}
+
 	return fs, nil
 }
 

@@ -118,3 +118,25 @@ func (m *Map) parseGenericFiles(files []FileInfo) []*FileSymbols {
 		return sym
 	})
 }
+
+// parseNonGoFile parses a single non-Go file using the standalone ladder:
+// tree-sitter (when available) → regex. No ctags step — ctags only pays off
+// as a batch operation, so serial callers (commit analyze) skip it. Used
+// where no Map instance exists. Returns nil on total miss.
+func parseNonGoFile(abs, root, lang string) *FileSymbols {
+	if TreeSitterAvailable() {
+		if data, err := os.ReadFile(abs); err == nil {
+			if sym := parseWithTreeSitter(data, lang, relPath(root, abs)); sym != nil {
+				if sym.ImportPath == "" {
+					sym.ImportPath = deriveImportPath(abs, root, lang, splitLines(string(data)))
+				}
+				return sym
+			}
+		}
+	}
+	sym, err := ParseGenericFile(abs, root, lang)
+	if err != nil {
+		return nil
+	}
+	return sym
+}

@@ -41,6 +41,18 @@
 (const_declaration
   (const_element (name) @const.name)) @const
 
+; Namespace declaration — populates FileSymbols.ImportPath for symbol-dep edges
+(namespace_definition
+  name: (namespace_name) @namespace)
+
+; Use declarations — populate FileSymbols.Imports with fully-qualified names
+; so symbol-dep edges can fire across files. Captures the imported FQCN; any
+; alias (the `as` clause) is dropped because only the target identity matters.
+(namespace_use_declaration
+  (namespace_use_clause (qualified_name) @use))
+(namespace_use_declaration
+  (namespace_use_clause (name) @use))
+
 ; PHPDoc pairing — adjacency-based, no post-hoc walk
 ((comment) @doc
   . [(class_declaration) (interface_declaration) (trait_declaration)

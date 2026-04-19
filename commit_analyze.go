@@ -12,9 +12,16 @@ import (
 	"strings"
 )
 
-// DefaultConfidenceCutoff is the clustering confidence threshold used when
-// callers leave AnalyzeOptions.ConfidenceCutoff at zero.
-const DefaultConfidenceCutoff = 0.75
+// DefaultConfidenceCutoff is the minimum per-edge weight required to form
+// a cluster. Set slightly below WeightSymbolDep so that symbol-dep is the
+// lowest cluster-forming edge type; co-change (0.5) and sibling (0.3) are
+// below the cutoff by design — they refine an already-clustered group but
+// never pull files together on their own.
+//
+// Invariant enforced by Test_EdgeWeights_ClusteringContract: every
+// cluster-forming weight (test-pair, symbol-dep) must exceed this cutoff;
+// every refine-only weight (co-change, sibling) must be below it.
+const DefaultConfidenceCutoff = WeightSymbolDep - 0.05
 
 // AnalyzeOptions configures a commit-analyze run.
 type AnalyzeOptions struct {
@@ -112,6 +119,14 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	groups := buildGroups(gs, postSymbols, opts.ConfidenceCutoff)
 	suggestMessages(groups, gs, deltas, bumps)
 
+	// Count groups flagged as breaking changes.
+	breakingCount := 0
+	for _, g := range groups {
+		if g.Breaking {
+			breakingCount++
+		}
+	}
+
 	// Config files / artifacts / history style (top-level summary fields).
 	configFiles := collectConfigFiles(gs.Files)
 	artifacts := collectArtifacts(gs.Files)
@@ -149,6 +164,7 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 		ConfigFiles:    configFiles,
 		DepBumps:       bumps,
 		Groups:         groups,
+		BreakingCount:  breakingCount,
 		PlanHash:       planHash(plan),
 		Refs:           refs,
 	}
@@ -176,7 +192,7 @@ func parseDirtyFiles(root string, files []fileChange) map[string]*FileSymbols {
 			}
 			continue
 		}
-		if sym, err := ParseGenericFile(abs, root, f.Language); err == nil && sym != nil {
+		if sym := parseNonGoFile(abs, root, f.Language); sym != nil {
 			bl.filterSymbols(sym)
 			out[f.Path] = sym
 		}
@@ -257,10 +273,11 @@ func isConventional(subject string) bool {
 		return false
 	}
 	head := subject[:colon]
-	// Strip optional (scope).
+	// Strip optional (scope) and breaking-change marker (!).
 	if paren := strings.Index(head, "("); paren > 0 {
 		head = head[:paren]
 	}
+	head = strings.TrimRight(head, "!")
 	switch strings.TrimSpace(head) {
 	case "feat", "fix", "docs", "chore", "test", "refactor", "perf", "style",
 		"ci", "build", "revert", "deps":

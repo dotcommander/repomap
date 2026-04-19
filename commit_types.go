@@ -20,6 +20,7 @@ type CommitAnalysis struct {
 	ConfigFiles    []string       `json:"config_files"` // .md/.yaml/.toml/.json/.env*/.cfg/.ini/.conf in changeset
 	DepBumps       []DepBump      `json:"dep_bumps"`
 	Groups         []CommitGroup  `json:"groups"`
+	BreakingCount  int            `json:"breaking_count,omitempty"` // count of groups with Breaking=true
 	PlanHash       string         `json:"plan_hash"`
 	Refs           CommitRefs     `json:"refs"`
 	Diagnostics    []string       `json:"diagnostics,omitempty"` // non-fatal warnings
@@ -61,6 +62,16 @@ type DepBump struct {
 	Changes []string `json:"changes"`           // human-readable: "name v1 -> v2"
 }
 
+// EdgeEvidence records one weighted edge that contributed to a group's
+// clustering, so agents can inspect or override the grouping logic without
+// pattern-matching on the Rationale string.
+type EdgeEvidence struct {
+	A      string  `json:"a"`      // first file path
+	B      string  `json:"b"`      // second file path
+	Weight float64 `json:"weight"` // edge weight (1.0 test-pair, 0.8/0.6 symbol-dep, 0.5 co-change, 0.3 sibling)
+	Reason string  `json:"reason"` // "test-pair" | "symbol-dep" | "co-change" | "sibling"
+}
+
 // CommitGroup is one proposed commit. The agent ratifies (confidence >= 0.75)
 // or inspects refs.diffs at DiffOffsets to refine grouping/messaging.
 type CommitGroup struct {
@@ -69,9 +80,11 @@ type CommitGroup struct {
 	Scope        string            `json:"scope"` // empty for top-level changes
 	SuggestedMsg string            `json:"suggested_msg"`
 	Files        []string          `json:"files"`
-	Rationale    string            `json:"rationale"`              // why these files cluster
+	Rationale    string            `json:"rationale"`              // why these files cluster (backward-compat string)
 	Confidence   float64           `json:"confidence"`             // 0.0–1.0
+	Breaking     bool              `json:"breaking,omitempty"`     // true if any constituent file has a breaking-change delta
 	DiffOffsets  map[string][2]int `json:"diff_offsets,omitempty"` // file -> [byte_start, byte_end] in refs.diffs
+	Evidence     []EdgeEvidence    `json:"evidence,omitempty"`     // per-edge clustering evidence
 }
 
 // CommitRefs points at on-disk side files for content too large to inline.
@@ -131,4 +144,5 @@ type symbolDelta struct {
 	Added    []string // symbol names
 	Removed  []string
 	Modified []string // signature changed but name kept
+	Breaking bool     // true if any removed/modified symbol was publicly exported
 }

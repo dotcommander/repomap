@@ -8,151 +8,17 @@ import (
 	"strings"
 )
 
-// computeSymbolDeltas returns a per-file diff of symbol names between HEAD
-// and the working tree. Only files in `files` with a language supported by
-// our parsers are probed. Missing-at-HEAD is treated as an all-added file.
-func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, postSymbols map[string]*FileSymbols) map[string]symbolDelta {
-	out := make(map[string]symbolDelta, len(files))
-	for _, f := range files {
-		if f.Language == "" {
-			continue
-		}
-		post := postSymbols[f.Path]
-		postNames := symbolNameSet(post)
-
-		// For deletions, `post` is empty; compare against HEAD content.
-		var preNames map[string]bool
-		if f.IndexStatus == "A" && f.Status == "A" {
-			// Pure addition — no HEAD content, skip pre.
-			preNames = map[string]bool{}
-		} else {
-			preSrc, _ := gitShowAt(ctx, root, "HEAD", oldPathOr(f))
-			if preSrc != "" {
-				preNames = parseSymbolsFromSource(f.Path, f.Language, preSrc)
-			}
-		}
-
-		var added, removed []string
-		for name := range postNames {
-			if !preNames[name] {
-				added = append(added, name)
-			}
-		}
-		for name := range preNames {
-			if !postNames[name] {
-				removed = append(removed, name)
-			}
-		}
-		slices.Sort(added)
-		slices.Sort(removed)
-		if len(added) == 0 && len(removed) == 0 {
-			continue
-		}
-		out[f.Path] = symbolDelta{
-			Path:    f.Path,
-			Added:   added,
-			Removed: removed,
-		}
-	}
-	return out
-}
-
-// oldPathOr returns OldPath for renames, else Path. Needed so `git show HEAD:`
-// resolves to the file's pre-rename name.
-func oldPathOr(f fileChange) string {
-	if f.OldPath != "" {
-		return f.OldPath
-	}
-	return f.Path
-}
-
-// symbolNameSet returns the exported + unexported top-level symbol names in a
-// FileSymbols as a set. Returns empty set when fs is nil (new/unparsable file).
-func symbolNameSet(fs *FileSymbols) map[string]bool {
-	out := make(map[string]bool)
-	if fs == nil {
-		return out
-	}
-	for _, s := range fs.Symbols {
-		out[s.Name] = true
-	}
-	return out
-}
-
-// parseSymbolsFromSource runs the same language-appropriate parser against an
-// in-memory source string (HEAD content) to get the pre-change symbol set.
-// Returns an empty set if parsing fails — the delta will just show all
-// current symbols as "added", which is acceptable for new or renamed files.
-func parseSymbolsFromSource(path, language, src string) map[string]bool {
-	if parser, ok := langParsers[language]; ok {
-		fs := &FileSymbols{Path: path, Language: language}
-		parser(strings.Split(src, "\n"), fs)
-		out := make(map[string]bool, len(fs.Symbols))
-		for _, s := range fs.Symbols {
-			out[s.Name] = true
-		}
-		return out
-	}
-	// "go" is not in langParsers — it uses AST via parseGoSymbolsFromSource.
-	if language == "go" {
-		return parseGoSymbolsFromSource(path, src)
-	}
-	return map[string]bool{}
-}
-
-// parseGoSymbolsFromSource runs Go AST parser on an in-memory source buffer.
-// We bypass ParseGoFile (which reads from disk) by shelling a tiny in-memory
-// parse. Returns empty set on any parse error — caller treats missing as
-// "all symbols are new".
-func parseGoSymbolsFromSource(path, src string) map[string]bool {
-	// Fall back: regex for "^func Name(" / "^type Name" — good enough for the
-	// Removed-symbol delta use case without duplicating the AST parser.
-	out := make(map[string]bool)
-	for _, line := range strings.Split(src, "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "func "):
-			// "func Foo(" or "func (r *T) Foo("
-			name := extractGoFuncName(line)
-			if name != "" {
-				out[name] = true
-			}
-		case strings.HasPrefix(line, "type "):
-			// "type Foo struct {" / "type Foo interface {"
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				out[parts[1]] = true
-			}
-		}
-	}
-	return out
-}
-
-// extractGoFuncName pulls the function/method name out of a "func ..." line.
-// Handles "func Foo(", "func (r *T) Foo(", "func (T) Foo[".
-func extractGoFuncName(line string) string {
-	rest := strings.TrimPrefix(line, "func ")
-	if strings.HasPrefix(rest, "(") {
-		// Receiver — skip past closing paren.
-		closing := strings.Index(rest, ")")
-		if closing < 0 {
-			return ""
-		}
-		rest = strings.TrimSpace(rest[closing+1:])
-	}
-	// Name is up to the first '(' or '[' or space.
-	for i, r := range rest {
-		if r == '(' || r == '[' || r == ' ' {
-			return rest[:i]
-		}
-	}
-	return rest
-}
-
-// suggestMessages fills in group.SuggestedMsg for each group using symbol
-// deltas and dep-bump hints.
+// suggestMessages fills in group.SuggestedMsg and group.Breaking for each
+// group using symbol deltas and dep-bump hints.
 func suggestMessages(groups []CommitGroup, gs *gitState, deltas map[string]symbolDelta, bumps []DepBump) {
 	for i := range groups {
+		// Set Breaking: true if any constituent file has a breaking delta.
+		for _, p := range groups[i].Files {
+			if d, ok := deltas[p]; ok && d.Breaking {
+				groups[i].Breaking = true
+				break
+			}
+		}
 		groups[i].SuggestedMsg = draftMessage(&groups[i], gs, deltas, bumps)
 		groups[i].DiffOffsets = nil // filled in by analyze.go if offsets are tracked
 	}
@@ -160,16 +26,39 @@ func suggestMessages(groups []CommitGroup, gs *gitState, deltas map[string]symbo
 
 // draftMessage composes a conventional-commit subject for a group.
 // Format: "<type>(<scope>): <subject>"
+// When subject contains newlines (bullet-list form), the first line is capped
+// at 72 chars and the bullet body is appended verbatim.
 func draftMessage(g *CommitGroup, gs *gitState, deltas map[string]symbolDelta, bumps []DepBump) string {
 	subject := summarizeGroupWork(g, gs, deltas, bumps)
 	prefix := g.Type
-	if g.Scope != "" {
-		prefix = g.Type + "(" + g.Scope + ")"
+	if g.Breaking {
+		// Promote feat/fix to breaking-change type prefix.
+		switch g.Type {
+		case "feat":
+			prefix = "feat!"
+		case "fix":
+			prefix = "fix!"
+		}
 	}
-	// Cap subject at 72 chars including prefix.
-	max := 72 - len(prefix) - 2
-	if max > 0 && len(subject) > max {
-		subject = subject[:max-1] + "…"
+	if g.Scope != "" {
+		prefix = prefix + "(" + g.Scope + ")"
+	}
+
+	// Multi-line subjects (bullet lists): cap only the first line.
+	if idx := strings.Index(subject, "\n"); idx >= 0 {
+		firstLine := subject[:idx]
+		rest := subject[idx:]
+		maxFirst := 72 - len(prefix) - 2
+		if maxFirst > 0 && len(firstLine) > maxFirst {
+			firstLine = firstLine[:maxFirst-1] + "…"
+		}
+		return prefix + ": " + firstLine + rest
+	}
+
+	// Single-line: cap at 72 chars including prefix.
+	maxLen := 72 - len(prefix) - 2
+	if maxLen > 0 && len(subject) > maxLen {
+		subject = subject[:maxLen-1] + "…"
 	}
 	return prefix + ": " + subject
 }
@@ -249,31 +138,83 @@ func choreSubject(g *CommitGroup) string {
 	return fmt.Sprintf("housekeeping (%d files)", len(g.Files))
 }
 
+// symbolDeltaSubject composes a subject line (or multi-line subject with
+// bullets when delta count > 3) from the symbol adds/removes/modifies in the
+// group. Returns "" when there are no symbol changes.
 func symbolDeltaSubject(g *CommitGroup, deltas map[string]symbolDelta) string {
-	var added, removed []string
+	var added, removed, modified []string
 	for _, p := range g.Files {
 		d := deltas[p]
 		added = append(added, d.Added...)
 		removed = append(removed, d.Removed...)
+		modified = append(modified, d.Modified...)
 	}
+	total := len(added) + len(removed) + len(modified)
+	if total == 0 {
+		return ""
+	}
+
+	// Build individual action tokens — used both for the short form and bullets.
+	var tokens []string
+	for _, n := range added {
+		tokens = append(tokens, "add "+n)
+	}
+	for _, n := range modified {
+		tokens = append(tokens, "modify "+n)
+	}
+	for _, n := range removed {
+		tokens = append(tokens, "remove "+n)
+	}
+
+	// Bullet-list when more than 3 distinct symbol changes.
+	if total > 3 {
+		return symbolBullets(tokens)
+	}
+
+	// Short form — at most 3 tokens.
 	switch {
-	case len(added) > 0 && len(removed) == 0:
+	case len(modified) > 0 && len(added) == 0 && len(removed) == 0:
+		if len(modified) == 1 {
+			return "modify " + modified[0]
+		}
+		return fmt.Sprintf("modify %s and %d more", modified[0], len(modified)-1)
+	case len(added) > 0 && len(removed) == 0 && len(modified) == 0:
 		if len(added) == 1 {
 			return "add " + added[0]
 		}
-		if len(added) <= 3 {
-			return "add " + strings.Join(added, ", ")
-		}
-		return fmt.Sprintf("add %s and %d more", added[0], len(added)-1)
-	case len(removed) > 0 && len(added) == 0:
+		return "add " + strings.Join(added, ", ")
+	case len(removed) > 0 && len(added) == 0 && len(modified) == 0:
 		if len(removed) == 1 {
 			return "remove " + removed[0]
 		}
 		return fmt.Sprintf("remove %s and %d more", removed[0], len(removed)-1)
-	case len(added) > 0 && len(removed) > 0:
+	case len(added) > 0 && len(removed) > 0 && len(modified) == 0:
 		return fmt.Sprintf("replace %s with %s", removed[0], added[0])
+	default:
+		// Mixed: join up to 3 tokens.
+		if len(tokens) == 1 {
+			return tokens[0]
+		}
+		return strings.Join(tokens[:min(len(tokens), 3)], ", ")
 	}
-	return ""
+}
+
+// symbolBullets formats a token list as "first-token\n\n- t1\n- t2\n...".
+// The first line is kept under 60 chars (the rest of the 72-char limit is
+// claimed by the type prefix). Callers must not cap this output — the bullet
+// section is intentional multi-line.
+func symbolBullets(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(tokens[0])
+	sb.WriteString("\n")
+	for _, t := range tokens {
+		sb.WriteString("\n- ")
+		sb.WriteString(t)
+	}
+	return sb.String()
 }
 
 func genericSubject(g *CommitGroup) string {

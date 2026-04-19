@@ -84,6 +84,7 @@ func parsePHPWithTreeSitter(content []byte, relPath string) *FileSymbols {
 		Path:        relPath,
 		Language:    "php",
 		ParseMethod: "treesitter",
+		// ImportPath is set below after scanning for namespace declarations.
 	}
 
 	// docByTarget maps a doc.target node's start byte to its raw comment text.
@@ -100,6 +101,23 @@ func parsePHPWithTreeSitter(content []byte, relPath string) *FileSymbols {
 		m := qmatches.Next()
 		if m == nil {
 			break
+		}
+
+		// Namespace declaration — capture once for ImportPath.
+		if nsNode := phpCaptureNode(m, phpCompiledQuery, "namespace"); nsNode != nil {
+			if fs.ImportPath == "" {
+				fs.ImportPath = nsNode.Utf8Text(content)
+			}
+			continue
+		}
+
+		// Use declaration — append FQCN to Imports for symbol-dep edges.
+		if useNode := phpCaptureNode(m, phpCompiledQuery, "use"); useNode != nil {
+			imp := strings.TrimPrefix(useNode.Utf8Text(content), `\`)
+			if imp != "" {
+				fs.Imports = append(fs.Imports, imp)
+			}
+			continue
 		}
 
 		// PHPDoc adjacency pair — collect and continue.

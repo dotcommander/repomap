@@ -139,6 +139,11 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 	// Index imports by internal package → files that import it; plus internal
 	// packages → files that define them. A file imports another if their
 	// ImportPaths overlap.
+	//
+	// PHP/Java quirk: imports target FQCNs (e.g. `use Foo\Bar\Baz`) while
+	// ImportPath is the namespace only (`Foo\Bar`). Index additional keys of
+	// the form `ImportPath<sep><ClassName>` for each top-level class-like
+	// symbol so FQCN imports hit the defining file directly.
 	pkgFiles := make(map[string][]string) // ImportPath -> paths
 	fileImports := make(map[string][]string)
 	for path, fs := range symbols {
@@ -147,6 +152,14 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 		}
 		if fs.ImportPath != "" {
 			pkgFiles[fs.ImportPath] = append(pkgFiles[fs.ImportPath], path)
+			if sep := fqcnSeparator(fs.Language); sep != "" {
+				for _, sym := range fs.Symbols {
+					if isTopLevelTypeKind(sym.Kind) && sym.Name != "" {
+						fqcn := fs.ImportPath + sep + sym.Name
+						pkgFiles[fqcn] = append(pkgFiles[fqcn], path)
+					}
+				}
+			}
 		}
 		fileImports[path] = fs.Imports
 	}
@@ -166,7 +179,7 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 		}
 	}
 
-	// Edge 1: test-pair (weight 1.0). foo.go ↔ foo_test.go, foo.ts ↔ foo.test.ts,
+	// Edge 1: test-pair. foo.go ↔ foo_test.go, foo.ts ↔ foo.test.ts,
 	// src/bar.py ↔ tests/test_bar.py.
 	for _, a := range paths {
 		for _, b := range paths {
@@ -174,24 +187,26 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 				continue
 			}
 			if isTestPair(a, b) {
-				add(a, b, 1.0, "test-pair")
+				add(a, b, WeightTestPair, "test-pair")
 			}
 		}
 	}
 
-	// Edge 2: symbol-dep via import-path overlap (weight 0.8). If file A imports
-	// package P and file B lives in P, they co-change logically.
+	// Edge 2: symbol-dep via import-path overlap. If file A imports package P
+	// and file B lives in P, they co-change logically. A single weight
+	// (WeightSymbolDep = 0.8) applies across languages because the match is
+	// always exact-syntax: Go module path equality, PHP `use Foo\Bar\Baz` →
+	// FQCN-indexed file, Python dotted package from __init__.py walk, etc.
 	for path, imports := range fileImports {
 		for _, imp := range imports {
-			targets := pkgFiles[imp]
-			for _, t := range targets {
-				add(path, t, 0.8, "symbol-dep")
+			for _, t := range pkgFiles[imp] {
+				add(path, t, WeightSymbolDep, "symbol-dep")
 			}
 		}
 	}
 
-	// Edge 3: co-change (weight 0.5). gitState.CoChange[a][b] counts co-commits
-	// in the last 500. Threshold of 3 filters out incidental pairings.
+	// Edge 3: co-change. gitState.CoChange[a][b] counts co-commits in the
+	// last 500. Threshold of 3 filters out incidental pairings.
 	for a, inner := range gs.CoChange {
 		if byPath[a] == nil {
 			continue
@@ -200,12 +215,12 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 			if byPath[b] == nil || count < 3 {
 				continue
 			}
-			add(a, b, 0.5, "co-change")
+			add(a, b, WeightCoChange, "co-change")
 		}
 	}
 
-	// Edge 4: path sibling (weight 0.3). Same directory AND same inferred type
-	// — tie-breaker when nothing else links two files.
+	// Edge 4: path sibling. Same directory AND same inferred type — tie-breaker
+	// when nothing else links two files.
 	for _, a := range paths {
 		for _, b := range paths {
 			if a >= b {
@@ -218,7 +233,7 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 			if fa.Type != fb.Type {
 				continue
 			}
-			add(a, b, 0.3, "sibling")
+			add(a, b, WeightSibling, "sibling")
 		}
 	}
 
@@ -328,7 +343,8 @@ func connectedComponents(files []fileChange, edges []edge, threshold float64) []
 }
 
 // assembleGroup picks the dominant type + scope for a cluster, drafts a
-// rationale string from matching edges, and scores confidence.
+// rationale string from matching edges, scores confidence, and collects
+// per-edge evidence for agent introspection.
 func assembleGroup(paths []string, gs *gitState, edges []edge) CommitGroup {
 	byPath := make(map[string]*fileChange, len(gs.Files))
 	for i := range gs.Files {
@@ -350,7 +366,7 @@ func assembleGroup(paths []string, gs *gitState, edges []edge) CommitGroup {
 	scope := commonScope(paths, byPath)
 
 	// Rationale: list reasons that connected this cluster (distinct).
-	reasons := clusterReasons(paths, edges)
+	reasons, evidence := clusterReasonsAndEvidence(paths, edges)
 
 	// Confidence heuristic:
 	//   1.0 base
@@ -383,7 +399,8 @@ func assembleGroup(paths []string, gs *gitState, edges []edge) CommitGroup {
 		Files:      paths,
 		Rationale:  rationale,
 		Confidence: conf,
-		// SuggestedMsg filled in by commit_messages.go.
+		Evidence:   evidence,
+		// SuggestedMsg and Breaking filled in by commit_messages.go / caller.
 	}
 }
 
@@ -457,27 +474,60 @@ func commonDirPrefix(dirs []string) string {
 	return strings.Join(prefix, string(filepath.Separator))
 }
 
-// clusterReasons returns the distinct edge reasons that connect files in the
-// cluster, in a stable order.
-func clusterReasons(paths []string, edges []edge) []string {
+// clusterReasonsAndEvidence returns the distinct edge reasons for the cluster
+// (stable order) and the full EdgeEvidence slice for agent introspection.
+// It replaces the old clusterReasons function and is the single source of truth
+// for both the Rationale string and the Evidence array on CommitGroup.
+func clusterReasonsAndEvidence(paths []string, edges []edge) ([]string, []EdgeEvidence) {
 	inCluster := make(map[string]bool, len(paths))
 	for _, p := range paths {
 		inCluster[p] = true
 	}
 	seen := make(map[string]bool)
 	order := []string{"test-pair", "symbol-dep", "co-change", "sibling"}
+	var evidence []EdgeEvidence
 	for _, e := range edges {
-		if inCluster[e.A] && inCluster[e.B] && !seen[e.Reason] {
+		if inCluster[e.A] && inCluster[e.B] {
 			seen[e.Reason] = true
+			evidence = append(evidence, EdgeEvidence{
+				A:      e.A,
+				B:      e.B,
+				Weight: e.Weight,
+				Reason: e.Reason,
+			})
 		}
 	}
-	var out []string
+	var reasons []string
 	for _, r := range order {
 		if seen[r] {
-			out = append(out, r)
+			reasons = append(reasons, r)
 		}
 	}
-	return out
+	return reasons, evidence
+}
+
+// fqcnSeparator returns the FQCN separator for languages that import by
+// fully-qualified class name (PHP uses `\`, Java uses `.`). Returns "" for
+// languages whose imports already match the ImportPath directly.
+func fqcnSeparator(lang string) string {
+	switch lang {
+	case "php":
+		return `\`
+	case "java":
+		return "."
+	}
+	return ""
+}
+
+// isTopLevelTypeKind reports whether a symbol kind represents a top-level
+// type that can be targeted by a `use` / `import` statement. Methods and
+// properties live inside a class and are never FQCN-imported directly.
+func isTopLevelTypeKind(kind string) bool {
+	switch kind {
+	case "class", "interface", "trait", "enum", "type", "function":
+		return true
+	}
+	return false
 }
 
 // hasStrongEdge is true if any in-cluster edge has weight > 0.3 (i.e. at least
@@ -488,7 +538,7 @@ func hasStrongEdge(paths []string, edges []edge) bool {
 		inCluster[p] = true
 	}
 	for _, e := range edges {
-		if inCluster[e.A] && inCluster[e.B] && e.Weight > 0.3 {
+		if inCluster[e.A] && inCluster[e.B] && e.Weight > WeightSibling {
 			return true
 		}
 	}
