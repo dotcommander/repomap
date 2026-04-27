@@ -180,12 +180,8 @@ func loadAndValidatePlan(path string) (*CommitAnalysis, error) {
 	if err := json.Unmarshal(data, &a); err != nil {
 		return nil, fmt.Errorf("parse plan JSON: %w", err)
 	}
-	if a.Secrets.FlagCount > 0 || (!a.Secrets.Clean && a.Secrets.GitleaksFindings > 0) {
-		hint := "  (run `repomap commit analyze` to see findings)"
-		if a.Refs.Findings != "" {
-			hint = "  (see " + a.Refs.Findings + " for details)"
-		}
-		return nil, fmt.Errorf("secrets detected (use `commit analyze` to review and fix):\n%s", hint)
+	if err := checkSecrets(a.Secrets, a.Refs.Findings); err != nil {
+		return nil, err
 	}
 	for _, g := range a.Groups {
 		if len(g.Files) == 0 {
