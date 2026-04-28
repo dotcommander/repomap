@@ -107,13 +107,17 @@ func depsSubject(g *CommitGroup, bumps []DepBump) string {
 }
 
 func docsSubject(g *CommitGroup) string {
+	v := g.Verb
+	if v == "" {
+		v = "update"
+	}
 	if len(g.Files) == 1 {
-		return "update " + filepath.Base(g.Files[0])
+		return v + " " + filepath.Base(g.Files[0])
 	}
 	if g.Scope != "" {
-		return fmt.Sprintf("update %s docs (%d files)", g.Scope, len(g.Files))
+		return fmt.Sprintf("%s %s docs (%d files)", v, g.Scope, len(g.Files))
 	}
-	return fmt.Sprintf("update docs (%d files)", len(g.Files))
+	return fmt.Sprintf("%s docs (%d files)", v, len(g.Files))
 }
 
 func testSubject(g *CommitGroup, deltas map[string]symbolDelta) string {
@@ -218,13 +222,17 @@ func symbolBullets(tokens []string) string {
 }
 
 func genericSubject(g *CommitGroup) string {
+	v := g.Verb
+	if v == "" {
+		v = "update"
+	}
 	if len(g.Files) == 1 {
-		return "update " + filepath.Base(g.Files[0])
+		return v + " " + filepath.Base(g.Files[0])
 	}
 	if g.Scope != "" {
-		return fmt.Sprintf("update %s (%d files)", g.Scope, len(g.Files))
+		return fmt.Sprintf("%s %s (%d files)", v, g.Scope, len(g.Files))
 	}
-	return fmt.Sprintf("update %d files", len(g.Files))
+	return fmt.Sprintf("%s %d files", v, len(g.Files))
 }
 
 // detectDepBumps parses go.mod/package.json/etc. diffs and returns structured

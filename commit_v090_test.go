@@ -442,3 +442,91 @@ func Test_EdgeWeights_ClusteringContract(t *testing.T) {
 		}
 	}
 }
+
+// --- E. Parse-failure guard ---
+
+// Test_E_ParseFailure_NoBogusRemoval pins the invariant that an empty
+// post-symbols result for a file that still exists on disk does NOT produce
+// a bogus all-removed delta or flip Breaking=true. Mirrors the bug where
+// a transiently-malformed file (mid-write by a formatter hook) caused
+// every HEAD symbol to be reported as removed.
+func Test_E_ParseFailure_NoBogusRemoval(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod": "module fixture\ngo 1.22\n",
+			"api.go": "package main\nfunc PublicAPI() {}\nfunc Helper() {}\n",
+		},
+		map[string]string{
+			"api.go": "package main\nfunc PublicAPI() {}\nfunc Helper() {}\nfunc Added() {}\n",
+		},
+	)
+
+	files := []fileChange{
+		{Path: "api.go", Language: "go", Status: "M", IndexStatus: "."},
+	}
+	// Simulate a parse failure: parseDirtyFiles only inserts on successful
+	// non-nil parse, so an absent key is the real-world parse-failure signal.
+	postSymbols := map[string]*FileSymbols{}
+
+	deltas, skipped := computeSymbolDeltas(context.Background(), root, files, postSymbols)
+
+	if d, ok := deltas[files[0].Path]; ok {
+		if len(d.Removed) > 0 {
+			t.Errorf("delta.Removed = %v, want empty (parse-failure guard should suppress removals)", d.Removed)
+		}
+		if d.Breaking {
+			t.Errorf("delta.Breaking = true, want false (parse failure must not flip Breaking)")
+		}
+	}
+
+	foundSkipped := false
+	for _, p := range skipped {
+		if p == "api.go" {
+			foundSkipped = true
+			break
+		}
+	}
+	if !foundSkipped {
+		t.Errorf("skipped = %v, want to contain %q (parse-failure guard should report the path)", skipped, "api.go")
+	}
+}
+
+// Test_E_ParseFailure_DeletedFileStillRemoves verifies the guard does NOT
+// trigger for genuinely deleted files: a file with Status="D" and no post
+// content should still produce removed-symbol deltas as before, so legitimate
+// deletions still surface in commit messages.
+func Test_E_ParseFailure_DeletedFileStillRemoves(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod":  "module fixture\ngo 1.22\n",
+			"gone.go": "package main\nfunc Removed() {}\n",
+		},
+		map[string]string{},
+	)
+
+	files := []fileChange{
+		{Path: "gone.go", Language: "go", Status: "D", IndexStatus: "."},
+	}
+	postSymbols := map[string]*FileSymbols{}
+
+	deltas, skipped := computeSymbolDeltas(context.Background(), root, files, postSymbols)
+
+	for _, p := range skipped {
+		if p == "gone.go" {
+			t.Errorf("skipped contains %q but file was deleted (Status=D); guard must not trigger for deletions", p)
+		}
+	}
+	if d, ok := deltas["gone.go"]; ok {
+		if len(d.Removed) == 0 {
+			t.Errorf("delta.Removed for deleted file = empty, want non-empty (genuine deletions must still emit removed list); delta=%+v", d)
+		}
+	}
+}

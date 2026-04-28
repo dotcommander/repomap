@@ -92,6 +92,7 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	}
 
 	cmd.AddCommand(newCommitCmd())
+	cmd.AddCommand(newCommitPreflightCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newFindCmd())
 

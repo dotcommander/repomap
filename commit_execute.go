@@ -81,43 +81,53 @@ func ExecuteCommit(ctx context.Context, opts ExecuteOptions) (*ExecuteResult, er
 	if err != nil {
 		return nil, err
 	}
-
 	analysis, err := loadAndValidatePlan(opts.PlanFile)
 	if err != nil {
 		return nil, execError{code: 2, msg: fmt.Sprintf("invalid plan: %v", err)}
 	}
+	groups := analysis.Groups
+	if !opts.SkipFix {
+		groups = ConsolidateGroups(groups)
+	}
+	return executeGroups(ctx, root, groups, opts)
+}
 
+// ExecuteFromGroups runs the commit pipeline directly from a validated slice of
+// CommitGroups, bypassing the plan-file load path. Intended for commit finish,
+// which already has groups in memory. opts.PlanFile and opts.SkipFix are ignored.
+func ExecuteFromGroups(ctx context.Context, repoRoot string, groups []CommitGroup, opts ExecuteOptions) (*ExecuteResult, error) {
+	root, err := resolveRoot(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	return executeGroups(ctx, root, groups, opts)
+}
+
+// executeGroups is the shared inner pipeline: validate → dry-run check →
+// commit-loop → tag → push → release → postflight. Both ExecuteCommit and
+// ExecuteFromGroups delegate here after resolving their root + groups.
+func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts ExecuteOptions) (*ExecuteResult, error) {
 	if opts.Tag != "" {
 		if err := ValidateTag(opts.Tag); err != nil {
 			return nil, execError{code: 2, msg: err.Error()}
 		}
 	}
-
-	groups := analysis.Groups
-	if !opts.SkipFix {
-		groups = consolidateGroups(groups)
-	}
-
 	for _, g := range groups {
 		if err := ValidateConventionalMsg(g.SuggestedMsg); err != nil {
 			return nil, execError{code: 2, msg: fmt.Sprintf("group %s: %v", g.ID, err)}
 		}
 	}
-
 	if opts.DryRun {
 		printDryRun(groups, opts)
 		return &ExecuteResult{Tag: tagPtr(opts.Tag)}, nil
 	}
-
 	if err := verifyWorkspaceClean(ctx, root, groups); err != nil {
 		return nil, execError{code: 3, msg: err.Error()}
 	}
-
 	branch, err := currentBranch(ctx, root)
 	if err != nil {
 		return nil, execError{code: 3, msg: fmt.Sprintf("get branch: %v", err)}
 	}
-
 	var landed []CommitRecord
 	for _, g := range groups {
 		sha, err := execCommit(ctx, root, g.Files, g.SuggestedMsg)
@@ -126,13 +136,11 @@ func ExecuteCommit(ctx context.Context, opts ExecuteOptions) (*ExecuteResult, er
 		}
 		landed = append(landed, CommitRecord{SHA: sha, Message: g.SuggestedMsg})
 	}
-
 	if opts.Tag != "" {
 		if err := execTag(ctx, root, opts.Tag); err != nil {
 			return nil, execError{code: 3, msg: fmt.Sprintf("tag %s: %v", opts.Tag, err)}
 		}
 	}
-
 	pushed := false
 	if opts.Push {
 		if err := execPush(ctx, root, branch); err != nil {
@@ -141,7 +149,6 @@ func ExecuteCommit(ctx context.Context, opts ExecuteOptions) (*ExecuteResult, er
 		}
 		pushed = true
 	}
-
 	var releaseURL *string
 	if opts.Push && opts.Tag != "" && !opts.NoRelease {
 		url, err := execRelease(ctx, root, opts.Tag, opts.ReleaseNotesFrom)
@@ -151,7 +158,6 @@ func ExecuteCommit(ctx context.Context, opts ExecuteOptions) (*ExecuteResult, er
 		}
 		releaseURL = &url
 	}
-
 	pf := runPostflight(ctx, root, opts, pushed, releaseURL)
 	result := &ExecuteResult{
 		Branch:     branch,
@@ -230,7 +236,6 @@ func verifyWorkspaceClean(ctx context.Context, root string, groups []CommitGroup
 // Not-applicable checks are set true so postflightOK is a simple all-true test.
 func runPostflight(ctx context.Context, root string, opts ExecuteOptions, pushed bool, releaseURL *string) PostflightCheck {
 	pf := PostflightCheck{TagLocal: true, TagRemote: true, Release: true}
-
 	if out, err := gitOutput(ctx, root, "status", "--porcelain"); err == nil {
 		pf.Clean = strings.TrimSpace(out) == ""
 	}

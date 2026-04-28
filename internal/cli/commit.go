@@ -17,6 +17,9 @@ func newCommitCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newCommitAnalyzeCmd())
 	cmd.AddCommand(newCommitExecuteCmd())
+	cmd.AddCommand(newCommitPrepCmd())
+	cmd.AddCommand(newCommitFinishCmd())
+	cmd.AddCommand(newCommitAutoCmd())
 	return cmd
 }
 

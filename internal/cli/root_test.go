@@ -33,7 +33,7 @@ func findRootTestRepo(t *testing.T) string {
 // buildTestMap builds and returns a repomap.Map over the given directory.
 func buildTestMap(t *testing.T, root string) *repomap.Map {
 	t.Helper()
-	cfg := repomap.Config{MaxTokens: 2048, MaxTokensNoCtx: 2048}
+	cfg := repomap.Config{MaxTokens: 8192, MaxTokensNoCtx: 8192}
 	m := repomap.New(root, cfg)
 	require.NoError(t, m.Build(context.Background()))
 	return m

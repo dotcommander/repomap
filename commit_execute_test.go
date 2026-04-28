@@ -21,7 +21,7 @@ func Test_ConsolidateGroups_Cap3(t *testing.T) {
 		{ID: "d", SuggestedMsg: "docs: d", Files: []string{"docs/d1.md"}},
 		{ID: "e", SuggestedMsg: "test: e", Files: []string{"internal/e1.go"}},
 	}
-	got := consolidateGroups(groups)
+	got := ConsolidateGroups(groups)
 	if len(got) > 3 {
 		t.Errorf("consolidateGroups(%d groups) = %d groups, want ≤3", len(groups), len(got))
 	}
@@ -57,7 +57,7 @@ func Test_ConsolidateGroups_NoFixSkipsConsolidation(t *testing.T) {
 	// Here we just assert consolidateGroups itself isn't called when SkipFix is set;
 	// we do that by verifying the helper returns 5 unchanged groups when input is ≤3.
 	small := groups[:3]
-	got := consolidateGroups(small)
+	got := ConsolidateGroups(small)
 	if len(got) != 3 {
 		t.Errorf("consolidateGroups on 3 groups = %d, want 3 (no-op)", len(got))
 	}

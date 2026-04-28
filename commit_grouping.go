@@ -169,6 +169,11 @@ func buildEdges(gs *gitState, symbols map[string]*FileSymbols) []edge {
 		if a == b {
 			return
 		}
+		// Never link files that belong to different top-level plugins —
+		// cross-plugin co-change is incidental, not logical coupling.
+		if crossesPluginBoundary(a, b) {
+			return
+		}
 		if a > b {
 			a, b = b, a
 		}
@@ -396,6 +401,7 @@ func assembleGroup(paths []string, gs *gitState, edges []edge) CommitGroup {
 	return CommitGroup{
 		Type:       domType,
 		Scope:      scope,
+		Verb:       dominantVerb(paths, byPath),
 		Files:      paths,
 		Rationale:  rationale,
 		Confidence: conf,

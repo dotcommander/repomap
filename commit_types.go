@@ -76,8 +76,9 @@ type EdgeEvidence struct {
 // or inspects refs.diffs at DiffOffsets to refine grouping/messaging.
 type CommitGroup struct {
 	ID           string            `json:"id"`
-	Type         string            `json:"type"`  // feat | fix | docs | chore | test | refactor | deps
-	Scope        string            `json:"scope"` // empty for top-level changes
+	Type         string            `json:"type"`           // feat | fix | docs | chore | test | refactor | deps
+	Scope        string            `json:"scope"`          // empty for top-level changes
+	Verb         string            `json:"verb,omitempty"` // "add" | "remove" | "update" — dominant git operation
 	SuggestedMsg string            `json:"suggested_msg"`
 	Files        []string          `json:"files"`
 	Rationale    string            `json:"rationale"`              // why these files cluster (backward-compat string)
@@ -122,6 +123,26 @@ type edge struct {
 	Weight float64 // 0.0–1.0
 	Reason string  // "test-pair" | "symbol-dep" | "co-change" | "sibling"
 }
+
+// Prep status values emitted in PrepPayload.Status.
+const (
+	PrepStatusReady         = "ready"
+	PrepStatusNeedsJudgment = "needs_judgment"
+	PrepStatusAbort         = "abort"
+)
+
+// Review verdict values emitted in ReviewDecision.Verdict.
+const (
+	VerdictSafe   = "safe"
+	VerdictUnsafe = "unsafe"
+)
+
+// DefaultAction values emitted in Finding.DefaultAction.
+const (
+	ActionFix    = "fix"
+	ActionSafe   = "safe"
+	ActionReview = "review"
+)
 
 // Finding is one secret/PII/dev-history hit emitted by commit_secrets.go.
 // DefaultAction is the deterministic adjudication the agent should follow

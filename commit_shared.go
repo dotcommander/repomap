@@ -43,7 +43,7 @@ func ValidateTag(tag string) error {
 	return nil
 }
 
-// consolidateGroups enforces the cap-3/fold-riders/merge-smallest rules from
+// ConsolidateGroups enforces the cap-3/fold-riders/merge-smallest rules from
 // commit-agent.md §93-106. It is a pure function: input groups are not mutated.
 //
 // Algorithm (deterministic — sort before every decision):
@@ -54,7 +54,7 @@ func ValidateTag(tag string) error {
 //  4. If still >3 groups, merge the two smallest (by file count, then ID) into
 //     the smaller one's entry, keeping the larger group's SuggestedMsg.
 //  5. Repeat step 4 until ≤3.
-func consolidateGroups(groups []CommitGroup) []CommitGroup {
+func ConsolidateGroups(groups []CommitGroup) []CommitGroup {
 	if len(groups) <= 3 {
 		return groups
 	}

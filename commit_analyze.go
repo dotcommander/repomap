@@ -102,8 +102,11 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	// dispatch handles language routing.
 	postSymbols := parseDirtyFiles(root, gs.Files)
 
-	// Symbol deltas for message generation.
-	deltas := computeSymbolDeltas(ctx, root, gs.Files, postSymbols)
+	// Symbol deltas for message generation. parseSkipped lists files where the
+	// post-parse returned zero symbols despite HEAD having symbols — those are
+	// almost certainly transient parse failures (mid-write, malformed input)
+	// and we deliberately do NOT emit removed-symbol deltas for them.
+	deltas, parseSkipped := computeSymbolDeltas(ctx, root, gs.Files, postSymbols)
 
 	// Dep bumps.
 	bumps := detectDepBumps(ctx, root, gs.Files)
@@ -144,9 +147,14 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 	}
 
 	// Plan file.
-	plan := renderPlan(groups)
+	plan := RenderPlan(groups)
 	if err := writeFile(refs.Plan, []byte(plan)); err != nil {
 		return nil, fmt.Errorf("write plan: %w", err)
+	}
+
+	var diagnostics []string
+	for _, p := range parseSkipped {
+		diagnostics = append(diagnostics, "parse-skipped: "+p+" (post-parse returned no symbols; treated as parse failure, no delta emitted)")
 	}
 
 	analysis := &CommitAnalysis{
@@ -167,6 +175,7 @@ func AnalyzeCommit(ctx context.Context, opts AnalyzeOptions) (*CommitAnalysis, e
 		BreakingCount:  breakingCount,
 		PlanHash:       planHash(plan),
 		Refs:           refs,
+		Diagnostics:    diagnostics,
 	}
 	return analysis, nil
 }
@@ -313,7 +322,7 @@ func makeTmpdir() (string, error) {
 	return dir, nil
 }
 
-// renderPlan emits commit-execute.sh's native format:
+// RenderPlan emits commit-execute.sh's native format:
 //
 //	COMMIT
 //	MSG: feat(scope): subject
@@ -325,7 +334,7 @@ func makeTmpdir() (string, error) {
 //
 // Release gate (--tag + go.mod bump) is left to the agent to apply before
 // invoking commit-execute.sh; the tool reports it via dep_bumps, not the plan.
-func renderPlan(groups []CommitGroup) string {
+func RenderPlan(groups []CommitGroup) string {
 	var b strings.Builder
 	for _, g := range groups {
 		b.WriteString("COMMIT\n")

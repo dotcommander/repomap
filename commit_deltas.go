@@ -11,8 +11,16 @@ import (
 // working tree. Uses the real language parsers (via parseDirtyFiles dispatch)
 // for both pre and post, enabling signature-aware Modified detection.
 // Missing-at-HEAD is treated as an all-added file.
-func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, postSymbols map[string]*FileSymbols) map[string]symbolDelta {
+//
+// Parse-failure guard: when the post-side parser returns zero symbols for a
+// file that still exists on disk and had pre-symbols at HEAD, the result is
+// treated as a parse failure (not "everything removed"). The file's path is
+// appended to skipped and no delta is emitted for it. This prevents a
+// transiently-malformed file (e.g. mid-write by a formatter hook) from
+// producing a bogus all-removed delta that promotes the change to breaking.
+func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, postSymbols map[string]*FileSymbols) (map[string]symbolDelta, []string) {
 	out := make(map[string]symbolDelta, len(files))
+	var skipped []string
 	for _, f := range files {
 		if f.Language == "" {
 			continue
@@ -41,6 +49,19 @@ func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, p
 			preFS := parseFileSymbolsFromSource(root, f.Path, f.Language, preSrc)
 			preSigs = symbolSigMap(preFS)
 			preExported = symbolExportedMap(preFS)
+		}
+
+		// Parse-failure guard. If pre had symbols, the file is not a deletion,
+		// and post is absent from the map (parseDirtyFiles only inserts on
+		// successful non-nil parse), the post parser failed — transient
+		// mid-write, partial save, or tree-sitter recovery with no matched
+		// declarations. Refuse to claim "everything was removed" — skip and
+		// surface via skipped. Note: post==nil means absent (parse failed);
+		// post!=nil with empty Symbols means the file genuinely has no symbols.
+		_, postPresent := postSymbols[f.Path]
+		if len(preSigs) > 0 && !postPresent && f.Status != "D" && f.IndexStatus != "D" {
+			skipped = append(skipped, f.Path)
+			continue
 		}
 
 		postExported := symbolExportedMap(post)
@@ -91,7 +112,7 @@ func computeSymbolDeltas(ctx context.Context, root string, files []fileChange, p
 			Breaking: breaking,
 		}
 	}
-	return out
+	return out, skipped
 }
 
 // oldPathOr returns OldPath for renames, else Path. Needed so `git show HEAD:`
