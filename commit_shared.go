@@ -15,7 +15,7 @@ import (
 // isConventional, so that any message that passes this gate would also be
 // counted as conventional by classifyHistoryStyle.
 var conventionalSubjectRe = regexp.MustCompile(
-	`^(feat|fix|refactor|docs|test|chore|perf|style|build|ci|revert)(\(.+\))?: .{1,72}$`,
+	`^(feat|fix|refactor|docs|test|chore|perf|style|build|ci|revert|deps)(\(.+\))?: .{1,72}$`,
 )
 
 // tagRe is the allowed semver tag format.
