@@ -82,6 +82,8 @@ func Test_ValidateMessage_Conventional(t *testing.T) {
 		{"build(ci): update workflow", true},
 		{"ci: add lint step", true},
 		{"revert: undo bad migration", true},
+		{"deps: bump modernc.org/sqlite v1.48.2 -> v1.50.0", true},
+		{"deps(go): bump golang.org/x/sync", true},
 		// subject exactly 72 chars (valid boundary)
 		{"feat: " + strings.Repeat("x", 72), true},
 		// subject 73 chars (one over)
