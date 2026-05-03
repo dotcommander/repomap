@@ -130,6 +130,155 @@ func TestRenderDetail_BoundaryLabels(t *testing.T) {
 	})
 }
 
+// TestClassifyBoundaries_NonGoImports verifies that non-Go style import paths
+// (TypeScript/Python/Rust package names) do not match Go-only boundary rules
+// and return empty labels without panicking. The boundary rules table is
+// intentionally Go-centric; future work may add per-language tables.
+func TestClassifyBoundaries_NonGoImports(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		imports []string
+	}{
+		{
+			name:    "TypeScript_HTTP",
+			imports: []string{"express", "fastify", "koa", "hono"},
+		},
+		{
+			name:    "TypeScript_DB",
+			imports: []string{"prisma", "@prisma/client", "drizzle-orm", "pg"},
+		},
+		{
+			name:    "Python_HTTP",
+			imports: []string{"fastapi", "flask", "django", "starlette"},
+		},
+		{
+			name:    "Python_DB",
+			imports: []string{"sqlalchemy", "asyncpg", "psycopg2", "tortoise"},
+		},
+		{
+			name:    "Rust_HTTP",
+			imports: []string{"axum", "actix-web", "warp", "rocket"},
+		},
+		{
+			name:    "Rust_DB",
+			imports: []string{"sqlx", "diesel", "sea-orm"},
+		},
+		{
+			name:    "empty",
+			imports: []string{},
+		},
+		{
+			name:    "nil",
+			imports: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			labels, bump := classifyBoundaries(tc.imports)
+			assert.Empty(t, labels, "non-Go imports must not match Go boundary rules")
+			assert.Equal(t, 0, bump, "non-Go imports must produce zero score bump")
+		})
+	}
+}
+
+// TestApplyBoundaryBoost_NonGoLanguages verifies that applyBoundaryBoost does not
+// panic and produces no labels for non-Go files whose imports are language-native
+// package names (not Go import paths).
+func TestApplyBoundaryBoost_NonGoLanguages(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		language string
+		imports  []string
+	}{
+		{
+			name:     "TypeScript express+prisma",
+			language: "typescript",
+			imports:  []string{"express", "prisma"},
+		},
+		{
+			name:     "Python fastapi+sqlalchemy",
+			language: "python",
+			imports:  []string{"fastapi", "sqlalchemy"},
+		},
+		{
+			name:     "Rust axum+sqlx",
+			language: "rust",
+			imports:  []string{"axum", "sqlx"},
+		},
+		{
+			name:     "unknown language",
+			language: "cobol",
+			imports:  []string{"anything"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			fs := &FileSymbols{
+				Path:     "app." + tc.language,
+				Language: tc.language,
+				Imports:  tc.imports,
+				Symbols:  []Symbol{{Name: "Handler", Kind: "function", Exported: true}},
+			}
+			ranked := []RankedFile{{FileSymbols: fs, Score: 10}}
+			// Must not panic.
+			applyBoundaryBoost(ranked)
+			// Non-Go language imports don't match Go boundary rules.
+			assert.Empty(t, ranked[0].Boundaries,
+				"non-Go language %q must produce no boundary labels", tc.language)
+			assert.Equal(t, 10, ranked[0].Score,
+				"non-Go language %q score must be unchanged", tc.language)
+		})
+	}
+}
+
+// TestClassifyBoundaries_TableDriven exercises every label in the boundary rules
+// table, ensuring each prefix produces the expected label and a positive score bump.
+func TestClassifyBoundaries_TableDriven(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		label    string
+		imp      string
+		wantBump int
+	}{
+		{"HTTP", "net/http", 5},
+		{"HTTP", "github.com/go-chi/chi/v5", 5},
+		{"HTTP", "github.com/gin-gonic/gin", 5},
+		{"HTTP", "github.com/gorilla/mux", 5},
+		{"Postgres", "github.com/jackc/pgx/v5", 5},
+		{"Postgres", "database/sql", 5},
+		{"Postgres", "github.com/lib/pq", 5},
+		{"Redis", "github.com/redis/go-redis/v9", 5},
+		{"Redis", "github.com/go-redis/redis/v8", 5},
+		{"Kafka", "github.com/segmentio/kafka-go", 5},
+		{"Kafka", "github.com/IBM/sarama", 5},
+		{"Kafka", "github.com/Shopify/sarama", 5},
+		{"gRPC", "google.golang.org/grpc", 5},
+		{"Shell", "os/exec", 3},
+		{"Crypto", "crypto/tls", 3},
+		{"Crypto", "golang.org/x/crypto/bcrypt", 3},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.label+"_"+tc.imp, func(t *testing.T) {
+			t.Parallel()
+			labels, bump := classifyBoundaries([]string{tc.imp})
+			require.Contains(t, labels, tc.label,
+				"import %q must produce label %q", tc.imp, tc.label)
+			assert.Equal(t, tc.wantBump, bump,
+				"single %q match must produce bump=%d", tc.label, tc.wantBump)
+		})
+	}
+}
+
 func TestRenderXML_BoundaryAttribute(t *testing.T) {
 	t.Parallel()
 

@@ -120,6 +120,99 @@ func TestLoadBlocklistConfig_Valid(t *testing.T) {
 	assert.False(t, c.ShouldSkipSymbol("Regular"))
 }
 
+// TestBlocklistConfig_EmptyPattern verifies that an empty string in the blocklist
+// is silently skipped and does not match any symbol.
+func TestBlocklistConfig_EmptyPattern(t *testing.T) {
+	t.Parallel()
+	c := &BlocklistConfig{MethodBlocklist: []string{"", "  ", "Foo"}}
+	require.NoError(t, c.compile())
+	assert.True(t, c.ShouldSkipSymbol("Foo"), "Foo must be blocked")
+	assert.False(t, c.ShouldSkipSymbol("Bar"), "Bar must not be blocked")
+	assert.False(t, c.ShouldSkipSymbol(""), "empty name must not be blocked by empty pattern")
+	assert.False(t, c.ShouldSkipSymbol("anything"), "arbitrary name must not be blocked by empty/whitespace patterns")
+}
+
+// TestBlocklistConfig_DotPrefixedSymbols verifies that patterns work correctly when
+// symbol names start with dots or slashes (edge cases for path.Match).
+func TestBlocklistConfig_DotPrefixedSymbols(t *testing.T) {
+	t.Parallel()
+	c := &BlocklistConfig{MethodBlocklist: []string{".*", "/^\\./", "Normal"}}
+	require.NoError(t, c.compile())
+
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{".hidden", true}, // matches ".*" glob
+		{".github", true}, // matches ".*" glob
+		{"Normal", true},  // explicit match
+		{"Public", false}, // no match
+		{"notdot", false}, // no leading dot
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, c.ShouldSkipSymbol(tc.name))
+		})
+	}
+}
+
+// TestBlocklistConfig_OverlappingPatterns verifies that a symbol matching multiple
+// patterns is blocked (first-match wins; no double-counting needed).
+func TestBlocklistConfig_OverlappingPatterns(t *testing.T) {
+	t.Parallel()
+	// Both "Test*" and "/^Test/" match "TestFoo" — must still block, not panic.
+	c := &BlocklistConfig{MethodBlocklist: []string{"Test*", "/^Test/"}}
+	require.NoError(t, c.compile())
+	assert.True(t, c.ShouldSkipSymbol("TestFoo"), "symbol matching multiple patterns must be blocked")
+	assert.False(t, c.ShouldSkipSymbol("Regular"), "non-matching symbol must not be blocked")
+}
+
+// TestBlocklistConfig_MixedGlobAndRegex verifies that glob and regex patterns
+// coexist correctly — each evaluates independently.
+func TestBlocklistConfig_MixedGlobAndRegex(t *testing.T) {
+	t.Parallel()
+	c := &BlocklistConfig{MethodBlocklist: []string{"*Mock", "/^gen_/", "mustJSON"}}
+	require.NoError(t, c.compile())
+
+	cases := []struct {
+		sym  string
+		want bool
+	}{
+		{"ServerMock", true},  // glob *Mock
+		{"gen_user", true},    // regex ^gen_
+		{"mustJSON", true},    // exact glob
+		{"realFunc", false},   // no match
+		{"GenUser", false},    // case-sensitive regex — ^gen_ requires lowercase
+		{"mockServer", false}, // glob *Mock requires suffix
+	}
+	for _, tc := range cases {
+		t.Run(tc.sym, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tc.want, c.ShouldSkipSymbol(tc.sym))
+		})
+	}
+}
+
+// TestBlocklistConfig_FilterSymbols_DotfilePattern verifies filterSymbols works
+// end-to-end with a pattern that targets dot-prefixed names.
+func TestBlocklistConfig_FilterSymbols_DotfilePattern(t *testing.T) {
+	t.Parallel()
+	c := &BlocklistConfig{MethodBlocklist: []string{".*"}}
+	require.NoError(t, c.compile())
+
+	fs := &FileSymbols{
+		Path: ".github/workflows/ci.yml",
+		Symbols: []Symbol{
+			{Name: ".hidden", Kind: "function", Exported: true},
+			{Name: "Visible", Kind: "function", Exported: true},
+		},
+	}
+	c.filterSymbols(fs)
+	require.Len(t, fs.Symbols, 1)
+	assert.Equal(t, "Visible", fs.Symbols[0].Name)
+}
+
 // TestBlocklistIntegration verifies Build filters symbols matching the blocklist.
 // Requires a git repo because ScanFiles returns nil outside one.
 func TestBlocklistIntegration(t *testing.T) {

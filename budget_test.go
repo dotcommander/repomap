@@ -347,6 +347,107 @@ func TestCompactCost_ExportedCounted(t *testing.T) {
 		"compactCost must not include signature or doc bytes")
 }
 
+// TestBudgetFiles_BeyondCutoffOmitted verifies that files ranked beyond the header
+// cutoff receive DetailLevel=-1 (omitted), not summary or full.
+func TestBudgetFiles_BeyondCutoffOmitted(t *testing.T) {
+	t.Parallel()
+
+	// Budget: 5 tokens = 20 bytes. Phase 1 headerCap = 14 bytes.
+	// Each path "fileN.go" = 8+30=38 bytes — the very first file exceeds the cap,
+	// so cutoff=0 and all files are beyond cutoff.
+	files := []RankedFile{
+		mkRankedFunc("file0.go", 2, 5, 0),
+		mkRankedFunc("file1.go", 3, 5, 0),
+		mkRankedFunc("file2.go", 1, 5, 0),
+	}
+	ranked := BudgetFiles(files, 5)
+	require.Len(t, ranked, 3)
+	for i, f := range ranked {
+		assert.Equal(t, -1, f.DetailLevel,
+			"file %d beyond header cutoff must be omitted", i)
+	}
+}
+
+// TestBudgetFiles_HighRankOmittedWhenBudgetExhausted verifies that a high-rank file
+// with a very large enriched cost is demoted through summary to omit when the budget
+// is exhausted by previous files.
+func TestBudgetFiles_HighRankOmittedWhenBudgetExhausted(t *testing.T) {
+	t.Parallel()
+
+	// Budget: 150 tokens = 600 bytes.
+	// File 1 (ranked highest): 3 symbols, sig=5 → enrichedCost ≈ 3*(8+1+6)=45 bytes → level 2.
+	// File 2: 40 symbols, sig=20 → enrichedCost ≈ 40*(8+1+21)=1200 bytes > 600;
+	//          summaryCost = 1 group * 30 = 30 bytes → level 1.
+	// File 3: after file 1+2 consume budget, level depends on remaining bytes.
+	f1 := mkRankedFunc("top.go", 3, 5, 0)
+	f2 := mkRankedFunc("large.go", 40, 20, 0)
+	f3 := mkRankedFunc("other.go", 40, 20, 0)
+	ranked := BudgetFiles([]RankedFile{f1, f2, f3}, 150)
+	require.Len(t, ranked, 3)
+	assert.Equal(t, 2, ranked[0].DetailLevel, "top.go must be level 2 (fits enriched)")
+	assert.Equal(t, 1, ranked[1].DetailLevel, "large.go must fall to summary")
+	// ranked[2] (other.go) must be level 1 or -1 — never level 2 given exhausted budget.
+	assert.LessOrEqual(t, ranked[2].DetailLevel, 1,
+		"third large file must not get level 2 with exhausted budget")
+}
+
+// TestBudgetFiles_OmitSingleHighRankFile verifies that when a single file is so
+// large its enriched AND summary costs both exceed the budget, it is omitted (-1).
+func TestBudgetFiles_OmitSingleHighRankFile(t *testing.T) {
+	t.Parallel()
+
+	// Budget: 10 tokens = 40 bytes. headerCap = 28 bytes.
+	// path "big.go" = 6+30 = 36 bytes > 28 → beyond cutoff → level -1.
+	f := mkRankedFunc("big.go", 50, 30, 0)
+	ranked := BudgetFiles([]RankedFile{f}, 10)
+	require.Len(t, ranked, 1)
+	assert.Equal(t, -1, ranked[0].DetailLevel,
+		"file whose path alone exceeds headerCap must be omitted")
+}
+
+// TestBudgetFiles_MultipleOverrides verifies mixed detail levels when different files
+// land on different paths through the budget algorithm: level 2, level 1, and level -1.
+func TestBudgetFiles_MultipleOverrides(t *testing.T) {
+	t.Parallel()
+
+	// Budget: 120 tokens = 480 bytes.
+	// f1: 2 symbols, sig=5 → enrichedCost ≈ 2*(8+1+6)=30 bytes → level 2.
+	// f2: 20 symbols, sig=10 → enrichedCost ≈ 20*(8+1+11)=400 bytes; remaining ≈ 480-headerCost-30.
+	// f3: 40 symbols, sig=20 → must overflow both enriched and summary.
+	f1 := mkRankedFunc("a.go", 2, 5, 0)
+	f2 := mkRankedFunc("b.go", 20, 10, 0)
+	f3 := mkRankedFunc("c.go", 40, 20, 0)
+	ranked := BudgetFiles([]RankedFile{f1, f2, f3}, 120)
+	require.Len(t, ranked, 3)
+
+	// f1 must be level 2 (small enriched cost fits easily).
+	assert.Equal(t, 2, ranked[0].DetailLevel, "f1 must be level 2")
+	// f2 and f3 must not both get level 2 — at least one must be demoted.
+	level2Count := 0
+	for _, r := range ranked {
+		if r.DetailLevel == 2 {
+			level2Count++
+		}
+	}
+	assert.LessOrEqual(t, level2Count, 2,
+		"tight budget must prevent all three files from reaching level 2")
+}
+
+// TestBudgetFiles_ZeroSymbolFilesAlwaysLevel0 verifies that zero-symbol files always
+// receive DetailLevel=0 regardless of budget, even when surrounded by heavy files.
+func TestBudgetFiles_ZeroSymbolFilesAlwaysLevel0(t *testing.T) {
+	t.Parallel()
+
+	empty := RankedFile{FileSymbols: &FileSymbols{Path: "empty.go", Symbols: nil}, Score: 100}
+	heavy := mkRankedFunc("heavy.go", 30, 20, 0)
+	heavy.Score = 50
+
+	ranked := BudgetFiles([]RankedFile{empty, heavy}, 2048)
+	require.Len(t, ranked, 2)
+	assert.Equal(t, 0, ranked[0].DetailLevel, "zero-symbol file must always be level 0")
+	assert.Equal(t, 2, ranked[1].DetailLevel, "symbol-rich file under generous budget must be level 2")
+}
+
 // TestBudgetFilesCompact_FitsMoreThanEnriched verifies that compact budgeting
 // fits more files at level 2 within the same token budget compared to enriched budgeting.
 func TestBudgetFilesCompact_FitsMoreThanEnriched(t *testing.T) {
