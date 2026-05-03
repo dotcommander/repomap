@@ -301,10 +301,9 @@ func shouldTagUntested(f RankedFile, covered map[string]bool) bool {
 	return !covered[diagnosticPackageKey(f.FileSymbols)]
 }
 
-// markDeadExports marks exported symbols as Dead when no file in the
-// scanned tree imports their package (ImportedBy == 0). This distinguishes
-// truly unused exports from live ones, enabling the budget to deprioritise
-// dead-export files without removing them entirely.
+// markDeadExports marks exported symbols as Dead when no other file in the
+// scanned tree imports their package (ImportedBy == 0). Dead exports are still
+// rendered but are deprioritised in budget allocation.
 func markDeadExports(ranked []RankedFile) {
 	for i := range ranked {
 		if ranked[i].ImportedBy > 0 {
