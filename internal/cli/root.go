@@ -239,13 +239,13 @@ func renderCallsOutput(
 	case format == "detail":
 		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit))
 	case format == "compact":
-		// lean orientation — callers not shown in compact mode.
+		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format compact\n")
 		fmt.Fprint(w, m.StringCompact())
 	case format == "lines":
-		// lines format doesn't integrate callers — fall back to standard.
+		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format lines\n")
 		fmt.Fprint(w, m.StringLines())
 	case format == "xml":
-		// xml format doesn't integrate callers — fall back to standard.
+		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format xml\n")
 		fmt.Fprint(w, m.StringXML())
 	default:
 		// enriched default with callers.
