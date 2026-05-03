@@ -4,63 +4,25 @@ import "strings"
 
 // boundaryRule maps well-known import prefixes to a semantic boundary label
 // and a per-file score bump awarded when any prefix in the rule matches.
+// Rules are defined per-language in language.go (languageDef.BoundaryRules).
 type boundaryRule struct {
 	Label     string   // e.g. "HTTP", "Postgres"
 	Prefixes  []string // import path prefixes that trigger this label
 	ScoreBump int      // score added when any prefix matches
 }
 
-// boundaryRules is the classification table for Go imports.
-// Ordered for deterministic label output; callers must not assume order
-// beyond what this slice defines.
-var boundaryRules = []boundaryRule{
-	{
-		Label:     "HTTP",
-		Prefixes:  []string{"net/http", "github.com/go-chi/chi", "github.com/gin-gonic/gin", "github.com/gorilla/mux"},
-		ScoreBump: 5,
-	},
-	{
-		Label:     "Postgres",
-		Prefixes:  []string{"github.com/jackc/pgx", "database/sql", "github.com/lib/pq"},
-		ScoreBump: 5,
-	},
-	{
-		Label:     "Redis",
-		Prefixes:  []string{"github.com/redis/", "github.com/go-redis/"},
-		ScoreBump: 5,
-	},
-	{
-		Label:     "Kafka",
-		Prefixes:  []string{"github.com/segmentio/kafka-go", "github.com/IBM/sarama", "github.com/Shopify/sarama"},
-		ScoreBump: 5,
-	},
-	{
-		Label:     "gRPC",
-		Prefixes:  []string{"google.golang.org/grpc"},
-		ScoreBump: 5,
-	},
-	{
-		Label:     "Shell",
-		Prefixes:  []string{"os/exec"},
-		ScoreBump: 3,
-	},
-	{
-		Label:     "Crypto",
-		Prefixes:  []string{"crypto/", "golang.org/x/crypto"},
-		ScoreBump: 3,
-	},
-}
-
 // maxBoundaryBump is the maximum total score bump a single file can earn
 // from boundary classification, regardless of how many boundaries match.
 const maxBoundaryBump = 15
 
-// classifyBoundaries inspects imports and returns the set of boundary labels
-// present (in boundaryRules order) and the total score bump (capped at
-// maxBoundaryBump). Each label is emitted at most once even if multiple
-// imports in the same file match the same rule.
-func classifyBoundaries(imports []string) (labels []string, bump int) {
-	for _, rule := range boundaryRules {
+// classifyBoundaries inspects imports for the given language and returns the
+// set of boundary labels present (in langBoundaryRules order) and the total
+// score bump (capped at maxBoundaryBump). Each label is emitted at most once
+// even if multiple imports in the same file match the same rule.
+// Languages with no boundary rules (e.g. C/C++) return empty labels and 0 bump.
+func classifyBoundaries(langID string, imports []string) (labels []string, bump int) {
+	rules := langBoundaryRules[langID]
+	for _, rule := range rules {
 		matched := false
 		for _, imp := range imports {
 			for _, prefix := range rule.Prefixes {

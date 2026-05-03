@@ -9,14 +9,14 @@ import (
 
 func TestClassifyBoundaries_Basic(t *testing.T) {
 	t.Parallel()
-	labels, bump := classifyBoundaries([]string{"net/http", "encoding/json"})
+	labels, bump := classifyBoundaries("go", []string{"net/http", "encoding/json"})
 	require.Equal(t, []string{"HTTP"}, labels)
 	assert.Equal(t, 5, bump)
 }
 
 func TestClassifyBoundaries_Multiple(t *testing.T) {
 	t.Parallel()
-	labels, bump := classifyBoundaries([]string{"net/http", "github.com/jackc/pgx/v5"})
+	labels, bump := classifyBoundaries("go", []string{"net/http", "github.com/jackc/pgx/v5"})
 	require.Equal(t, []string{"HTTP", "Postgres"}, labels)
 	assert.Equal(t, 10, bump)
 }
@@ -30,7 +30,7 @@ func TestClassifyBoundaries_Cap(t *testing.T) {
 		"github.com/redis/go-redis/v9",
 		"github.com/segmentio/kafka-go",
 	}
-	labels, bump := classifyBoundaries(imports)
+	labels, bump := classifyBoundaries("go", imports)
 	assert.Equal(t, 4, len(labels), "expected four boundary labels")
 	assert.Equal(t, maxBoundaryBump, bump, "bump should be capped at maxBoundaryBump")
 }
@@ -38,14 +38,14 @@ func TestClassifyBoundaries_Cap(t *testing.T) {
 func TestClassifyBoundaries_Dedupe(t *testing.T) {
 	t.Parallel()
 	// Both net/http and chi match the HTTP rule — label emitted once, bump counted once.
-	labels, bump := classifyBoundaries([]string{"net/http", "github.com/go-chi/chi/v5"})
+	labels, bump := classifyBoundaries("go", []string{"net/http", "github.com/go-chi/chi/v5"})
 	require.Equal(t, []string{"HTTP"}, labels)
 	assert.Equal(t, 5, bump)
 }
 
 func TestClassifyBoundaries_NoMatch(t *testing.T) {
 	t.Parallel()
-	labels, bump := classifyBoundaries([]string{"encoding/json", "fmt"})
+	labels, bump := classifyBoundaries("go", []string{"encoding/json", "fmt"})
 	assert.Empty(t, labels)
 	assert.Equal(t, 0, bump)
 }

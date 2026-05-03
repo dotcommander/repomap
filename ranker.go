@@ -321,7 +321,7 @@ func markDeadExports(ranked []RankedFile) {
 // stores them on the RankedFile, and adds a capped score bump.
 func applyBoundaryBoost(ranked []RankedFile) {
 	for i := range ranked {
-		labels, bump := classifyBoundaries(ranked[i].Imports)
+		labels, bump := classifyBoundaries(ranked[i].Language, ranked[i].Imports)
 		if len(labels) > 0 {
 			ranked[i].Boundaries = labels
 			ranked[i].Score += bump
