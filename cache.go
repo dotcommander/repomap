@@ -61,7 +61,7 @@ func (m *Map) SaveCache(cacheDir string) error {
 	}
 	// Compute lazy strings if not yet cached, so they are persisted.
 	compact := m.outputs.get(&m.outputs.compact, func() string {
-		return FormatMap(m.ranked, m.config.MaxTokens, false, false)
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist)
 	})
 	lines := m.outputs.get(&m.outputs.lines, func() string {
 		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)

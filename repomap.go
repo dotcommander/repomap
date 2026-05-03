@@ -238,7 +238,7 @@ func (m *Map) String() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.compact, func() string {
-		return FormatMap(m.ranked, m.config.MaxTokens, false, false)
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist)
 	})
 }
 
@@ -250,7 +250,7 @@ func (m *Map) StringCompact() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.orientation, func() string {
-		return FormatMapCompact(m.ranked, m.config.MaxTokens)
+		return FormatMapCompact(m.ranked, m.config.MaxTokens, m.blocklist)
 	})
 }
 
@@ -259,7 +259,7 @@ func (m *Map) StringVerbose() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.verbose, func() string {
-		return FormatMap(m.ranked, 0, true, false)
+		return FormatMap(m.ranked, 0, true, false, m.blocklist)
 	})
 }
 
@@ -268,7 +268,7 @@ func (m *Map) StringDetail() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.detail, func() string {
-		return FormatMap(m.ranked, 0, true, true)
+		return FormatMap(m.ranked, 0, true, true, m.blocklist)
 	})
 }
 
@@ -286,7 +286,7 @@ func (m *Map) StringXML() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.xml, func() string {
-		return FormatXML(m.ranked, m.config.MaxTokens)
+		return FormatXML(m.ranked, m.config.MaxTokens, m.blocklist)
 	})
 }
 

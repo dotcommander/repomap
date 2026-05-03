@@ -3,6 +3,7 @@ package repomap
 import "math/bits"
 
 // BudgetFiles assigns a DetailLevel to each RankedFile within the given token budget.
+// cfg may be nil — nil means no file-level overrides (backward compatible).
 // When maxTokens is 0, all files get DetailLevel 2 (unlimited mode for verbose/detail).
 //
 // Detail levels:
@@ -12,7 +13,7 @@ import "math/bits"
 //	 1: summary — path + "5 types, 3 funcs"
 //	 2: full symbol groups
 //	 3: symbols + struct/interface field expansion
-func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
+func BudgetFiles(ranked []RankedFile, maxTokens int, cfg *BlocklistConfig) []RankedFile {
 	if len(ranked) == 0 {
 		return ranked
 	}
@@ -82,6 +83,7 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 		ranked[i].DetailLevel = -1
 	}
 
+	applyFileOverrides(ranked, cutoff, budgetBytes, &used, enrichedCost, cfg)
 	promoteFieldExpansion(ranked, cutoff, budgetBytes, used)
 	return ranked
 }
@@ -143,17 +145,19 @@ func compactCost(syms []Symbol) int {
 
 // BudgetFilesCompact assigns DetailLevel to each RankedFile using compactCost estimates,
 // matching the lean orientation renderer (path + exported symbol names only).
+// cfg may be nil — nil means no file-level overrides (backward compatible).
 // When maxTokens is 0, all files get DetailLevel 2 (unlimited mode).
 //
 // This is separate from BudgetFiles (which uses enrichedCost) so compact-mode callers
 // get accurate budgeting without rewriting the enriched budget loop.
-func BudgetFilesCompact(ranked []RankedFile, maxTokens int) []RankedFile {
-	return budgetFilesWithCost(ranked, maxTokens, compactCost)
+func BudgetFilesCompact(ranked []RankedFile, maxTokens int, cfg *BlocklistConfig) []RankedFile {
+	return budgetFilesWithCost(ranked, maxTokens, compactCost, cfg)
 }
 
 // budgetFilesWithCost is the shared budget loop parameterised by cost function.
 // BudgetFiles (enriched default) and BudgetFilesCompact (lean orientation) both use it.
-func budgetFilesWithCost(ranked []RankedFile, maxTokens int, costFn func([]Symbol) int) []RankedFile {
+// cfg may be nil — nil means no file-level overrides (backward compatible).
+func budgetFilesWithCost(ranked []RankedFile, maxTokens int, costFn func([]Symbol) int, cfg *BlocklistConfig) []RankedFile {
 	if len(ranked) == 0 {
 		return ranked
 	}
@@ -215,6 +219,7 @@ func budgetFilesWithCost(ranked []RankedFile, maxTokens int, costFn func([]Symbo
 		ranked[i].DetailLevel = -1
 	}
 
+	applyFileOverrides(ranked, cutoff, budgetBytes, &used, costFn, cfg)
 	return ranked
 }
 

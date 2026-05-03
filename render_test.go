@@ -84,19 +84,19 @@ func TestDocSubtitleRendering_FormatMap(t *testing.T) {
 
 	t.Run("detail=true verbose=true emits subtitle", func(t *testing.T) {
 		t.Parallel()
-		out := FormatMap(files, 0, true, true)
+		out := FormatMap(files, 0, true, true, nil)
 		assert.Contains(t, out, "// starts the main server loop")
 	})
 
 	t.Run("detail=false verbose=true no subtitle", func(t *testing.T) {
 		t.Parallel()
-		out := FormatMap(files, 0, true, false)
+		out := FormatMap(files, 0, true, false, nil)
 		assert.NotContains(t, out, "//")
 	})
 
 	t.Run("default mode emits subtitle", func(t *testing.T) {
 		t.Parallel()
-		out := FormatMap(files, 0, false, false)
+		out := FormatMap(files, 0, false, false, nil)
 		assert.Contains(t, out, "// starts the main server loop")
 	})
 }
@@ -115,7 +115,7 @@ func TestDocSubtitleRendering_XML(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("server/handler.go", 2, []Symbol{sym})}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.Contains(t, out, `doc="processes incoming HTTP requests"`)
 }
 
@@ -131,7 +131,7 @@ func TestDocSubtitleRendering_XMLNoDocNoAttr(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("server/handler.go", 2, []Symbol{sym})}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.NotContains(t, out, `doc=`)
 }
 
@@ -521,7 +521,7 @@ func TestFormatMapCompact_NamesOnly(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("budget.go", 2, syms)}
 
-	out := FormatMapCompact(files, 4096)
+	out := FormatMapCompact(files, 4096, nil)
 
 	// Names must appear.
 	assert.Contains(t, out, "BudgetFiles")
@@ -544,8 +544,8 @@ func TestFormatMapCompact_DefaultModeUnchanged(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("server.go", 2, syms)}
 
-	defaultOut := FormatMap(files, 0, false, false)
-	compactOut := FormatMapCompact(files, 4096)
+	defaultOut := FormatMap(files, 0, false, false, nil)
+	compactOut := FormatMapCompact(files, 4096, nil)
 
 	// Default must include the signature.
 	assert.Contains(t, defaultOut, "(cfg Config) *Server",
@@ -573,7 +573,7 @@ func TestFormatMapCompact_BudgetHonored(t *testing.T) {
 
 	// Very tight budget — should still honour it (output bytes ≤ budget*4 approximately).
 	const budget = 32 // tokens
-	out := FormatMapCompact(files, budget)
+	out := FormatMapCompact(files, budget, nil)
 
 	// Output must not grossly exceed budget (allow 2x for headers/overhead).
 	assert.LessOrEqual(t, len(out), budget*4*2,

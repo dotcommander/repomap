@@ -140,7 +140,8 @@ func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, c
 
 // FormatMapWithCallers formats the ranked files like FormatMap but injects caller
 // information from the callers map into the output.
-func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail bool, callers SymbolCallers, limit int) string {
+// cfg may be nil — nil means no file-level detail overrides.
+func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail bool, callers SymbolCallers, limit int, cfg *BlocklistConfig) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -165,7 +166,7 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 	}
 
 	// Budget mode.
-	files = BudgetFiles(files, maxTokens)
+	files = BudgetFiles(files, maxTokens, cfg)
 
 	var headerOnly []string
 	shownFiles := 0

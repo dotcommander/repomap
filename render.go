@@ -8,10 +8,11 @@ import (
 
 // FormatMap formats ranked files into a token-budgeted text representation.
 // maxTokens controls the output size (estimated as len(text)/4).
+// cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
 // When verbose is true, shows all symbols without summarization.
 // When detail is true, shows signatures for funcs/methods and fields for structs.
-func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool) string {
+func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *BlocklistConfig) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -36,7 +37,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool) string {
 	}
 
 	// Budget mode: assign detail levels, then render.
-	files = BudgetFiles(files, maxTokens)
+	files = BudgetFiles(files, maxTokens, cfg)
 
 	var headerOnly []string
 	shownFiles := 0
@@ -68,8 +69,9 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool) string {
 // FormatMapCompact formats ranked files into the lean orientation mode:
 // path + exported symbol names only, NO signatures, NO godoc, NO struct fields.
 // Budget is applied using compactCost so more files fit vs. the enriched default.
+// cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
-func FormatMapCompact(files []RankedFile, maxTokens int) string {
+func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -79,7 +81,7 @@ func FormatMapCompact(files []RankedFile, maxTokens int) string {
 	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
 
 	// Budget mode using compact cost — more files fit vs. enriched default.
-	files = BudgetFilesCompact(files, maxTokens)
+	files = BudgetFilesCompact(files, maxTokens, cfg)
 
 	var headerOnly []string
 	shownFiles := 0

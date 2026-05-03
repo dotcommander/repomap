@@ -147,7 +147,7 @@ func TestRenderXML_BoundaryAttribute(t *testing.T) {
 			Boundaries:  []string{"HTTP", "Postgres"},
 		}
 		files := []RankedFile{f}
-		out := FormatXML(files, 0)
+		out := FormatXML(files, 0, nil)
 		assert.Contains(t, out, `boundaries="HTTP,Postgres"`)
 	})
 
@@ -162,7 +162,7 @@ func TestRenderXML_BoundaryAttribute(t *testing.T) {
 			DetailLevel: 2,
 		}
 		files := []RankedFile{f}
-		out := FormatXML(files, 0)
+		out := FormatXML(files, 0, nil)
 		assert.NotContains(t, out, "boundaries=")
 	})
 }

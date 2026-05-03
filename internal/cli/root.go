@@ -226,7 +226,7 @@ func renderCallsOutput(
 ) error {
 	switch {
 	case asJSON:
-		verbose := repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit)
+		verbose := repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil)
 		lines := strings.Split(strings.TrimRight(verbose, "\n"), "\n")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -235,9 +235,9 @@ func renderCallsOutput(
 		}
 		return enc.Encode(jsonOutput{SchemaVersion: 1, Lines: lines})
 	case format == "verbose":
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil))
 	case format == "detail":
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit, nil))
 	case format == "compact":
 		// lean orientation — callers not shown in compact mode.
 		fmt.Fprint(w, m.StringCompact())
@@ -250,7 +250,7 @@ func renderCallsOutput(
 	default:
 		// enriched default with callers.
 		maxTokens := m.Config().MaxTokens
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit, nil))
 	}
 	return nil
 }

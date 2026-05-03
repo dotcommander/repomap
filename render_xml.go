@@ -7,15 +7,16 @@ import (
 
 // FormatXML formats ranked files as a structured XML document.
 // maxTokens controls the output size (estimated as len(text)/4).
+// cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
-func FormatXML(files []RankedFile, maxTokens int) string {
+func FormatXML(files []RankedFile, maxTokens int, cfg *BlocklistConfig) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
 	}
 
 	if maxTokens > 0 {
-		files = BudgetFiles(files, maxTokens)
+		files = BudgetFiles(files, maxTokens, cfg)
 	}
 
 	var b strings.Builder
