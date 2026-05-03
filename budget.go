@@ -12,6 +12,7 @@ import "math/bits"
 //	 1: summary — path + "5 types, 3 funcs"
 //	 2: full symbol groups
 //	 3: symbols + struct/interface field expansion
+//
 // fileAllDead reports whether all exported symbols in the slice are marked Dead.
 // Returns false when there are no exported symbols (nothing to be dead).
 func fileAllDead(syms []Symbol) bool {
@@ -102,21 +103,6 @@ func BudgetFiles(ranked []RankedFile, maxTokens int) []RankedFile {
 
 	promoteFieldExpansion(ranked, cutoff, budgetBytes, used)
 	return ranked
-}
-
-// fileAllDead reports whether all exported symbols in the slice are marked Dead.
-// Returns false when there are no exported symbols (nothing to demote).
-func fileAllDead(syms []Symbol) bool {
-	hasExported := false
-	for _, s := range syms {
-		if s.Exported {
-			hasExported = true
-			if !s.Dead {
-				return false
-			}
-		}
-	}
-	return hasExported
 }
 
 // enrichedCost estimates the byte length of a file's rendered output under the
