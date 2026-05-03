@@ -42,8 +42,8 @@ func ScanInventory(ctx context.Context, root string) (*Inventory, error) {
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" {
-			return nil
+		if LanguageFor(filepath.Ext(path)) == "" {
+			return nil // unsupported language — skip
 		}
 		info, err := d.Info()
 		if err != nil {
