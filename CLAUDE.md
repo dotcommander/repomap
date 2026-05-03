@@ -58,10 +58,16 @@ Defined in `language.go` as a single `languageDefs` slice. To add a language: ad
 
 ### Configuration
 
-Optional `.repomap.yaml` at project root filters symbols at parse time:
-- `method_blocklist`: list of glob (`Test*`) or regex (`/^pb_/`) patterns
-- Loader in `config.go`; filter applied in `parse_dispatch.go` and `commit_analyze.go`
-- Absent file = no-op
+Optional `.repomap.yaml` at project root. Loader in `config.go`; filters applied in `parse_dispatch.go`, `scanner.go`, and `commit_analyze.go`. Absent file = no-op.
+
+| Field | Type | Purpose |
+|---|---|---|
+| `method_blocklist` | `[]string` | Glob (`Test*`) or regex (`/^pb_/`) patterns — drops matching symbol names at parse time |
+| `include_paths` | `[]string` | Glob patterns (relative to root). When non-empty, only matching files are scanned |
+| `exclude_paths` | `[]string` | Glob patterns. Matching files are always excluded; takes precedence over `include_paths` |
+| `file_overrides` | `map[string]string` | Glob → detail level (`"full"` or `"omit"`). Forces a file to that level regardless of rank |
+
+`file_overrides` uses `path.Match` globs; patterns containing `**` match any path with the corresponding prefix.
 
 ## Testing Patterns
 

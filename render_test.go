@@ -72,6 +72,8 @@ func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 func TestDocSubtitleRendering_FormatMap(t *testing.T) {
 	t.Parallel()
 
+	// sym is read-only — safe to share. Each subtest builds its own files slice
+	// because FormatMap → BudgetFiles mutates RankedFile.DetailLevel in-place.
 	sym := Symbol{
 		Name:      "Run",
 		Kind:      "function",
@@ -80,22 +82,24 @@ func TestDocSubtitleRendering_FormatMap(t *testing.T) {
 		Signature: "() error",
 		Doc:       "starts the main server loop",
 	}
-	files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
 
 	t.Run("detail=true verbose=true emits subtitle", func(t *testing.T) {
 		t.Parallel()
+		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
 		out := FormatMap(files, 0, true, true, nil)
 		assert.Contains(t, out, "// starts the main server loop")
 	})
 
 	t.Run("detail=false verbose=true no subtitle", func(t *testing.T) {
 		t.Parallel()
+		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
 		out := FormatMap(files, 0, true, false, nil)
 		assert.NotContains(t, out, "//")
 	})
 
 	t.Run("default mode emits subtitle", func(t *testing.T) {
 		t.Parallel()
+		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
 		out := FormatMap(files, 0, false, false, nil)
 		assert.Contains(t, out, "// starts the main server loop")
 	})

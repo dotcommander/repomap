@@ -115,17 +115,36 @@ Go, PHP, Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, HTML, CSS. Go
 
 ## Configuration
 
-Create `.repomap.yaml` at the project root to filter symbols from the output:
+Create `.repomap.yaml` at the project root to control what gets scanned and how it's ranked:
 
 ```yaml
 method_blocklist:
   - "Test*"           # glob: drop anything starting with "Test"
   - "*Mock"           # glob: drop anything ending in "Mock"
   - "/^pb_/"          # regex: drop generated protobuf methods
+
+include_paths:
+  - "cmd/*"
+  - "internal/*"
+  - "pkg/*"
+
+exclude_paths:
+  - "internal/generated/*"
+  - "vendor/*"
+
+file_overrides:
+  "cmd/*/main.go": "full"
+  "internal/generated/**": "omit"
 ```
 
-Patterns wrapped in `/.../` are Go regex; others are `path.Match` globs.
-Absent file = no filtering.
+| Field | Purpose |
+|---|---|
+| `method_blocklist` | Glob or regex patterns — drops matching symbol names at parse time |
+| `include_paths` | When non-empty, only files matching these globs are scanned |
+| `exclude_paths` | Files matching these globs are always excluded (takes precedence over `include_paths`) |
+| `file_overrides` | Forces specific files to `"full"` or `"omit"` detail regardless of rank |
+
+`method_blocklist` patterns wrapped in `/.../` are Go regex; others are `path.Match` globs. Absent file = no filtering.
 
 ## Library
 
