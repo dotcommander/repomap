@@ -170,6 +170,9 @@ func renderWithCalls(
 		}
 	}
 
+	callerCounts := repomap.CallerCountsFromSymbolCallers(callers)
+	repomap.ApplyCallerBonus(ranked, callerCounts)
+
 	return renderCallsOutput(os.Stdout, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }
 
