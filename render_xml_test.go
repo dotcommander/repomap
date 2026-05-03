@@ -39,7 +39,7 @@ func TestFormatXML_Basic(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 
 	assert.Contains(t, out, `<?xml version="1.0" encoding="UTF-8"?>`)
 	assert.Contains(t, out, `<repomap files="2" symbols="3">`)
@@ -60,8 +60,8 @@ func TestFormatXML_Basic(t *testing.T) {
 func TestFormatXML_Empty(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "", FormatXML(nil, 0))
-	assert.Equal(t, "", FormatXML([]RankedFile{}, 0))
+	assert.Equal(t, "", FormatXML(nil, 0, nil))
+	assert.Equal(t, "", FormatXML([]RankedFile{}, 0, nil))
 }
 
 func TestFormatXML_XMLEscaping(t *testing.T) {
@@ -79,7 +79,7 @@ func TestFormatXML_XMLEscaping(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	// The signature "(x List<Pair<int, string>>)" must have < and > escaped.
 	assert.Contains(t, out, "&lt;int, string&gt;", "angle brackets must be escaped")
 }
@@ -98,7 +98,7 @@ func TestFormatXML_EmptyFile(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	// File with no symbols should use self-closing tag.
 	assert.Contains(t, out, `<file `, "must contain file element")
 	assert.Contains(t, out, `/>`, "no-symbols file should be self-closing")
@@ -125,7 +125,7 @@ func TestFormatXML_BudgetTruncation(t *testing.T) {
 	}
 
 	// With budget, some files should be omitted.
-	out := FormatXML(files, 100)
+	out := FormatXML(files, 100, nil)
 	assert.Contains(t, out, `<repomap files="3"`, "header reports total files")
 	// At least one file must be present.
 	assert.Contains(t, out, `<file `, "at least one file must appear")
@@ -147,7 +147,7 @@ func TestFormatXML_UntestedDiagnostic(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.Contains(t, out, `untested="true"`)
 }
 
@@ -180,7 +180,7 @@ func TestFormatXML_Dependencies(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.Contains(t, out, "<dependencies>")
 	assert.Contains(t, out, "</dependencies>")
 	assert.Contains(t, out, `myapp/cmd`)
@@ -200,7 +200,7 @@ func TestFormatXML_NoDependencies(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.NotContains(t, out, "<dependencies>", "non-Go project should have no dependency section")
 }
 
@@ -219,7 +219,7 @@ func TestFormatXML_SymbolNoSignature(t *testing.T) {
 		},
 	}
 
-	out := FormatXML(files, 0)
+	out := FormatXML(files, 0, nil)
 	assert.Contains(t, out, `name="ErrNotFound" kind="constant"`)
 	// No signature means self-closing sym tag.
 	assert.Contains(t, out, `/>`)

@@ -326,7 +326,7 @@ func TestFormatMap(t *testing.T) {
 		Score: 0,
 	}
 
-	out := FormatMap([]RankedFile{entry, mid, low}, 8192, false, false)
+	out := FormatMap([]RankedFile{entry, mid, low}, 8192, false, false, nil)
 
 	assert.True(t, strings.HasPrefix(out, "## Repository Map"), "output must start with '## Repository Map'")
 	assert.Contains(t, out, "[entry]")
@@ -363,7 +363,7 @@ func TestFormatMap_TokenBudget(t *testing.T) {
 	}
 
 	// maxTokens=3 → budgetBytes=12, far smaller than any single file block.
-	out := FormatMap(files, 3, false, false)
+	out := FormatMap(files, 3, false, false, nil)
 	assert.NotEmpty(t, out)
 
 	// Footer must appear because not all content fits. v0.7.0 format: omission
@@ -376,10 +376,10 @@ func TestFormatMap_TokenBudget(t *testing.T) {
 func TestFormatMap_Empty(t *testing.T) {
 	t.Parallel()
 
-	out := FormatMap(nil, 4096, false, false)
+	out := FormatMap(nil, 4096, false, false, nil)
 	assert.Equal(t, "", out)
 
-	out = FormatMap([]RankedFile{}, 4096, false, false)
+	out = FormatMap([]RankedFile{}, 4096, false, false, nil)
 	assert.Equal(t, "", out)
 }
 
@@ -514,12 +514,12 @@ func TestFormatMap_Verbose(t *testing.T) {
 	}
 
 	// Default (budget) mode shows exported symbol names directly (no category summaries).
-	defaultOut := FormatMap(files, 8192, false, false)
+	defaultOut := FormatMap(files, 8192, false, false, nil)
 	assert.Contains(t, defaultOut, "Symbol0")
 	assert.Contains(t, defaultOut, "Symbol9")
 
 	// Verbose mode shows all symbols grouped by category.
-	verbose := FormatMap(files, 8192, true, false)
+	verbose := FormatMap(files, 8192, true, false, nil)
 	assert.Contains(t, verbose, "Symbol9") // Last symbol must be visible
 	// Verbose uses group labels, not the enriched default format.
 	assert.Contains(t, verbose, "funcs:")
@@ -591,7 +591,7 @@ func TestFormatMap_ZeroSymbolFiles(t *testing.T) {
 
 	files := []RankedFile{noSymbols, withSymbols}
 
-	out := FormatMap(files, 8192, false, false)
+	out := FormatMap(files, 8192, false, false, nil)
 
 	// Header must count all files.
 	assert.Contains(t, out, "2 files", "header must count all files including zero-symbol")

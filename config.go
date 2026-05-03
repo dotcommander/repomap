@@ -14,6 +14,17 @@ import (
 // configFileName is the on-disk config file name loaded from the project root.
 const configFileName = ".repomap.yaml"
 
+// fileDetailOverride is the compiled form of one file_overrides entry.
+type fileDetailOverride struct {
+	// glob is the path.Match pattern; used when prefix == "".
+	glob string
+	// prefix is set instead of glob when the original pattern contained "**".
+	// Match succeeds when the relative path starts with this prefix.
+	prefix string
+	// level is the forced DetailLevel: -1 (omit) or 2 (full).
+	level int
+}
+
 // BlocklistConfig holds loaded-from-disk repomap settings that filter parsed
 // symbols and file paths. Safe for concurrent reads after Load returns.
 type BlocklistConfig struct {
@@ -33,12 +44,23 @@ type BlocklistConfig struct {
 	// Example: ["cmd/*", "internal/cli/*"]
 	IncludePaths []string `yaml:"include_paths"`
 
+	// FileOverrides maps relative-path globs to forced detail levels.
+	// Accepted values: "full" (DetailLevel 2) and "omit" (DetailLevel -1).
+	// Example:
+	//   file_overrides:
+	//     "cmd/main.go": full
+	//     "internal/gen/**": omit
+	FileOverrides map[string]string `yaml:"file_overrides"`
+
 	// compiled symbol patterns. Populated by compile(); zero value = match nothing.
 	compiled []blocklistMatcher
 
 	// compiledExclude and compiledInclude are compiled path patterns.
 	compiledExclude []string
 	compiledInclude []string
+
+	// compiledOverrides holds the sorted/compiled file override rules.
+	compiledOverrides []fileDetailOverride
 }
 
 // blocklistMatcher is the compiled form of a single pattern entry.
@@ -70,8 +92,8 @@ func LoadBlocklistConfig(root string) (*BlocklistConfig, error) {
 	return &c, nil
 }
 
-// compile pre-compiles all patterns in MethodBlocklist, ExcludePaths, and
-// IncludePaths. Invalid patterns return an error; all-or-nothing semantics.
+// compile pre-compiles all patterns in MethodBlocklist, ExcludePaths,
+// IncludePaths, and FileOverrides. Invalid patterns return an error; all-or-nothing semantics.
 func (c *BlocklistConfig) compile() error {
 	c.compiled = make([]blocklistMatcher, 0, len(c.MethodBlocklist))
 	for _, raw := range c.MethodBlocklist {
@@ -105,6 +127,34 @@ func (c *BlocklistConfig) compile() error {
 	}
 	c.compiledInclude = compactPatterns(c.IncludePaths)
 
+	c.compiledOverrides = make([]fileDetailOverride, 0, len(c.FileOverrides))
+	for glob, val := range c.FileOverrides {
+		glob = strings.TrimSpace(glob)
+		if glob == "" {
+			continue
+		}
+		var level int
+		switch strings.TrimSpace(val) {
+		case "full":
+			level = 2
+		case "omit":
+			level = -1
+		default:
+			return fmt.Errorf("file_overrides: %q has unknown value %q (want \"full\" or \"omit\")", glob, val)
+		}
+		ov := fileDetailOverride{level: level}
+		if idx := strings.Index(glob, "**"); idx >= 0 {
+			// path.Match does not support **: treat everything before ** as a prefix.
+			ov.prefix = glob[:idx]
+		} else {
+			if _, err := path.Match(glob, "probe"); err != nil {
+				return fmt.Errorf("file_overrides: invalid glob %q: %w", glob, err)
+			}
+			ov.glob = glob
+		}
+		c.compiledOverrides = append(c.compiledOverrides, ov)
+	}
+
 	return nil
 }
 
@@ -131,6 +181,29 @@ func compactPatterns(ps []string) []string {
 		}
 	}
 	return out
+}
+
+// MatchFileOverride reports whether a relative file path matches any file_overrides
+// rule. Returns the forced DetailLevel (2 or -1) and true on match; 0 and false otherwise.
+// A nil receiver returns (0, false) — no overrides.
+// Globs use path.Match semantics; patterns containing "**" match any path with the
+// corresponding prefix (everything before the first "**").
+func (c *BlocklistConfig) MatchFileOverride(rel string) (level int, ok bool) {
+	if c == nil || len(c.compiledOverrides) == 0 {
+		return 0, false
+	}
+	for _, ov := range c.compiledOverrides {
+		if ov.prefix != "" {
+			if strings.HasPrefix(rel, ov.prefix) {
+				return ov.level, true
+			}
+			continue
+		}
+		if matched, _ := path.Match(ov.glob, rel); matched {
+			return ov.level, true
+		}
+	}
+	return 0, false
 }
 
 // ShouldSkipSymbol reports whether a symbol name matches any blocklist pattern.
