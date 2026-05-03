@@ -11,10 +11,13 @@ Each file gets a score. Higher scores show up first and keep more detail.
 | Entry point (`main.go`, `index.ts`, `mod.rs`, …) | +50 |
 | Well-known entry filenames (`index.*`, `server.*`) | +30 |
 | Each exported symbol | +1 |
-| Each file that imports this one | +10 |
+| Each file that directly imports this one | +10 |
+| Transitive fan-in bonus (deeply depended-on files) | additional score |
 | Path depth (per level) | -1 |
 
 A file imported by five others, with twelve exported symbols, three levels deep scores roughly `5×10 + 12×1 − 3 = 59`.
+
+**Transitive fan-in**: files that sit deep in the import graph — depended on by many files indirectly — receive an additional score bonus proportional to their reachability. This keeps core library files visible even when only a few direct importers exist.
 
 ## Import references
 
@@ -47,6 +50,22 @@ Within the budget, each file is assigned one of five detail levels:
 | 3 | Full symbols plus struct/interface field expansion |
 
 Top-ranked files push toward level 3. Tails collapse to level 0 and fold into a single `(+12 more: a.go, b.go, ...)` line when they share no symbols worth showing.
+
+## Dead export detection
+
+When a file has exported symbols but zero importers, those symbols are marked **dead**. Dead exports cost half a budget unit instead of a full one — the file stays visible but compresses more aggressively. This keeps genuinely unused public API out of the way without hiding it entirely.
+
+## Boundary detection
+
+Per-language boundary scoring identifies natural module or package boundaries and factors them into the ranking. This works for: **Go**, **TypeScript/JavaScript**, **Python**, **Rust**, **Java**. Files that sit at package/module entry boundaries rank higher relative to files deep inside the same boundary.
+
+## Caller-count bonus (`--calls` mode)
+
+In `--calls` mode, files with many callers receive an additional score bonus. The more places that call into a file, the higher it ranks — useful for surfacing heavily-used utilities that might otherwise score low due to few importers.
+
+## Stale detection
+
+repomap uses **content-hash stale detection**: a file whose mtime changed but whose content is unchanged does not trigger a rebuild. Only actual byte-level content changes invalidate the cache. This avoids spurious rebuilds caused by `touch`, `git checkout`, or filesystem metadata updates.
 
 ## Tuning
 

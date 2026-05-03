@@ -58,9 +58,38 @@ Equivalent to running `-f verbose` and wrapping the output in a JSON array of li
 
 None. repomap reads no environment variables.
 
-## Config files
+## Config file
 
-None. repomap reads no config files. Every run is explicit.
+repomap reads `.repomap.yaml` from the project root when it exists. The file controls what gets scanned and how detail levels are forced. Absent file = no-op; every run without it is fully explicit.
+
+```yaml
+method_blocklist:
+  - "Test*"           # glob: drop symbols starting with "Test"
+  - "*Mock"           # glob: drop symbols ending in "Mock"
+  - "/^pb_/"          # regex: drop generated protobuf symbols
+
+include_paths:
+  - "cmd/*"
+  - "internal/*"
+  - "pkg/*"
+
+exclude_paths:
+  - "internal/generated/*"
+  - "vendor/*"
+
+file_overrides:
+  "cmd/*/main.go": "full"
+  "internal/generated/**": "omit"
+```
+
+| Field | Purpose |
+| --- | --- |
+| `method_blocklist` | Glob (`Test*`) or regex (`/^pb_/`) patterns — drops matching symbol names at parse time |
+| `include_paths` | When non-empty, only files matching these path globs are scanned |
+| `exclude_paths` | Files matching these path globs are always excluded; takes precedence over `include_paths` |
+| `file_overrides` | Forces a file to a fixed detail level regardless of rank. Values: `"full"` or `"omit"` |
+
+Path globs use `path.Match` semantics. Patterns containing `**` match any path with the corresponding prefix (e.g. `internal/generated/**` covers all files under that directory).
 
 ## What lives in `Config` (library)
 
