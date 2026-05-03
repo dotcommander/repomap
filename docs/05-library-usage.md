@@ -37,6 +37,7 @@ func main() {
 cfg := repomap.Config{
     MaxTokens:      4096,  // compact + xml budget
     MaxTokensNoCtx: 8192,  // lines budget
+    Intent:         "fix token refresh",  // BM25 task-aware ranking (optional)
 }
 m := repomap.New("./src", cfg)
 ```

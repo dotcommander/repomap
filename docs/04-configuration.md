@@ -1,6 +1,6 @@
 # Configuration
 
-repomap has three flags. That's it.
+repomap has four flags. That's it.
 
 ## Flags
 
@@ -9,6 +9,7 @@ repomap has three flags. That's it.
 | `--tokens` | `-t` | `2048` | Approximate token budget for the output |
 | `--format` | `-f` | `compact` | One of `compact`, `verbose`, `detail`, `lines`, `xml` |
 | `--json` | — | `false` | Emit verbose output as a JSON array of lines |
+| `--intent` | `-i` | `""` | Natural language query for BM25 task-aware ranking |
 
 ## Positional argument
 
@@ -54,6 +55,17 @@ repomap --json
 
 Equivalent to running `-f verbose` and wrapping the output in a JSON array of lines. The flag overrides `-f`.
 
+## Intent ranking
+
+```bash
+repomap --intent "fix token refresh" .
+repomap -i "add rate limiting to the API" ./src
+```
+
+When `--intent` is set, repomap BM25-scores each file against the query using field-weighted keywords from symbols, file paths, and imports. High-scoring files are promoted to higher detail levels before budget allocation — task-relevant code gets more visibility without changing the token budget.
+
+Omit the flag and behavior is unchanged.
+
 ## Environment
 
 None. repomap reads no environment variables.
@@ -93,12 +105,13 @@ Path globs use `path.Match` semantics. Patterns containing `**` match any path w
 
 ## What lives in `Config` (library)
 
-The library exposes two fields via `repomap.Config`:
+The library exposes three fields via `repomap.Config`:
 
 | Field | Default | Purpose |
 | --- | --- | --- |
 | `MaxTokens` | `1024` | Budget for compact and XML formats |
 | `MaxTokensNoCtx` | `2048` | Budget for lines format |
+| `Intent` | `""` | BM25 query for task-aware ranking (omit for standard behavior) |
 
 The CLI wires both fields to the same `-t` value. Call the library directly if you want to set them independently — see [Library Usage](05-library-usage.md).
 

@@ -67,6 +67,24 @@ In `--calls` mode, files with many callers receive an additional score bonus. Th
 
 repomap uses **content-hash stale detection**: a file whose mtime changed but whose content is unchanged does not trigger a rebuild. Only actual byte-level content changes invalidate the cache. This avoids spurious rebuilds caused by `touch`, `git checkout`, or filesystem metadata updates.
 
+## Intent ranking (`--intent`)
+
+When you pass `--intent "natural language query"`, repomap runs a BM25 pass over the parsed files before budget allocation. The query is tokenized and scored against three fields with different weights:
+
+| Field | Weight | Source |
+| --- | --- | --- |
+| Symbols | high | exported symbol names |
+| Paths | medium | directory and filename components |
+| Imports | low | import path components |
+
+High-scoring files receive a score bonus that promotes them to higher detail levels within the same token budget. This is purely additive — it cannot demote files that would otherwise rank high.
+
+```bash
+repomap --intent "fix token refresh" .
+```
+
+No external dependencies. No configuration. Omit the flag and behavior is identical to before.
+
 ## Tuning
 
 You can't tune ranking from the CLI. The weights are constants in `ranker.go` and `budget.go`. If you need different weights:
