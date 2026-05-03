@@ -2,12 +2,30 @@ package repomap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 )
+
+// sha256OfFile returns the hex-encoded SHA-256 digest of a file's contents.
+// Returns "" on any error (missing file, permission denied, etc.).
+func sha256OfFile(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 // absPath returns the absolute path for a file relative to the project root.
 func (m *Map) absPath(rel string) string {

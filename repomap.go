@@ -109,7 +109,7 @@ func (m *Map) Build(ctx context.Context) error {
 		return ErrNotCodeProject
 	}
 
-	parsed, mtimes, err := m.parseFiles(ctx, files)
+	parsed, mtimes, hashes, err := m.parseFiles(ctx, files)
 	if err != nil {
 		return err
 	}
@@ -120,6 +120,7 @@ func (m *Map) Build(ctx context.Context) error {
 	m.ranked = ranked
 	m.builtAt = time.Now()
 	m.mtimes = mtimes
+	m.contentHashes = hashes
 	m.outputs.reset()
 	m.mu.Unlock()
 

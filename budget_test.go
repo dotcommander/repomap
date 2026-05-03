@@ -448,7 +448,7 @@ func TestDeadExportBudgetCost(t *testing.T) {
 	deadFile := RankedFile{FileSymbols: &FileSymbols{Path: "dead.go", Symbols: deadSyms}}
 
 	// Run with live file first (higher rank).
-	ranked := BudgetFiles([]RankedFile{liveFile, deadFile}, 100)
+	ranked := BudgetFiles([]RankedFile{liveFile, deadFile}, 100, nil)
 	require.Len(t, ranked, 2)
 
 	// The live file gets level 2 (cost fits), dead file gets level 1 (halved cost still overflows remaining).
