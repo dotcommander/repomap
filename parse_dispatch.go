@@ -14,18 +14,22 @@ func (m *Map) absPath(rel string) string {
 	return filepath.Join(m.root, rel)
 }
 
-// parseFiles parses all discovered files in parallel and returns the symbols
-// and a path→mtime map for stale checking.
+// parseFiles parses all discovered files in parallel and returns the symbols,
+// a path→mtime map, and a path→sha256-hex map for stale checking.
 // Non-Go files use tree-sitter when available, then ctags, then regex.
-func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols, map[string]time.Time, error) {
+func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols, map[string]time.Time, map[string]string, error) {
 	mtimes := make(map[string]time.Time, len(files))
+	hashes := make(map[string]string, len(files))
 	for _, fi := range files {
-		absPath := m.absPath(fi.Path)
-		info, err := os.Stat(absPath)
+		abs := m.absPath(fi.Path)
+		info, err := os.Stat(abs)
 		if err != nil {
 			continue
 		}
-		mtimes[absPath] = info.ModTime()
+		mtimes[abs] = info.ModTime()
+		if h := sha256OfFile(abs); h != "" {
+			hashes[abs] = h
+		}
 	}
 
 	var (
@@ -55,7 +59,7 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	parsed := make([]*FileSymbols, 0, len(goParsed)+len(nonGoParsed))
@@ -69,7 +73,7 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 
 	DetectImplementations(parsed)
 
-	return parsed, mtimes, nil
+	return parsed, mtimes, hashes, nil
 }
 
 // parseNonGoFiles parses non-Go files using the tiered fallback:
