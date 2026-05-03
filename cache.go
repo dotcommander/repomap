@@ -39,15 +39,16 @@ func (c *outputCache) reset() {
 
 // diskCache is the on-disk format for a cached repomap build.
 type diskCache struct {
-	Version     int                  `json:"version"`
-	Root        string               `json:"root"`
-	BuiltAt     time.Time            `json:"built_at"`
-	Mtimes      map[string]time.Time `json:"mtimes"`
-	Output      string               `json:"output"`
-	OutputLines string               `json:"output_lines"`
-	Ranked      []RankedFile         `json:"ranked"`
-	LastSHA     string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
-	GitRoot     bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
+	Version       int                  `json:"version"`
+	Root          string               `json:"root"`
+	BuiltAt       time.Time            `json:"built_at"`
+	Mtimes        map[string]time.Time `json:"mtimes"`
+	ContentHashes map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
+	Output        string               `json:"output"`
+	OutputLines   string               `json:"output_lines"`
+	Ranked        []RankedFile         `json:"ranked"`
+	LastSHA       string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
+	GitRoot       bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
 }
 
 const cacheVersion = 6
@@ -67,13 +68,14 @@ func (m *Map) SaveCache(cacheDir string) error {
 		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
 	})
 	entry := diskCache{
-		Version:     cacheVersion,
-		Root:        m.root,
-		BuiltAt:     m.builtAt,
-		Mtimes:      m.mtimes,
-		Output:      compact,
-		OutputLines: lines,
-		Ranked:      m.ranked,
+		Version:       cacheVersion,
+		Root:          m.root,
+		BuiltAt:       m.builtAt,
+		Mtimes:        m.mtimes,
+		ContentHashes: m.contentHashes,
+		Output:        compact,
+		OutputLines:   lines,
+		Ranked:        m.ranked,
 	}
 	if isInsideGitRepo(m.root) {
 		entry.GitRoot = true
@@ -118,6 +120,7 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	m.outputs.lines = &entry.OutputLines
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
+	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
 	m.mu.Unlock()
 
 	return true
