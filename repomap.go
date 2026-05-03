@@ -101,7 +101,7 @@ func (m *Map) Build(ctx context.Context) error {
 		}
 	}
 
-	files, err := ScanFiles(ctx, m.root)
+	files, err := ScanFiles(ctx, m.root, m.blocklist)
 	if err != nil {
 		return err
 	}

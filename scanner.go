@@ -36,14 +36,15 @@ func isInsideGitRepo(dir string) bool {
 // ScanFiles discovers source files in the given directory.
 // Returns nil if the directory is not inside a git repo.
 // Falls back to a directory walk if `git ls-files` fails.
-func ScanFiles(ctx context.Context, root string) ([]FileInfo, error) {
+// cfg may be nil — nil means no path filtering.
+func ScanFiles(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
 	if !isInsideGitRepo(root) {
 		return nil, nil
 	}
 
-	files, err := scanGit(ctx, root)
+	files, err := scanGit(ctx, root, cfg)
 	if err != nil {
-		files, err = scanWalk(ctx, root)
+		files, err = scanWalk(ctx, root, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +57,7 @@ func ScanFiles(ctx context.Context, root string) ([]FileInfo, error) {
 	return files, nil
 }
 
-func scanGit(ctx context.Context, root string) ([]FileInfo, error) {
+func scanGit(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
 	cmd := exec.CommandContext(ctx, "git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = root
 
@@ -78,6 +79,16 @@ func scanGit(ctx context.Context, root string) ([]FileInfo, error) {
 			continue
 		}
 
+		// line is already relative to root (git ls-files output).
+		if cfg != nil {
+			if cfg.ShouldExcludePath(line) {
+				continue
+			}
+			if !cfg.ShouldIncludePath(line) {
+				continue
+			}
+		}
+
 		lang := LanguageFor(filepath.Ext(line))
 		if lang == "" {
 			continue
@@ -94,10 +105,10 @@ func scanGit(ctx context.Context, root string) ([]FileInfo, error) {
 	return files, nil
 }
 
-func scanWalk(ctx context.Context, root string) ([]FileInfo, error) {
+func scanWalk(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
 	var files []FileInfo
 
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(root, func(fpath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil //nolint:nilerr // skip unreadable entries
 		}
@@ -111,26 +122,35 @@ func scanWalk(ctx context.Context, root string) ([]FileInfo, error) {
 				return filepath.SkipDir
 			}
 			// Skip nested git repos and submodules
-			if path != root {
-				if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+			if fpath != root {
+				if _, err := os.Stat(filepath.Join(fpath, ".git")); err == nil {
 					return filepath.SkipDir
 				}
 			}
 			return nil
 		}
 
-		lang := LanguageFor(filepath.Ext(path))
+		lang := LanguageFor(filepath.Ext(fpath))
 		if lang == "" {
 			return nil
 		}
 
-		if tooBig(path) || isBuildArtifact(path) {
+		if tooBig(fpath) || isBuildArtifact(fpath) {
 			return nil
 		}
 
-		rel, err := filepath.Rel(root, path)
+		rel, err := filepath.Rel(root, fpath)
 		if err != nil {
 			return nil //nolint:nilerr // skip if relative path can't be computed
+		}
+
+		if cfg != nil {
+			if cfg.ShouldExcludePath(rel) {
+				return nil
+			}
+			if !cfg.ShouldIncludePath(rel) {
+				return nil
+			}
 		}
 
 		files = append(files, FileInfo{Path: rel, Language: lang})
