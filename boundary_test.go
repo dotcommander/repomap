@@ -185,36 +185,47 @@ func TestClassifyBoundaries_NonGoImports(t *testing.T) {
 	}
 }
 
-// TestApplyBoundaryBoost_NonGoLanguages verifies that applyBoundaryBoost does not
-// panic and produces no labels for non-Go files whose imports are language-native
-// package names (not Go import paths).
-func TestApplyBoundaryBoost_NonGoLanguages(t *testing.T) {
+// TestApplyBoundaryBoost_LanguagesWithRules verifies that applyBoundaryBoost
+// applies boundary labels for languages that have defined boundary rules
+// (TypeScript, Python, Rust) and does not panic or produce labels for
+// languages without rules (unknown "cobol").
+func TestApplyBoundaryBoost_LanguagesWithRules(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		language string
-		imports  []string
+		name       string
+		language   string
+		imports    []string
+		wantLabels []string
+		wantBump   int
 	}{
 		{
-			name:     "TypeScript express+prisma",
-			language: "typescript",
-			imports:  []string{"express", "prisma"},
+			name:       "TypeScript express+prisma",
+			language:   "typescript",
+			imports:    []string{"express", "prisma"},
+			wantLabels: []string{"HTTP", "DB"},
+			wantBump:   10,
 		},
 		{
-			name:     "Python fastapi+sqlalchemy",
-			language: "python",
-			imports:  []string{"fastapi", "sqlalchemy"},
+			name:       "Python fastapi+sqlalchemy",
+			language:   "python",
+			imports:    []string{"fastapi", "sqlalchemy"},
+			wantLabels: []string{"HTTP", "DB"},
+			wantBump:   10,
 		},
 		{
-			name:     "Rust axum+sqlx",
-			language: "rust",
-			imports:  []string{"axum", "sqlx"},
+			name:       "Rust axum+sqlx",
+			language:   "rust",
+			imports:    []string{"axum", "sqlx"},
+			wantLabels: []string{"HTTP", "DB"},
+			wantBump:   10,
 		},
 		{
-			name:     "unknown language",
-			language: "cobol",
-			imports:  []string{"anything"},
+			name:       "unknown language no rules",
+			language:   "cobol",
+			imports:    []string{"anything"},
+			wantLabels: nil,
+			wantBump:   0,
 		},
 	}
 
@@ -230,11 +241,10 @@ func TestApplyBoundaryBoost_NonGoLanguages(t *testing.T) {
 			ranked := []RankedFile{{FileSymbols: fs, Score: 10}}
 			// Must not panic.
 			applyBoundaryBoost(ranked)
-			// Non-Go language imports don't match Go boundary rules.
-			assert.Empty(t, ranked[0].Boundaries,
-				"non-Go language %q must produce no boundary labels", tc.language)
-			assert.Equal(t, 10, ranked[0].Score,
-				"non-Go language %q score must be unchanged", tc.language)
+			assert.Equal(t, tc.wantLabels, ranked[0].Boundaries,
+				"language %q boundary labels mismatch", tc.language)
+			assert.Equal(t, 10+tc.wantBump, ranked[0].Score,
+				"language %q score mismatch", tc.language)
 		})
 	}
 }

@@ -208,7 +208,7 @@ type OrphanType struct{}
 	// ── Assert: budget — BudgetFiles assigns DetailLevel at render time.
 	// Call BudgetFiles directly on a copy of ranked to verify budget behaviour.
 	// With 4096 tokens all six files should be included (DetailLevel >= 0).
-	budgeted := BudgetFiles(append([]RankedFile(nil), ranked...), 4096)
+	budgeted := BudgetFiles(append([]RankedFile(nil), ranked...), 4096, nil)
 	budgetByPath := make(map[string]RankedFile, len(budgeted))
 	for _, r := range budgeted {
 		budgetByPath[r.Path] = r
