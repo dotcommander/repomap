@@ -3,6 +3,7 @@ package repomap
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -34,19 +35,21 @@ func isInsideGitRepo(dir string) bool {
 }
 
 // ScanFiles discovers source files in the given directory.
-// Returns nil if the directory is not inside a git repo.
-// Falls back to a directory walk if `git ls-files` fails.
+// Falls back to directory walk if not inside a git repo or if git ls-files fails.
 func ScanFiles(ctx context.Context, root string) ([]FileInfo, error) {
+	var files []FileInfo
+	var err error
 	if !isInsideGitRepo(root) {
-		return nil, nil
-	}
-
-	files, err := scanGit(ctx, root)
-	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %s is not inside a git repo, using directory walk\n", root)
 		files, err = scanWalk(ctx, root)
+	} else {
+		files, err = scanGit(ctx, root)
 		if err != nil {
-			return nil, err
+			files, err = scanWalk(ctx, root)
 		}
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	slices.SortFunc(files, func(a, b FileInfo) int {
