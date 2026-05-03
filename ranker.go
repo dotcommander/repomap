@@ -32,6 +32,7 @@ func RankFiles(files []*FileSymbols) []RankedFile {
 	applyReferenceCounts(ranked, files)
 	applyDiagnosticSignals(ranked, files)
 	applyBoundaryBoost(ranked)
+	markDeadExports(ranked)
 
 	slices.SortFunc(ranked, func(a, b RankedFile) int {
 		if b.Score != a.Score {
@@ -298,6 +299,23 @@ func shouldTagUntested(f RankedFile, covered map[string]bool) bool {
 	}
 
 	return !covered[diagnosticPackageKey(f.FileSymbols)]
+}
+
+// markDeadExports marks exported symbols as Dead when no file in the
+// scanned tree imports their package (ImportedBy == 0). This distinguishes
+// truly unused exports from live ones, enabling the budget to deprioritise
+// dead-export files without removing them entirely.
+func markDeadExports(ranked []RankedFile) {
+	for i := range ranked {
+		if ranked[i].ImportedBy > 0 {
+			continue
+		}
+		for j := range ranked[i].Symbols {
+			if ranked[i].Symbols[j].Exported {
+				ranked[i].Symbols[j].Dead = true
+			}
+		}
+	}
 }
 
 // applyBoundaryBoost classifies each file's import list into boundary labels,
