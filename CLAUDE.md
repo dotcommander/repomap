@@ -47,6 +47,10 @@ Single Go package (`repomap`) with a Cobra CLI in `internal/cli/`. Entry point: 
 - `FileSymbols` — symbols + imports from one file
 - `RankedFile` — FileSymbols + Score, DetailLevel, ImportedBy
 
+### Intent Ranking
+
+Optional BM25 re-ranking before budget allocation, activated by `--intent`. Field-weighted keywords are extracted from symbols, file paths, and imports — no external dependencies. Files scoring high against the query get promoted to higher detail levels within the same token budget.
+
 ### Caching
 
 - `cache.go` — disk cache via `SaveCache`/`LoadCache` (JSON, keyed by SHA-256 of root path). Output strings are lazily computed and cached in `outputCache`.
@@ -85,4 +89,4 @@ repomap -f lines ./src                # source-line format
 repomap --json                         # JSON array of lines
 ```
 
-Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines), `--json`
+Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines), `--json`, `-i/--intent` (BM25 task-aware ranking)

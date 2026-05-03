@@ -39,13 +39,15 @@ func newRootCmd() *cobra.Command {
 	var callsIncludeTests bool
 	var noCache bool
 	var callsUseBinary bool // hidden fallback: shell out to lspq instead of in-process gopls
+	var intent string
 
 	cmd := &cobra.Command{
 		Use:   "repomap [directory]",
 		Short: "Token-budgeted repository structure map with symbol extraction",
 		Long: `Scans a project's source files, extracts exported symbols
 (functions, methods, structs, interfaces, types, constants, variables),
-ranks files by importance, and outputs a compact Markdown summary.`,
+ranks files by importance, and outputs a compact Markdown summary.
+Pass --intent to bias the output toward files relevant to a specific task.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := "."
@@ -61,6 +63,7 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 			cfg := repomap.Config{
 				MaxTokens:      tokens,
 				MaxTokensNoCtx: tokens,
+				Intent:         intent,
 			}
 			m := repomap.New(absDir, cfg)
 
@@ -86,6 +89,7 @@ ranks files by importance, and outputs a compact Markdown summary.`,
 	cmd.Flags().IntVar(&callsLimit, "calls-limit", 10, "Max callers shown per symbol")
 	cmd.Flags().BoolVar(&callsIncludeTests, "calls-include-tests", false, "Include _test.go callers (excluded by default)")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass --calls cache (force fresh queries)")
+	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Natural language query for task-aware ranking (BM25)")
 	cmd.Flags().BoolVar(&callsUseBinary, "calls-use-binary", false, "Fall back to shelling out to lspq instead of in-process gopls")
 	if err := cmd.Flags().MarkHidden("calls-use-binary"); err != nil {
 		panic(err)

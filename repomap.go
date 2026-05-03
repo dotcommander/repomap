@@ -26,8 +26,9 @@ const (
 
 // Config holds repomap configuration.
 type Config struct {
-	MaxTokens      int // token budget for output (default: 1024)
-	MaxTokensNoCtx int // budget when no files in conversation (default: 2048)
+	MaxTokens      int    // token budget for output (default: 1024)
+	MaxTokensNoCtx int    // budget when no files in conversation (default: 2048)
+	Intent         string // optional BM25 query for task-aware ranking
 }
 
 // DefaultConfig returns the default configuration.
@@ -115,6 +116,11 @@ func (m *Map) Build(ctx context.Context) error {
 	}
 
 	ranked := RankFiles(parsed)
+
+	if m.config.Intent != "" {
+		scorer := NewIntentScorer(ranked)
+		ranked = scorer.Score(ranked, m.config.Intent)
+	}
 
 	m.mu.Lock()
 	m.ranked = ranked
