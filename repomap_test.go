@@ -413,7 +413,7 @@ func TestScanFiles(t *testing.T) {
 	cmd.Dir = dir
 	_ = cmd.Run()
 
-	files, err := ScanFiles(context.Background(), dir)
+	files, err := ScanFiles(context.Background(), dir, nil)
 	require.NoError(t, err)
 
 	paths := make([]string, 0, len(files))
