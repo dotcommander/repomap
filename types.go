@@ -7,6 +7,7 @@ type Symbol struct {
 	Signature   string   // e.g. "(ctx, provider, opts) *Agent" — params + return, no func keyword
 	Receiver    string   // e.g. "*Agent" — methods only, empty for functions
 	Exported    bool     // true if the symbol is exported (uppercase first letter)
+	Dead        bool     // true when exported but no file in the scanned tree imports this file
 	Line        int      // 1-based source line number (0 = unknown)
 	EndLine     int      // 1-based end line number (0 = unknown, same as Line when unavailable)
 	ParamCount  int      // parameter count (funcs/methods); method count (interfaces); 0 otherwise
