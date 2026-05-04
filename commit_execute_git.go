@@ -51,8 +51,12 @@ func currentBranch(ctx context.Context, root string) (string, error) {
 
 // execCommit stages files then commits them. The message is written to a temp
 // file and passed via git commit -F to avoid any shell interpolation.
+//
+// Uses `git add -A` so the pathspec covers staged deletions (file gone from
+// disk) as well as additions/modifications — `git add` without -A errors out
+// on a deletion because the pathspec doesn't match a working-tree file.
 func execCommit(ctx context.Context, root string, files []string, msg string) (string, error) {
-	addArgs := append([]string{"add", "--"}, files...)
+	addArgs := append([]string{"add", "-A", "--"}, files...)
 	if err := gitExec(ctx, root, addArgs...); err != nil {
 		return "", err
 	}

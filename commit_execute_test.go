@@ -3,6 +3,8 @@ package repomap
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -281,5 +283,63 @@ func Test_Execute_HappyPath_NoRemote(t *testing.T) {
 	}
 	if lines[1] != groups[0].SuggestedMsg {
 		t.Errorf("second commit subject = %q, want %q", lines[1], groups[0].SuggestedMsg)
+	}
+}
+
+func Test_Execute_StagedDeletion(t *testing.T) {
+	t.Parallel()
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod":       "module fixture\ngo 1.22\n",
+			"keep.go":      "package fixture\n",
+			"obsolete.yaml": "rule: old\n",
+		},
+		nil,
+	)
+
+	// Delete obsolete.yaml from the working tree so the commit plan covers
+	// a staged deletion. Modify keep.go so the same commit also has an
+	// add/modify entry — the bug only triggers when `git add -- <paths>`
+	// receives a deleted path; we want both kinds in the same group.
+	if err := os.Remove(filepath.Join(root, "obsolete.yaml")); err != nil {
+		t.Fatalf("remove obsolete.yaml: %v", err)
+	}
+	writeFixture(t, root, "keep.go", "package fixture\n// updated\n")
+
+	groups := []CommitGroup{
+		{
+			ID:           "g1",
+			SuggestedMsg: "refactor: drop obsolete rule and update keep",
+			Files:        []string{"keep.go", "obsolete.yaml"},
+		},
+	}
+	planFile := makePlanFile(t, groups)
+
+	result, err := ExecuteCommit(context.Background(), ExecuteOptions{
+		Root:     root,
+		PlanFile: planFile,
+		SkipFix:  true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit with staged deletion: %v", err)
+	}
+	if len(result.Commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(result.Commits))
+	}
+
+	// Workspace must be clean — both the modification and the deletion
+	// must have landed in the commit.
+	porcelain := runGitOutput(t, root, "status", "--porcelain")
+	if strings.TrimSpace(porcelain) != "" {
+		t.Errorf("workspace dirty after execute:\n%s", porcelain)
+	}
+
+	// obsolete.yaml must be absent in HEAD.
+	out, err := gitOutput(context.Background(), root, "ls-files", "obsolete.yaml")
+	if err != nil {
+		t.Fatalf("ls-files: %v", err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("obsolete.yaml still tracked after deletion commit: %q", out)
 	}
 }
