@@ -1,6 +1,6 @@
 # Configuration
 
-repomap has four flags. That's it.
+repomap has five flags. That's it.
 
 ## Flags
 
@@ -10,6 +10,7 @@ repomap has four flags. That's it.
 | `--format` | `-f` | `compact` | One of `compact`, `verbose`, `detail`, `lines`, `xml` |
 | `--json` | — | `false` | Emit verbose output as a JSON array of lines |
 | `--intent` | `-i` | `""` | Natural language query for BM25 task-aware ranking |
+| `--consumed` | — | `[]` | File paths already read; these are downranked and their importers upranked |
 
 ## Positional argument
 
@@ -66,6 +67,17 @@ When `--intent` is set, repomap BM25-scores each file against the query using fi
 
 Omit the flag and behavior is unchanged.
 
+## Consumed paths
+
+```bash
+repomap --consumed internal/auth/jwt.go,internal/auth/handler.go .
+repomap --consumed auth/jwt.go --consumed auth/handler.go .
+```
+
+When `--consumed` is set, each named file has its score halved (downranked) and files that import a consumed file gain +15 per consumed dependency (capped at +45). This pushes unfamiliar code higher in the output without changing the token budget.
+
+Composes with `--intent`: BM25 runs first, then consumed adjustment is applied. Omit the flag and behavior is unchanged.
+
 ## Environment
 
 None. repomap reads no environment variables.
@@ -105,13 +117,14 @@ Path globs use `path.Match` semantics. Patterns containing `**` match any path w
 
 ## What lives in `Config` (library)
 
-The library exposes three fields via `repomap.Config`:
+The library exposes four fields via `repomap.Config`:
 
 | Field | Default | Purpose |
 | --- | --- | --- |
 | `MaxTokens` | `1024` | Budget for compact and XML formats |
 | `MaxTokensNoCtx` | `2048` | Budget for lines format |
 | `Intent` | `""` | BM25 query for task-aware ranking (omit for standard behavior) |
+| `ConsumedPaths` | `nil` | File paths the caller has already read; these are downranked in ranking |
 
 The CLI wires both fields to the same `-t` value. Call the library directly if you want to set them independently — see [Library Usage](05-library-usage.md).
 
