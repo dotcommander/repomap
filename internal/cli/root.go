@@ -40,6 +40,7 @@ func newRootCmd() *cobra.Command {
 	var noCache bool
 	var callsUseBinary bool // hidden fallback: shell out to lspq instead of in-process gopls
 	var intent string
+	var consumed []string
 
 	cmd := &cobra.Command{
 		Use:   "repomap [directory]",
@@ -64,6 +65,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 				MaxTokens:      tokens,
 				MaxTokensNoCtx: tokens,
 				Intent:         intent,
+				ConsumedPaths:  consumed,
 			}
 			m := repomap.New(absDir, cfg)
 
@@ -90,6 +92,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.Flags().BoolVar(&callsIncludeTests, "calls-include-tests", false, "Include _test.go callers (excluded by default)")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass --calls cache (force fresh queries)")
 	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Natural language query for task-aware ranking (BM25)")
+	cmd.Flags().StringSliceVar(&consumed, "consumed", nil, "Comma-separated file paths already read; these are downranked and their importers upranked")
 	cmd.Flags().BoolVar(&callsUseBinary, "calls-use-binary", false, "Fall back to shelling out to lspq instead of in-process gopls")
 	if err := cmd.Flags().MarkHidden("calls-use-binary"); err != nil {
 		panic(err)
