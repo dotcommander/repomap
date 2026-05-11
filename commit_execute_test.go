@@ -290,8 +290,8 @@ func Test_Execute_StagedDeletion(t *testing.T) {
 	t.Parallel()
 	root := initTestRepo(t,
 		map[string]string{
-			"go.mod":       "module fixture\ngo 1.22\n",
-			"keep.go":      "package fixture\n",
+			"go.mod":        "module fixture\ngo 1.22\n",
+			"keep.go":       "package fixture\n",
 			"obsolete.yaml": "rule: old\n",
 		},
 		nil,
@@ -341,5 +341,107 @@ func Test_Execute_StagedDeletion(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "" {
 		t.Errorf("obsolete.yaml still tracked after deletion commit: %q", out)
+	}
+}
+
+// Test_Execute_PreStagedDeletion covers the case where files are already
+// staged-for-deletion (via `git rm`) before ExecuteCommit runs. With the
+// pre-fix code, `git add -A -- <staged-deletion-path>` errored because the
+// pathspec matched nothing (file gone from working tree AND from index).
+// The fix filters such paths from `git add` — their deletion is already
+// recorded in the index, so the commit's pathspec picks them up directly.
+func Test_Execute_PreStagedDeletion(t *testing.T) {
+	t.Parallel()
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod":        "module fixture\ngo 1.22\n",
+			"keep.go":       "package fixture\n",
+			"obsolete.yaml": "rule: old\n",
+		},
+		nil,
+	)
+
+	// Pre-stage the deletion via `git rm` — this is the exact state that
+	// triggered the bug in the wild (user had already run `git rm` before
+	// invoking commit auto).
+	runGitT(t, root, "rm", "-q", "obsolete.yaml")
+	writeFixture(t, root, "keep.go", "package fixture\n// updated\n")
+
+	groups := []CommitGroup{
+		{
+			ID:           "g1",
+			SuggestedMsg: "refactor: drop obsolete rule and update keep",
+			Files:        []string{"keep.go", "obsolete.yaml"},
+		},
+	}
+	planFile := makePlanFile(t, groups)
+
+	result, err := ExecuteCommit(context.Background(), ExecuteOptions{
+		Root:     root,
+		PlanFile: planFile,
+		SkipFix:  true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit with pre-staged deletion: %v", err)
+	}
+	if len(result.Commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(result.Commits))
+	}
+
+	porcelain := runGitOutput(t, root, "status", "--porcelain")
+	if strings.TrimSpace(porcelain) != "" {
+		t.Errorf("workspace dirty after execute:\n%s", porcelain)
+	}
+
+	out, err := gitOutput(context.Background(), root, "ls-files", "obsolete.yaml")
+	if err != nil {
+		t.Fatalf("ls-files: %v", err)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("obsolete.yaml still tracked after deletion commit: %q", out)
+	}
+}
+
+// Test_Execute_PreStagedDeletionOnly covers the degenerate case where a group
+// contains ONLY pre-staged deletions and no add/modify entries. The fix must
+// skip `git add` entirely (since the filtered list is empty) and let the
+// commit's pathspec pick up the index-recorded deletions.
+func Test_Execute_PreStagedDeletionOnly(t *testing.T) {
+	t.Parallel()
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod":        "module fixture\ngo 1.22\n",
+			"keep.go":       "package fixture\n",
+			"obsolete.yaml": "rule: old\n",
+		},
+		nil,
+	)
+
+	runGitT(t, root, "rm", "-q", "obsolete.yaml")
+
+	groups := []CommitGroup{
+		{
+			ID:           "g1",
+			SuggestedMsg: "docs: remove obsolete rule",
+			Files:        []string{"obsolete.yaml"},
+		},
+	}
+	planFile := makePlanFile(t, groups)
+
+	result, err := ExecuteCommit(context.Background(), ExecuteOptions{
+		Root:     root,
+		PlanFile: planFile,
+		SkipFix:  true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit deletion-only group: %v", err)
+	}
+	if len(result.Commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(result.Commits))
+	}
+
+	porcelain := runGitOutput(t, root, "status", "--porcelain")
+	if strings.TrimSpace(porcelain) != "" {
+		t.Errorf("workspace dirty after execute:\n%s", porcelain)
 	}
 }

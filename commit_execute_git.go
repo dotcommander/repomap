@@ -52,13 +52,22 @@ func currentBranch(ctx context.Context, root string) (string, error) {
 // execCommit stages files then commits them. The message is written to a temp
 // file and passed via git commit -F to avoid any shell interpolation.
 //
-// Uses `git add -A` so the pathspec covers staged deletions (file gone from
-// disk) as well as additions/modifications — `git add` without -A errors out
-// on a deletion because the pathspec doesn't match a working-tree file.
+// `git add -A` records unstaged deletions correctly, but the pathspec MUST
+// match something. For files already staged-for-deletion (gone from working
+// tree AND from index), the pathspec matches nothing and git fails with
+// "pathspec did not match any files". Filter those out — their deletion is
+// already correctly recorded in the index, and `git commit -- <path>` accepts
+// index-deletion pathspecs without issue.
 func execCommit(ctx context.Context, root string, files []string, msg string) (string, error) {
-	addArgs := append([]string{"add", "-A", "--"}, files...)
-	if err := gitExec(ctx, root, addArgs...); err != nil {
+	toStage, err := filterAlreadyStagedDeletions(ctx, root, files)
+	if err != nil {
 		return "", err
+	}
+	if len(toStage) > 0 {
+		addArgs := append([]string{"add", "-A", "--"}, toStage...)
+		if err := gitExec(ctx, root, addArgs...); err != nil {
+			return "", err
+		}
 	}
 
 	tmp, err := os.CreateTemp("", "repomap-msg-*.txt")
@@ -84,6 +93,34 @@ func execCommit(ctx context.Context, root string, files []string, msg string) (s
 		return "", fmt.Errorf("rev-parse HEAD: %w", err)
 	}
 	return strings.TrimSpace(sha), nil
+}
+
+// filterAlreadyStagedDeletions returns files minus those that are already
+// staged-for-deletion (index entry D, working tree absent). Such paths cannot
+// be passed to `git add -A` — the pathspec matches nothing — but they don't
+// need to be: their deletion is already in the index for the upcoming commit.
+func filterAlreadyStagedDeletions(ctx context.Context, root string, files []string) ([]string, error) {
+	if len(files) == 0 {
+		return files, nil
+	}
+	out, err := gitOutput(ctx, root, "diff", "--cached", "--name-only", "--diff-filter=D", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("list staged deletions: %w", err)
+	}
+	staged := make(map[string]struct{})
+	for _, p := range strings.Split(strings.TrimRight(out, "\x00"), "\x00") {
+		if p != "" {
+			staged[p] = struct{}{}
+		}
+	}
+	kept := make([]string, 0, len(files))
+	for _, f := range files {
+		if _, isStagedDel := staged[f]; isStagedDel {
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept, nil
 }
 
 // execTag creates an annotated tag at HEAD.
