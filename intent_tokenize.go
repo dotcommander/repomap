@@ -31,6 +31,8 @@ var intentStopwords = map[string]bool{
 	"file": true, "files": true, "code": true, "implement": true,
 	"add": true, "fix": true, "update": true, "change": true,
 	"make": true, "use": true, "using": true, "get": true, "set": true,
+	"bug": true, "issue": true, "handle": true, "support": true,
+	"refactor": true, "improve": true, "cleanup": true,
 }
 
 // tokenizeIntent splits text into lowercase tokens, splitting on non-alphanumeric

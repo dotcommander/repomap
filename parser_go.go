@@ -27,7 +27,7 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 		Language:    "go",
 		Package:     file.Name.Name,
 		ImportPath:  resolveImportPath(path, root),
-		ParseMethod: "ast",
+		ParseMethod: "go_ast",
 	}
 
 	// Collect imports.

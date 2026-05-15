@@ -14,7 +14,7 @@ func ApplyCallerBonus(ranked []RankedFile, callerCounts map[string]int) {
 			if bonus > 30 {
 				bonus = 30
 			}
-			ranked[i].Score += bonus
+			addScoreComponent(&ranked[i], scoreComponentCallers, bonus)
 		}
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {

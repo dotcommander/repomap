@@ -90,7 +90,7 @@ func applyTransitiveImportScores(ranked []RankedFile) {
 		if score > maxScore {
 			score = maxScore
 		}
-		ranked[i].Score += score
+		addScoreComponent(&ranked[i], scoreComponentTransitive, score)
 	}
 }
 

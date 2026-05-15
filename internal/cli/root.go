@@ -31,6 +31,7 @@ func newRootCmd() *cobra.Command {
 	var format string
 	var asJSON bool
 	var jsonLegacy bool
+	var jsonStructured bool
 
 	// --calls flags
 	var callsMode bool
@@ -74,10 +75,10 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 			}
 
 			if !callsMode {
-				return renderStandard(m, format, asJSON, jsonLegacy)
+				return renderStandard(m, format, asJSON, jsonLegacy, jsonStructured)
 			}
 
-			return renderWithCalls(cmd.Context(), m, format, asJSON, jsonLegacy, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
+			return renderWithCalls(cmd.Context(), m, format, asJSON, jsonLegacy, jsonStructured, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
 		},
 	}
 
@@ -85,6 +86,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.Flags().StringVarP(&format, "format", "f", "", "Output format: compact (orientation: names only), verbose, detail, lines, xml (default: enriched — signatures + godoc + fields)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 	cmd.Flags().BoolVar(&jsonLegacy, "json-legacy", false, "Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release.")
+	cmd.Flags().BoolVar(&jsonStructured, "json-structured", false, "Output a structured JSON repository map")
 
 	cmd.Flags().BoolVar(&callsMode, "calls", false, "Expand exported symbols with caller information via gopls")
 	cmd.Flags().IntVar(&callsThreshold, "calls-threshold", 2, "Only expand symbols in files with at least N importers")
@@ -102,6 +104,8 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.AddCommand(newCommitPreflightCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newFindCmd())
+	cmd.AddCommand(newImpactCmd())
+	cmd.AddCommand(newExplainCmd())
 
 	for _, sub := range newLSPCmds() {
 		cmd.AddCommand(sub)
@@ -110,7 +114,15 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	return cmd
 }
 
-func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool) error {
+func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool, jsonStructured bool) error {
+	if jsonStructured {
+		data, err := m.StructuredJSON()
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(append(data, '\n'))
+		return err
+	}
 	if asJSON {
 		return printJSON(os.Stdout, m, jsonLegacy)
 	}
@@ -140,6 +152,7 @@ func renderWithCalls(
 	format string,
 	asJSON bool,
 	jsonLegacy bool,
+	jsonStructured bool,
 	root string,
 	threshold, limit int,
 	includeTests bool,
@@ -179,6 +192,16 @@ func renderWithCalls(
 
 	callerCounts := repomap.CallerCountsFromSymbolCallers(callers)
 	repomap.ApplyCallerBonus(ranked, callerCounts)
+
+	if jsonStructured {
+		out := m.StructuredOutputForRanked(ranked)
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return err
+		}
+		_, err = os.Stdout.Write(append(data, '\n'))
+		return err
+	}
 
 	return renderCallsOutput(os.Stdout, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }

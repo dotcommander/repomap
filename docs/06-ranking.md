@@ -17,6 +17,22 @@ Each file gets a score. Higher scores show up first and keep more detail.
 
 A file imported by five others, with twelve exported symbols, three levels deep scores roughly `5×10 + 12×1 − 3 = 59`.
 
+Every score mutation is also tracked as a score component. Use structured JSON or `repomap explain <file>` to see why a file ranked where it did:
+
+```bash
+repomap explain ranker.go
+```
+
+```text
+ranker.go
+  score: 123
+  detail: 2
+  components:
+    imports: +110
+    symbols: +3
+    transitive: +10
+```
+
 **Transitive fan-in**: files that sit deep in the import graph — depended on by many files indirectly — receive an additional score bonus proportional to their reachability. This keeps core library files visible even when only a few direct importers exist.
 
 ## Import references

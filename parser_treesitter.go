@@ -122,7 +122,7 @@ func parseWithTreeSitter(content []byte, lang string, relPath string) *FileSymbo
 	fs := &FileSymbols{
 		Path:        relPath,
 		Language:    lang,
-		ParseMethod: "treesitter",
+		ParseMethod: "tree_sitter",
 	}
 
 	extractSymbols(content, root, tsLang, fs)

@@ -38,5 +38,5 @@ type FileSymbols struct {
 	ImportPath  string // Go import path from module (empty for non-Go)
 	Symbols     []Symbol
 	Imports     []string // import paths (Go) or module names (other)
-	ParseMethod string   // "ast", "treesitter", "ctags", or "regex" — signals symbol fidelity
+	ParseMethod string   // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
 }

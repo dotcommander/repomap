@@ -83,7 +83,7 @@ func parsePHPWithTreeSitter(content []byte, relPath string) *FileSymbols {
 	fs := &FileSymbols{
 		Path:        relPath,
 		Language:    "php",
-		ParseMethod: "treesitter",
+		ParseMethod: "tree_sitter",
 		// ImportPath is set below after scanning for namespace declarations.
 	}
 

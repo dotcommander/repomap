@@ -121,6 +121,32 @@ Wraps verbose output as a JSON array of lines:
 
 Use this when you need line-by-line parsing without imposing a schema.
 
+## Structured JSON
+
+```bash
+repomap --json-structured
+```
+
+Emits schema-versioned file, symbol, rank, parser, and budget data:
+
+```json
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "path": "ranker.go",
+      "parse_method": "go_ast",
+      "score": 123,
+      "score_components": {"imports": 110, "symbols": 3, "transitive": 10},
+      "detail_level": 2,
+      "symbols": [{"name": "RankFiles", "kind": "function", "line": 48}]
+    }
+  ]
+}
+```
+
+Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Files omitted by budget include `detail_level: -1` and `omitted_reason`.
+
 ## Budget behavior
 
 | Format | Respects `-t` |
@@ -130,8 +156,9 @@ Use this when you need line-by-line parsing without imposing a schema.
 | detail | no |
 | lines | yes |
 | xml | yes |
+| --json-structured | yes |
 
-Verbose and detail are for humans. Compact, lines, and XML are for prompts.
+Verbose and detail are for humans. Compact, lines, XML, and structured JSON are for prompts and tools.
 
 ## Next
 

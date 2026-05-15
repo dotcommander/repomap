@@ -1,58 +1,28 @@
 # repomap
 
-A repository becomes a map.
+Turn a repository into a compact, deterministic code map for coding agents, scripts, and humans.
 
+```bash
+repomap --intent "fix token refresh race" -t 4096
 ```
-$ repomap .
-## Repository Map (41 files, 119 symbols)
+
+```text
+## Repository Map (138 files, 807 symbols)
 
 ### Dependencies
-repomap/cmd/repomap → repomap/internal/cli
-repomap/internal/cli → repomap
+repomap/cmd/repomap -> repomap/internal/cli
+repomap/internal/cli -> repomap, repomap/internal/lsp
 
-cmd/repomap/main.go [entry]
-  func main()
-
-repomap.go [imported by 1]
-  type Config{MaxTokens int, MaxTokensNoCtx int, ...}
-    // holds options for a Map build
+repomap.go [imported by 12]
+  type Config{MaxTokens int, MaxTokensNoCtx int, Intent string, ConsumedPaths []string}
+    // holds repomap configuration
   type Map
-    // is the top-level orchestrator. Thread-safe.
+    // holds the built repository map state
   func New(root string, cfg Config) *Map
-    // creates a Map for root with the given config
-  func (m *Map) Build(ctx context.Context) error
-    // scans, parses, ranks, and budgets the repository
-  func (m *Map) String() string
-  func (m *Map) StringCompact() string
-  func (m *Map) StringVerbose() string
-  func (m *Map) StringDetail() string
-  func (m *Map) StringLines() string
-  func (m *Map) StringXML() string
+  func (*Map) Build(ctx context.Context) error
 ```
 
-That is the point.
-
-## The Problem
-
-LLMs work best when they can see a whole codebase at once. Most codebases are too large. `find`, `tree`, and `ls -R` hand the model noise. A full `cat **/*.go` blows the context window in one shot.
-
-You want the skeleton. Every package. Every exported symbol. Nothing else.
-
-## The Shape
-
-repomap runs a five-stage pipeline on your project root:
-
-```
-scan → parse → rank → budget → format
-```
-
-**Scan** walks `git ls-files` and detects languages.
-**Parse** extracts symbols — `go/ast` for Go, tree-sitter for seven other languages, regex where neither reaches.
-**Rank** scores files: entry points float, leaves sink.
-**Budget** trims to fit a token ceiling you pass in.
-**Format** prints compact Markdown, verbose text, source lines, or structured XML.
-
-The output fits in a prompt. The prompt fits in the model. The model reads the repository.
+`repomap` is local static analysis: `git ls-files`, Go `go/ast`, tree-sitter, ctags/regex fallback, import graphs, BM25 intent ranking, and optional `gopls` caller expansion. It does not call an LLM.
 
 ## Install
 
@@ -60,7 +30,7 @@ The output fits in a prompt. The prompt fits in the model. The model reads the r
 go install github.com/dotcommander/repomap/cmd/repomap@latest
 ```
 
-Or clone and build:
+Or build from a checkout:
 
 ```bash
 git clone https://github.com/dotcommander/repomap
@@ -68,60 +38,208 @@ cd repomap
 go build -o repomap ./cmd/repomap
 ```
 
-## Use
+## Quick Start
 
 ```bash
-repomap                             # current directory, 2048 tokens, enriched default
-repomap ./src                       # target a subtree
-repomap -t 4096                     # wider budget
-repomap -f compact                  # lean orientation: file paths + symbol names only
-repomap -f verbose                  # every symbol, no summarization
-repomap -f detail                   # signatures and struct fields (same as default, no budget cap)
-repomap -f lines                    # actual source lines, not summaries
-repomap -f xml                      # structured output for programmatic consumers
-repomap --json                      # JSON envelope {schema_version:1, lines:[...]}
-repomap --json --json-legacy        # bare []string JSON (pre-v0.7.0 compat)
+repomap
 ```
 
-### Output formats
+Scans the current repository, ranks important files first, and renders exported symbols, signatures, first-sentence docs, and struct/interface fields within the default token budget.
+
+```bash
+repomap ./internal/cli -t 6000
+```
+
+Map a subtree with a larger budget.
+
+```bash
+repomap --intent "debug caller expansion timeouts"
+```
+
+Bias ranking toward files whose paths, packages, exported symbols, imports, and signatures match the task.
+
+```bash
+repomap --intent "debug caller expansion timeouts" --consumed calls.go,internal/lsp/client.go
+```
+
+Downrank files you already read and uprank files that import them.
+
+## Workflow Examples
+
+### Orient a Coding Agent
+
+```bash
+repomap --intent "add structured json output" -t 4096
+```
+
+Use this as first context. It gives the agent entry points, central packages, public APIs, and the most task-relevant files without dumping source.
+
+### Ask What a File Can Affect
+
+```bash
+repomap impact ranker.go
+```
+
+```text
+ranker.go
+  parsed: go_ast
+  imports: path/filepath, slices, strings
+  imported by: internal/cli/root.go, internal/cli/find.go, ...
+  tests: ranker_test.go, ranker_callers_test.go, ranker_consumed_test.go
+  exported: RankFiles, RankedFile
+  score: 133 map[imports:120 symbols:3 transitive:10]
+```
+
+`impact` reports local facts only: imports, reverse imports, nearby tests, exported symbols, boundaries, parser backend, and score components.
+
+### Explain a Ranking Decision
+
+```bash
+repomap explain ranker.go
+```
+
+```text
+ranker.go
+  score: 133
+  detail: omitted (budget)
+  components:
+    imports: +120
+    symbols: +3
+    transitive: +10
+```
+
+Use `explain` when a match looks suspicious. Every score component is deterministic and auditable.
+
+### Feed a Tool Structured Data
+
+```bash
+repomap --json-structured -t 4096 > map.json
+```
+
+```json
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "path": "ranker.go",
+      "language": "go",
+      "parse_method": "go_ast",
+      "score": 133,
+      "score_components": {
+        "imports": 120,
+        "symbols": 3,
+        "transitive": 10
+      },
+      "detail_level": -1,
+      "omitted_reason": "budget",
+      "symbols": [
+        {
+          "name": "RankFiles",
+          "kind": "function",
+          "line": 48
+        }
+      ]
+    }
+  ]
+}
+```
+
+Files excluded by the budget remain present with `detail_level: -1` and `omitted_reason`.
+
+### Expand Callers with gopls
+
+```bash
+repomap --calls --calls-threshold 2 --calls-limit 8
+```
+
+`--calls` asks `gopls` for references to exported symbols in highly imported files, then boosts files with many caller sites. Caller data is cached under `~/.cache/repomap` unless `--no-cache` is set.
+
+## Commands
+
+```bash
+repomap [directory]                 # default enriched map
+repomap -t 4096                     # token budget
+repomap -f compact                  # path + exported symbol names
+repomap -f verbose                  # all symbols, no budget cap
+repomap -f detail                   # all symbols with signatures and fields
+repomap -f lines                    # declaration source lines
+repomap -f xml                      # structured XML
+repomap --json                      # JSON envelope with rendered lines
+repomap --json --json-legacy        # legacy bare []string JSON
+repomap --json-structured           # schema-versioned map data
+repomap find RankFiles              # locate symbols
+repomap impact ranker.go            # blast-radius facts for a file
+repomap explain ranker.go           # ranking and budget evidence
+repomap init                        # scaffold .repomap.yaml and post-commit cache hook
+```
+
+LSP commands are also available when `gopls` is installed:
+
+```bash
+repomap symbols ranker.go
+repomap def ranker.go 48 RankFiles
+repomap refs ranker.go 48 RankFiles
+repomap hover ranker.go 48 RankFiles
+```
+
+## Output Formats
 
 | Format | What it shows | Budget enforced |
-|--------|---------------|----------------|
-| *(default)* | Paths, exported symbol names, typed signatures, godoc first sentence, typed struct fields | Yes |
-| `compact` | Paths + exported symbol names only — lean orientation mode | Yes |
-| `verbose` | All symbols, names only, no summarization | No |
-| `detail` | All symbols, signatures, and struct fields | No |
-| `lines` | Actual source lines | No |
-| `xml` | Structured XML for programmatic consumers | No |
+| --- | --- | --- |
+| default | Exported symbols, signatures, docs, struct/interface fields | yes |
+| `compact` | File paths and exported symbol names | yes |
+| `verbose` | All symbols, no summarization | no |
+| `detail` | All symbols plus signatures and fields | no |
+| `lines` | Actual declaration lines | yes |
+| `xml` | Structured XML | yes |
+| `--json` | Rendered verbose lines in JSON | no |
+| `--json-structured` | Files, symbols, ranks, parser data, budget data | yes |
 
-**Budget guarantee**: repomap never truncates a file mid-symbol. Files either render fully at their assigned detail level or drop to a lower level or are omitted — token budget is honored exactly. The footer reports how many files were omitted.
+Budgeting is all-or-lower-detail: repomap does not cut a file halfway through a symbol. A file renders at its assigned detail level, drops to a summary/header, or is marked omitted.
 
-## Quickstart
+## Ranking
+
+repomap ranks files before budgeting. Main signals:
+
+| Signal | Effect |
+| --- | --- |
+| Entry point (`main.go`, `index.ts`, `app.py`, etc.) | strong boost |
+| Exported symbols | contracts and public API rise |
+| Direct importers | heavily depended-on files rise |
+| Transitive fan-in | deep core files rise |
+| Boundary imports | HTTP, database, shell, and similar edges rise |
+| Tests and deep paths | mild penalty |
+| `--intent` | task-relevant files rise |
+| `--consumed` | read files fall; their importers rise |
+| `--calls` | files with many caller sites rise |
+
+Check exact evidence with:
 
 ```bash
-repomap init                        # scaffold .repomap.yaml + post-commit hook
-repomap init --no-hook              # config only
-repomap init --force                # overwrite existing
+repomap explain path/to/file.go --json
 ```
-
-`repomap init` writes `.repomap.yaml` at the project root and installs a
-git `post-commit` hook that refreshes the cache in the background after
-every commit, so `repomap` stays instant. Idempotent — re-running without
-`--force` skips existing files.
 
 ## Languages
 
-Go, PHP, Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, HTML, CSS. Go parses through `go/ast` directly; PHP parses through tree-sitter with full 8.x coverage (signatures, visibility, constructor property promotion, PHPDoc). The rest go through tree-sitter when the grammar is present, ctags when it is not, regex when neither exists. Quality degrades gracefully; the map is never empty because a parser was missing.
+Supported file types:
+
+| Language | Parser path |
+| --- | --- |
+| Go | `go/ast` |
+| PHP | tree-sitter with signatures, visibility, constructor promotion, PHPDoc |
+| Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, HTML, CSS | tree-sitter when available, ctags/regex fallback |
+
+Structured output includes `parse_method`: `go_ast`, `tree_sitter`, `ctags`, or `regex`.
 
 ## Configuration
 
-Create `.repomap.yaml` at the project root to control what gets scanned and how it's ranked:
+Create `.repomap.yaml` at the repo root:
 
 ```yaml
 method_blocklist:
-  - "Test*"           # glob: drop anything starting with "Test"
-  - "*Mock"           # glob: drop anything ending in "Mock"
-  - "/^pb_/"          # regex: drop generated protobuf methods
+  - "Test*"
+  - "*Mock"
+  - "/^pb_/"
 
 include_paths:
   - "cmd/*"
@@ -138,41 +256,84 @@ file_overrides:
 ```
 
 | Field | Purpose |
-|---|---|
-| `method_blocklist` | Glob or regex patterns — drops matching symbol names at parse time |
-| `include_paths` | When non-empty, only files matching these globs are scanned |
-| `exclude_paths` | Files matching these globs are always excluded (takes precedence over `include_paths`) |
-| `file_overrides` | Forces specific files to `"full"` or `"omit"` detail regardless of rank |
+| --- | --- |
+| `method_blocklist` | Drop matching symbols at parse time. Supports globs and `/regex/`. |
+| `include_paths` | If set, only matching paths are scanned. |
+| `exclude_paths` | Always excluded; wins over includes. |
+| `file_overrides` | Force matched files to `"full"` or `"omit"` detail. |
 
-`method_blocklist` patterns wrapped in `/.../` are Go regex; others are `path.Match` globs. Absent file = no filtering.
+Scaffold a config and cache-warming hook:
 
-## Library
-
-```go
-import "github.com/dotcommander/repomap"
-
-m := repomap.New(".", repomap.Config{MaxTokens: 2048})
-if err := m.Build(context.Background()); err != nil {
-    return err
-}
-fmt.Print(m.String())
+```bash
+repomap init
+repomap init --no-hook
+repomap init --force
 ```
 
-Every format has a method: `String`, `StringCompact`, `StringVerbose`, `StringDetail`, `StringLines`, `StringXML`. Results cache per format; call them as often as you like.
+## Library Usage
 
-`String()` is the enriched default: full typed signatures, godoc first sentences, and typed struct fields for exported symbols, within the token budget. `StringCompact()` is the lean orientation mode — symbol names only, no signatures or docs.
+```go
+package main
 
-`m.Stale()` reports whether source files have changed since the last build. Rebuild when it returns true.
+import (
+	"context"
+	"fmt"
+
+	"github.com/dotcommander/repomap"
+)
+
+func main() {
+	m := repomap.New(".", repomap.Config{
+		MaxTokens: 4096,
+		Intent:    "debug caller expansion",
+	})
+	if err := m.Build(context.Background()); err != nil {
+		panic(err)
+	}
+
+	fmt.Print(m.String())
+}
+```
+
+Useful methods:
+
+```go
+m.String()              // enriched default
+m.StringCompact()       // lean orientation
+m.StringVerbose()       // all symbols
+m.StringDetail()        // all signatures and fields
+m.StringLines()         // declaration lines
+m.StringXML()           // XML
+m.StructuredOutput()    // structured Go value
+m.StructuredJSON()      // indented JSON bytes
+m.Impact("ranker.go")   // file blast-radius facts
+m.Explain("ranker.go")  // rank and budget evidence
+m.Stale()               // source changed since build
+```
 
 ## Design
 
-One package. No internal taxonomy of subpackages. Files named after what they do — `scanner.go`, `ranker.go`, `budget.go`, `render.go`. If a thing has a name, the file has that name. If a thing has a pipeline stage, the file has that stage.
+repomap is intentionally boring:
 
-Docs live in `docs/`. Read them in the order they're numbered.
+- local only
+- deterministic
+- small Go API
+- no LLM calls
+- no embeddings
+- no hidden network dependency
+- graceful parser fallback
+
+Pipeline:
+
+```text
+scan -> parse -> rank -> budget -> format
+```
+
+Docs live in `docs/`. Start with [docs/02-quick-start.md](docs/02-quick-start.md), then [docs/03-output-formats.md](docs/03-output-formats.md), [docs/06-ranking.md](docs/06-ranking.md), and [docs/08-languages.md](docs/08-languages.md).
 
 ## Acknowledgments
 
-The repository map concept was pioneered by [aider.chat](https://aider.chat/) — an AI pair programming tool that introduced the idea of distilling a codebase into a compact symbol map that fits in an LLM context window.
+The repository map concept was pioneered by [aider.chat](https://aider.chat/), which popularized compact codebase maps for LLM-assisted development.
 
 ## License
 

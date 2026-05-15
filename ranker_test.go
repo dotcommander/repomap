@@ -222,3 +222,66 @@ func TestRankFiles_TransitiveChainRaisesDeepFile(t *testing.T) {
 	assert.Greater(t, scoreOf["example.com/d"], scoreOf["example.com/a"],
 		"D (3 transitive dependents) should outscore A (leaf) in full RankFiles pass")
 }
+
+func TestRankFiles_ScoreComponents(t *testing.T) {
+	t.Parallel()
+
+	files := []*FileSymbols{
+		{
+			Path:       "cmd/app/deep/main.go",
+			Language:   "go",
+			ImportPath: "example.com/app/cmd/app",
+			Imports:    []string{"example.com/app/internal/core", "net/http"},
+			Symbols: []Symbol{
+				{Name: "Run", Kind: "function", Exported: true},
+				{Name: "Config", Kind: "struct", Exported: true},
+			},
+		},
+		{
+			Path:       "internal/core/core.go",
+			Language:   "go",
+			ImportPath: "example.com/app/internal/core",
+			Symbols: []Symbol{
+				{Name: "Core", Kind: "interface", Exported: true},
+			},
+		},
+	}
+
+	ranked := RankFiles(files)
+	byPath := make(map[string]RankedFile, len(ranked))
+	for _, rf := range ranked {
+		byPath[rf.Path] = rf
+	}
+
+	mainFile := byPath["cmd/app/deep/main.go"]
+	assert.Equal(t, 50, mainFile.ScoreComponents[scoreComponentEntry])
+	assert.Equal(t, 3, mainFile.ScoreComponents[scoreComponentSymbols])
+	assert.Less(t, mainFile.ScoreComponents[scoreComponentDepth], 0)
+	assert.Positive(t, mainFile.ScoreComponents[scoreComponentBoundary])
+
+	coreFile := byPath["internal/core/core.go"]
+	assert.Equal(t, 10, coreFile.ScoreComponents[scoreComponentImports])
+	assert.Equal(t, 5, coreFile.ScoreComponents[scoreComponentTransitive])
+
+	for _, rf := range ranked {
+		assert.Equal(t, rf.Score, ScoreComponentTotal(rf), "score components should sum to score for %s", rf.Path)
+	}
+}
+
+func TestScoreComponentsTrackPostRankBoosts(t *testing.T) {
+	t.Parallel()
+
+	ranked := RankFiles([]*FileSymbols{
+		mkGoFile("core.go", "example.com/core", nil),
+		mkGoFile("api.go", "example.com/api", []string{"example.com/core"}),
+	})
+
+	scorer := NewIntentScorer(ranked)
+	ranked = scorer.Score(ranked, "core")
+	ApplyConsumedBonus(ranked, map[string]bool{"core.go": true})
+	ApplyCallerBonus(ranked, map[string]int{"api.go": 4})
+
+	for _, rf := range ranked {
+		assert.Equal(t, rf.Score, ScoreComponentTotal(rf), "score components should sum to score for %s", rf.Path)
+	}
+}

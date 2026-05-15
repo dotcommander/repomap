@@ -84,7 +84,7 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 	parsed = append(parsed, goParsed...)
 	parsed = append(parsed, nonGoParsed...)
 
-	// Apply blocklist filter once for all parse methods (ast/treesitter/ctags/regex).
+	// Apply blocklist filter once for all parse methods (go_ast/tree_sitter/ctags/regex).
 	for _, fs := range parsed {
 		m.blocklist.filterSymbols(fs)
 	}

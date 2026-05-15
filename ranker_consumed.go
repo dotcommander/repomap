@@ -58,7 +58,8 @@ func ApplyConsumedBonus(ranked []RankedFile, consumedPaths map[string]bool) {
 	// Downrank consumed files: score / 2 (integer division).
 	for i := range ranked {
 		if consumedPaths[ranked[i].Path] {
-			ranked[i].Score = ranked[i].Score / 2
+			old := ranked[i].Score
+			addScoreComponent(&ranked[i], scoreComponentConsumed, old/2-old)
 		}
 	}
 
@@ -77,7 +78,7 @@ func ApplyConsumedBonus(ranked []RankedFile, consumedPaths map[string]bool) {
 		if bonus > maxBonus {
 			bonus = maxBonus
 		}
-		ranked[i].Score += bonus
+		addScoreComponent(&ranked[i], scoreComponentConsumed, bonus)
 	}
 
 	sort.SliceStable(ranked, func(i, j int) bool {

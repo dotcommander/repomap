@@ -186,7 +186,9 @@ func (s *IntentScorer) Score(ranked []RankedFile, query string) []RankedFile {
 			}
 		}
 
-		ranked[i].Score = int(float64(ranked[i].Score) * (1.0 + boost))
+		old := ranked[i].Score
+		next := int(float64(ranked[i].Score) * (1.0 + boost))
+		addScoreComponent(&ranked[i], scoreComponentIntent, next-old)
 	}
 
 	// Sort by Score descending, Path ascending for ties

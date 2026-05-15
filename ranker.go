@@ -9,13 +9,38 @@ import (
 // RankedFile is a FileSymbols with an importance score.
 type RankedFile struct {
 	*FileSymbols
-	Score       int      // higher = more important
-	Tag         string   // e.g. "entry", ""
-	DetailLevel int      // set by BudgetFiles: -1=omit, 0=header, 1=summary, 2=symbols, 3=symbols+fields
-	ImportedBy  int      // number of files that import this file's package
-	DependsOn   int      // number of internal imports (fan-out coupling proxy)
-	Untested    bool     // true if package lacks test coverage
-	Boundaries  []string `json:"boundaries,omitempty"` // semantic boundary labels, e.g. ["HTTP", "Postgres"]
+	Score           int            // higher = more important
+	ScoreComponents map[string]int `json:"score_components,omitempty"` // stable score deltas by heuristic
+	Tag             string         // e.g. "entry", ""
+	DetailLevel     int            // set by BudgetFiles: -1=omit, 0=header, 1=summary, 2=symbols, 3=symbols+fields
+	ImportedBy      int            // number of files that import this file's package
+	DependsOn       int            // number of internal imports (fan-out coupling proxy)
+	Untested        bool           // true if package lacks test coverage
+	Boundaries      []string       `json:"boundaries,omitempty"` // semantic boundary labels, e.g. ["HTTP", "Postgres"]
+}
+
+const (
+	scoreComponentEntry       = "entry"
+	scoreComponentSymbols     = "symbols"
+	scoreComponentDepth       = "depth"
+	scoreComponentImports     = "imports"
+	scoreComponentTransitive  = "transitive"
+	scoreComponentDiagnostics = "diagnostics"
+	scoreComponentBoundary    = "boundary"
+	scoreComponentIntent      = "intent"
+	scoreComponentConsumed    = "consumed"
+	scoreComponentCallers     = "callers"
+)
+
+func addScoreComponent(rf *RankedFile, key string, delta int) {
+	if delta == 0 {
+		return
+	}
+	if rf.ScoreComponents == nil {
+		rf.ScoreComponents = make(map[string]int)
+	}
+	rf.Score += delta
+	rf.ScoreComponents[key] += delta
 }
 
 // RankFiles scores and sorts files by importance.
@@ -23,7 +48,7 @@ type RankedFile struct {
 func RankFiles(files []*FileSymbols) []RankedFile {
 	ranked := make([]RankedFile, len(files))
 	for i, f := range files {
-		ranked[i] = RankedFile{FileSymbols: f}
+		ranked[i] = RankedFile{FileSymbols: f, ScoreComponents: make(map[string]int)}
 	}
 
 	applyEntryBoosts(ranked)
@@ -52,7 +77,7 @@ func applyEntryBoosts(ranked []RankedFile) {
 
 		// Go entry points
 		if base == "main.go" {
-			ranked[i].Score += 50
+			addScoreComponent(&ranked[i], scoreComponentEntry, 50)
 			ranked[i].Tag = "entry"
 			continue
 		}
@@ -60,7 +85,7 @@ func applyEntryBoosts(ranked []RankedFile) {
 		// Other language entry points
 		switch base {
 		case "main.ts", "index.ts", "index.js", "app.py", "main.py", "main.rs":
-			ranked[i].Score += 30
+			addScoreComponent(&ranked[i], scoreComponentEntry, 30)
 			ranked[i].Tag = "entry"
 		}
 	}
@@ -102,19 +127,21 @@ func applySymbolBonus(ranked []RankedFile) {
 		if bonus > maxSymbolBonus {
 			bonus = maxSymbolBonus
 		}
-		ranked[i].Score += bonus
+		addScoreComponent(&ranked[i], scoreComponentSymbols, bonus)
 	}
 }
 
 func applyDepthPenalty(ranked []RankedFile) {
 	for i := range ranked {
+		penalty := 0
 		depth := strings.Count(ranked[i].Path, string(filepath.Separator))
 		if depth > 2 {
-			ranked[i].Score -= depth - 2
+			penalty -= depth - 2
 		}
 		if isTestFile(ranked[i].Path) {
-			ranked[i].Score -= 5
+			penalty -= 5
 		}
+		addScoreComponent(&ranked[i], scoreComponentDepth, penalty)
 	}
 }
 
@@ -166,7 +193,7 @@ func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
 	// Distribute score and ImportedBy to all files matching each key.
 	for key, count := range importerCount {
 		for _, idx := range index[key] {
-			ranked[idx].Score += count * 10
+			addScoreComponent(&ranked[idx], scoreComponentImports, count*10)
 			ranked[idx].ImportedBy = count
 		}
 	}
@@ -224,7 +251,7 @@ func applyBoundaryBoost(ranked []RankedFile) {
 		labels, bump := classifyBoundaries(ranked[i].Language, ranked[i].Imports)
 		if len(labels) > 0 {
 			ranked[i].Boundaries = labels
-			ranked[i].Score += bump
+			addScoreComponent(&ranked[i], scoreComponentBoundary, bump)
 		}
 	}
 }
