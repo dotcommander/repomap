@@ -79,6 +79,12 @@ Per-language boundary scoring identifies natural module or package boundaries an
 
 In `--calls` mode, files with many callers receive an additional score bonus. The more places that call into a file, the higher it ranks — useful for surfacing heavily-used utilities that might otherwise score low due to few importers.
 
+## Symbol-reference bonus (`--symbol-refs`)
+
+`--symbol-refs` adds a cheap approximate cross-language reference signal for non-Go symbols. It builds an exported symbol-name index, tokenizes each scanned file once, and boosts a non-Go file when other files mention its symbols.
+
+This is lexical, not semantic: it ignores same-file mentions and duplicate mentions within one source file, skips very short names, and caps the score so false positives cannot dominate import, intent, or LSP caller signals. Use `--calls` for exact Go caller data.
+
 ## Stale detection
 
 repomap uses **content-hash stale detection**: a file whose mtime changed but whose content is unchanged does not trigger a rebuild. Only actual byte-level content changes invalidate the cache. This avoids spurious rebuilds caused by `touch`, `git checkout`, or filesystem metadata updates.
