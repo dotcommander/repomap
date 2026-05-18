@@ -59,6 +59,12 @@ repomap --intent "debug caller expansion timeouts"
 Bias ranking toward files whose paths, packages, exported symbols, imports, and signatures match the task.
 
 ```bash
+repomap --symbol-refs
+```
+
+Add a cheap cross-language lexical reference signal for non-Go symbols when imports are too weak and LSP caller data is unavailable.
+
+```bash
 repomap --intent "debug caller expansion timeouts" --consumed calls.go,internal/lsp/client.go
 ```
 
@@ -210,6 +216,7 @@ repomap ranks files before budgeting. Main signals:
 | Boundary imports | HTTP, database, shell, and similar edges rise |
 | Tests and deep paths | mild penalty |
 | `--intent` | task-relevant files rise |
+| `--symbol-refs` | non-Go symbols mentioned by many other files rise |
 | `--consumed` | read files fall; their importers rise |
 | `--calls` | files with many caller sites rise |
 

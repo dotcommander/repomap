@@ -167,6 +167,13 @@ func extractSymbols(source []byte, root *tree_sitter.Node, lang *tree_sitter.Lan
 
 		symKind := tsSymbolKind(m, q)
 		receiver := tsCaptureText(m, q, "receiver", source)
+		typeNode := tsCaptureNode(m, q, "type")
+		if receiver == "" && typeNode != nil {
+			receiver = tsEnclosingReceiver(typeNode, source)
+		}
+		if receiver != "" && symKind == "function" {
+			symKind = "method"
+		}
 
 		line := uint(0)
 		endLine := uint(0)
@@ -174,7 +181,7 @@ func extractSymbols(source []byte, root *tree_sitter.Node, lang *tree_sitter.Lan
 			line = nameNode.StartPosition().Row + 1
 		}
 		// Use @type node for end line — it wraps the full declaration.
-		if typeNode := tsCaptureNode(m, q, "type"); typeNode != nil {
+		if typeNode != nil {
 			endLine = typeNode.EndPosition().Row + 1
 		}
 
@@ -187,6 +194,36 @@ func extractSymbols(source []byte, root *tree_sitter.Node, lang *tree_sitter.Lan
 			EndLine:  int(endLine),
 		})
 	})
+}
+
+func tsEnclosingReceiver(n *tree_sitter.Node, source []byte) string {
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		switch p.Kind() {
+		case "class_declaration", "class_definition", "interface_declaration",
+			"interface_definition", "trait_item", "struct_item", "impl_item":
+			if name := tsNodeName(p, source); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+func tsNodeName(n *tree_sitter.Node, source []byte) string {
+	if n == nil {
+		return ""
+	}
+	if name := n.ChildByFieldName("name"); name != nil {
+		return name.Utf8Text(source)
+	}
+	for i := uint(0); i < n.ChildCount(); i++ {
+		child := n.Child(i)
+		switch child.Kind() {
+		case "identifier", "type_identifier":
+			return child.Utf8Text(source)
+		}
+	}
+	return ""
 }
 
 // extractImports finds import statements for a given language.
@@ -238,7 +275,7 @@ func tsKindToSymbolKind(tsKind string) string {
 	case "function_declaration", "function_definition", "function_item",
 		"arrow_function", "generator_function_declaration":
 		return "function"
-	case "method_definition", "method_declaration":
+	case "method_definition", "method_declaration", "abstract_method_signature", "method_signature":
 		return "method"
 	case "class_declaration", "class_definition":
 		return "class"

@@ -27,6 +27,7 @@ type StructuredConfig struct {
 	MaxTokensNoCtx int      `json:"max_tokens_no_ctx"`
 	Intent         string   `json:"intent,omitempty"`
 	ConsumedPaths  []string `json:"consumed_paths,omitempty"`
+	SymbolRefs     bool     `json:"symbol_refs,omitempty"`
 }
 
 // StructuredFile is a machine-readable file block.
@@ -115,6 +116,7 @@ func BuildStructuredOutput(root string, cfg Config, ranked []RankedFile, tsAvail
 			MaxTokensNoCtx: cfg.MaxTokensNoCtx,
 			Intent:         cfg.Intent,
 			ConsumedPaths:  append([]string(nil), cfg.ConsumedPaths...),
+			SymbolRefs:     cfg.SymbolRefs,
 		},
 		Warnings: structuredWarnings(tsAvailable, ctagsAvailable),
 		Files:    make([]StructuredFile, 0, len(ranked)),

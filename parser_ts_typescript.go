@@ -48,6 +48,9 @@ const tsQueryTS = `
 
 (abstract_method_signature
   name: (property_identifier) @name) @type
+
+(method_signature
+  name: (property_identifier) @name) @type
 `
 
 // tsQueryTSImports finds import statements.

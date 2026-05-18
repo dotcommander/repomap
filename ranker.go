@@ -30,6 +30,7 @@ const (
 	scoreComponentIntent      = "intent"
 	scoreComponentConsumed    = "consumed"
 	scoreComponentCallers     = "callers"
+	scoreComponentSymbolRefs  = "symbol_refs"
 )
 
 func addScoreComponent(rf *RankedFile, key string, delta int) {

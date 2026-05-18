@@ -27,9 +27,10 @@ const (
 // Config holds repomap configuration.
 type Config struct {
 	MaxTokens      int      // token budget for output (default: 1024)
-	MaxTokensNoCtx int     // budget when no files in conversation (default: 2048)
+	MaxTokensNoCtx int      // budget when no files in conversation (default: 2048)
 	Intent         string   // optional BM25 query for task-aware ranking
 	ConsumedPaths  []string // optional: paths the caller has already read — these are downranked
+	SymbolRefs     bool     // optional approximate cross-language symbol reference scoring
 }
 
 // DefaultConfig returns the default configuration.
@@ -121,6 +122,10 @@ func (m *Map) Build(ctx context.Context) error {
 	if m.config.Intent != "" {
 		scorer := NewIntentScorer(ranked)
 		ranked = scorer.Score(ranked, m.config.Intent)
+	}
+
+	if m.config.SymbolRefs {
+		ApplySymbolReferenceBonus(m.root, ranked)
 	}
 
 	if len(m.config.ConsumedPaths) > 0 {
