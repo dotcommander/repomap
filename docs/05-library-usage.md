@@ -58,6 +58,20 @@ m.StringXML()      // structured XML
 
 Each returns an empty string if `Build` hasn't run or the project contains no symbols.
 
+## Symbol context
+
+```go
+ctx, err := m.Context("RankFiles", repomap.ContextOptions{
+    MaxSourceLines: 50,
+})
+if err != nil {
+    return err
+}
+fmt.Println(ctx.Match.File, ctx.Match.Symbol.Line)
+```
+
+`Context` resolves the best symbol match, extracts a bounded source span, includes ambiguity hints, and attaches the owning file's `Impact` result. Caller expansion is CLI-only today; library callers can use `ExpandCallers` directly when they need exact `gopls` references.
+
 ## Staleness
 
 ```go
@@ -106,6 +120,15 @@ m.Build(ctx)
 ```
 
 Cache keys are SHA-256 of the absolute project root. Multiple projects can share one cache directory.
+
+Inspect a cache entry without loading it:
+
+```go
+status := repomap.InspectCache(ctx, root, "/tmp/repomap-cache")
+if status.Stale {
+    fmt.Println(status.Reason)
+}
+```
 
 ## A full example
 

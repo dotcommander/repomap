@@ -76,6 +76,15 @@ Four renderers, chosen by the caller:
 
 Each renderer consumes `RankedFile.DetailLevel` and shapes output accordingly. Renderers are pure functions — no state, no I/O.
 
+## Focused Queries
+
+Focused commands reuse the built map instead of adding separate indexing paths:
+
+- `find` searches the ranked symbol set by exact, case-insensitive, prefix, then contains score.
+- `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, and score components.
+- `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path uses `gopls` through the existing LSP manager.
+- `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild.
+
 ## The `Map` type
 
 `repomap.go` → `type Map struct`
@@ -85,6 +94,7 @@ Holds everything:
 - `root` and `config`
 - The ranked file slice (`ranked`)
 - Recorded mtimes for staleness (`mtimes`)
+- Recorded content hashes for cache diagnostics and incremental rebuilds (`contentHashes`)
 - Lazy-computed output cache (`outputs`)
 - Parser availability flags (`tsAvailable`, `ctagsAvailable`)
 

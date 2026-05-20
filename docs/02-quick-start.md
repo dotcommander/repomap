@@ -45,12 +45,22 @@ repomap | llm "summarize this codebase"     # pipe to an LLM CLI
 repomap --json > map.json                   # structured for programmatic use
 ```
 
-## Change the format
-
-repomap has five output formats. Compact is the default.
+## Inspect one symbol
 
 ```bash
-repomap -f compact    # default; budget-aware, skips long tails
+repomap context RankFiles
+repomap context RankFiles --json
+```
+
+`context` returns the best symbol match, a bounded source span, ambiguity hints, and impact facts for the owning file. Add `--calls` when you want exact Go callers through `gopls`.
+
+## Change the format
+
+repomap has six output formats. Enriched is the default.
+
+```bash
+repomap               # default; enriched — signatures + godoc + fields
+repomap -f compact    # explicit compact; budget-aware, skips long tails
 repomap -f verbose    # every symbol, no summarization
 repomap -f detail     # verbose plus signatures and struct fields
 repomap -f lines      # actual source lines from each file
@@ -67,7 +77,16 @@ repomap -t 8192       # generous — roughly 8K tokens
 repomap -t 32000      # no real limit
 ```
 
-A token is roughly four bytes. `-t 2048` (the default) targets about 8KB of output. `verbose`, `detail`, and `lines` formats ignore the budget — they're meant for humans, not prompts.
+A token is roughly four bytes. `-t 2048` (the default) targets about 8KB of output. `verbose` and `detail` formats ignore the budget — they're meant for humans, not prompts.
+
+## Check cache status
+
+```bash
+repomap cache status
+repomap cache status --json
+```
+
+This inspects the optional disk cache for the current root and reports whether it is missing, fresh, stale, or unusable.
 
 ## Next
 

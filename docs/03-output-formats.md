@@ -108,18 +108,21 @@ Use this when you're feeding repomap into another tool. XML parsers eat it; LLMs
 repomap --json
 ```
 
-Wraps verbose output as a JSON array of lines:
+Wraps verbose output in a schema-versioned JSON envelope:
 
 ```json
-[
-  "## Repository Map (41 files, 119 symbols)",
-  "",
-  "### Dependencies",
-  "repomap/cmd/repomap → repomap/internal/cli"
-]
+{
+  "schema_version": 1,
+  "lines": [
+    "## Repository Map (41 files, 119 symbols)",
+    "",
+    "### Dependencies",
+    "repomap/cmd/repomap → repomap/internal/cli"
+  ]
+}
 ```
 
-Use this when you need line-by-line parsing without imposing a schema.
+Use this when you need line-by-line parsing with a small stable envelope. Use `--json --json-legacy` only for scripts that still expect the old bare `[]string` shape.
 
 ## Structured JSON
 
@@ -146,6 +149,18 @@ Emits schema-versioned file, symbol, rank, parser, and budget data:
 ```
 
 Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Files omitted by budget include `detail_level: -1` and `omitted_reason`.
+
+## Command JSON
+
+Subcommands that return focused data have their own JSON shapes:
+
+```bash
+repomap context RankFiles --json
+repomap impact ranker.go --json
+repomap cache status --json
+```
+
+`context` includes the selected symbol, ambiguity hints, bounded source lines, optional callers, and the owning file's impact facts. `cache status` reports cache existence, usability, freshness, reason, path, saved/current HEAD, and tracked file count.
 
 ## Budget behavior
 

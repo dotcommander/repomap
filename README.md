@@ -98,6 +98,29 @@ ranker.go
 
 `impact` reports local facts only: imports, reverse imports, nearby tests, exported symbols, boundaries, parser backend, and score components.
 
+### Get Context for One Symbol
+
+```bash
+repomap context RankFiles
+```
+
+```text
+ranker.go:49  function  RankFiles(files []*FileSymbols) []RankedFile
+also matched:
+  repomap_test.go:200  function  TestRankFiles(t *testing.T)
+
+source:
+  49 | func RankFiles(files []*FileSymbols) []RankedFile {
+  50 |     ranked := make([]RankedFile, len(files))
+     ...
+ranker.go
+  parsed: go_ast
+  imports: path/filepath, slices, strings
+  tests: ranker_test.go, ranker_callers_test.go
+```
+
+`context` is a symbol-centered bundle: best match, bounded source span, ambiguity hints, and the owning file's impact facts. Use `--json` for structured output, or `--calls` to include exact Go callers through `gopls`.
+
 ### Explain a Ranking Decision
 
 ```bash
@@ -160,6 +183,15 @@ repomap --calls --calls-threshold 2 --calls-limit 8
 
 `--calls` asks `gopls` for references to exported symbols in highly imported files, then boosts files with many caller sites. Caller data is cached under `~/.cache/repomap` unless `--no-cache` is set.
 
+### Inspect Cache State
+
+```bash
+repomap cache status
+repomap cache status --json
+```
+
+`cache status` reports whether the disk cache for the current root exists, is usable, and appears fresh. It checks the saved cache version, root, tracked file hashes/mtimes, and saved HEAD when present.
+
 ## Commands
 
 ```bash
@@ -174,7 +206,9 @@ repomap --json                      # JSON envelope with rendered lines
 repomap --json --json-legacy        # legacy bare []string JSON
 repomap --json-structured           # schema-versioned map data
 repomap find RankFiles              # locate symbols
+repomap context RankFiles           # source + impact context for one symbol
 repomap impact ranker.go            # blast-radius facts for a file
+repomap cache status                # inspect disk cache freshness
 repomap explain ranker.go           # ranking and budget evidence
 repomap init                        # scaffold .repomap.yaml and post-commit cache hook
 ```

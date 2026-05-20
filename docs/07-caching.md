@@ -56,14 +56,16 @@ Each project gets a separate cache file. Keys are `sha256(absolute root path)`. 
 JSON. Contains:
 
 - The recorded mtimes for staleness checks
+- Content hashes for tracked files
 - The full `RankedFile` slice
 - Pre-rendered `compact` and `lines` outputs
+- The saved git HEAD when the root is inside a git repo
 
 Verbose, detail, and XML outputs are recomputed on demand — they're fast relative to the full pipeline.
 
 ## Cache invalidation
 
-There's one rule: **the cache is stale if any tracked mtime changed.**
+The normal `Map.Stale()` check uses recorded mtimes, with content hashes available in the cache format for diagnostics and newer cache flows. `repomap cache status` reports content changes when hashes are available and falls back to mtime changes for older cache entries.
 
 `Stale()` is O(tracked files) and runs each file stat in parallel. On a 500-file repo it takes single-digit milliseconds.
 
@@ -79,6 +81,24 @@ Falls through to a full rebuild if:
 - The directory is not inside a git repo
 
 Any git failure triggers a silent full rebuild — correctness is always preferred over speed.
+
+## Inspect cache status
+
+```bash
+repomap cache status
+repomap cache status --json
+repomap cache status --cache-dir /tmp/repomap-cache
+```
+
+The status command checks the cache entry for the selected root without rebuilding it. It reports:
+
+- `missing_cache` — no cache entry exists for this root
+- `corrupt_cache` — the cache file could not be decoded
+- `version_mismatch` — the on-disk cache version is not current
+- `root_mismatch` — the cache file does not belong to this root
+- `head_changed` — saved HEAD and current HEAD differ
+- `content_changed`, `mtime_changed`, or `tracked_file_missing` — tracked files changed
+- `fresh` — the cache entry is usable and no stale signal was found
 
 ## Cache versioning
 

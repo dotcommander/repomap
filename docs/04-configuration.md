@@ -1,16 +1,24 @@
 # Configuration
 
-repomap has five flags. That's it.
+This page covers root map flags and the main subcommand flags.
 
 ## Flags
 
 | Flag | Short | Default | Description |
 | --- | --- | --- | --- |
 | `--tokens` | `-t` | `2048` | Approximate token budget for the output |
-| `--format` | `-f` | `compact` | One of `compact`, `verbose`, `detail`, `lines`, `xml` |
-| `--json` | — | `false` | Emit verbose output as a JSON array of lines |
+| `--format` | `-f` | `enriched` | One of `enriched`, `compact`, `verbose`, `detail`, `lines`, `xml` |
+| `--json` | — | `false` | Emit verbose output as a JSON envelope of lines |
+| `--json-legacy` | — | `false` | Emit the legacy bare `[]string` JSON shape |
+| `--json-structured` | — | `false` | Emit schema-versioned file/symbol/ranking data |
+| `--calls` | — | `false` | Expand exported symbols with caller information via `gopls` |
+| `--calls-threshold` | — | `2` | Only expand symbols in files with at least this many importers |
+| `--calls-limit` | — | `10` | Max callers shown per symbol |
+| `--calls-include-tests` | — | `false` | Include `_test.go` callers |
+| `--no-cache` | — | `false` | Bypass the `--calls` cache |
 | `--intent` | `-i` | `""` | Natural language query for BM25 task-aware ranking |
 | `--consumed` | — | `[]` | File paths already read; these are downranked and their importers upranked |
+| `--symbol-refs` | — | `false` | Enable approximate cross-language symbol reference scoring |
 
 ## Positional argument
 
@@ -39,7 +47,8 @@ Verbose and detail formats ignore the budget — they always emit everything.
 ## Format
 
 ```bash
-repomap -f compact    # default; budget-trimmed
+repomap               # default; enriched — signatures + godoc + fields
+repomap -f compact    # explicit compact; budget-trimmed
 repomap -f verbose    # all symbols
 repomap -f detail     # verbose + signatures + struct fields
 repomap -f lines      # actual source lines
@@ -54,7 +63,7 @@ See [Output Formats](03-output-formats.md) for examples.
 repomap --json
 ```
 
-Equivalent to running `-f verbose` and wrapping the output in a JSON array of lines. The flag overrides `-f`.
+Equivalent to running `-f verbose` and wrapping the output in `{schema_version, lines}`. The flag overrides `-f`. Add `--json-legacy` only for scripts that still expect a bare array of lines.
 
 ## Intent ranking
 
@@ -77,6 +86,39 @@ repomap --consumed auth/jwt.go --consumed auth/handler.go .
 When `--consumed` is set, each named file has its score halved (downranked) and files that import a consumed file gain +15 per consumed dependency (capped at +45). This pushes unfamiliar code higher in the output without changing the token budget.
 
 Composes with `--intent`: BM25 runs first, then consumed adjustment is applied. Omit the flag and behavior is unchanged.
+
+## Symbol context command
+
+```bash
+repomap context RankFiles
+repomap context kind:function:file:ranker:RankFiles --json
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--kind` | `""` | Filter by symbol kind |
+| `--file` | `""` | Filter to files matching this substring |
+| `--json` | `false` | Emit structured context JSON |
+| `--calls` | `false` | Include exact Go callers via `gopls` |
+| `--calls-include-tests` | `false` | Include `_test.go` callers |
+| `--calls-limit` | `10` | Max callers to include with `--calls` |
+| `--max-source-lines` | `200` | Max source lines to include for the selected symbol |
+| `--max-output-lines` | `400` | Max text output lines; `0` means unlimited |
+| `--max-output-bytes` | `65536` | Max text output bytes; `0` means unlimited |
+
+The positional query accepts the same qualifiers as `find`: `kind:<kind>:`, `file:<substring>:`, then the symbol name.
+
+## Cache status command
+
+```bash
+repomap cache status
+repomap cache status --cache-dir /tmp/repomap-cache --json
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--cache-dir` | `$HOME/.cache/repomap` | Cache directory to inspect |
+| `--json` | `false` | Emit structured cache status JSON |
 
 ## Environment
 
