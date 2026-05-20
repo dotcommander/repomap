@@ -1,7 +1,6 @@
 package repomap
 
 import (
-	"path/filepath"
 	"strings"
 )
 
@@ -16,29 +15,6 @@ var codeExts = map[string]bool{
 // docExts lists documentation/text extensions that keep type as "docs".
 var docExts = map[string]bool{
 	".md": true, ".txt": true, ".rst": true, ".adoc": true,
-}
-
-// groupInferType overrides the per-file dominant type with group-level rules:
-//   - Any newly-added code file (Status "A" or "?") → "feat"
-//   - All files are doc extensions → "docs"
-//   - Otherwise the passed-in domType is returned unchanged.
-func groupInferType(domType string, paths []string, byPath map[string]*fileChange) string {
-	allDoc := true
-	for _, p := range paths {
-		ext := strings.ToLower(filepath.Ext(p))
-		f := byPath[p]
-		isAdded := f != nil && (f.Status == "A" || f.IndexStatus == "A" || f.Status == "?")
-		if isAdded && codeExts[ext] {
-			return "feat"
-		}
-		if !docExts[ext] {
-			allDoc = false
-		}
-	}
-	if allDoc && len(paths) > 0 {
-		return "docs"
-	}
-	return domType
 }
 
 // crossesPluginBoundary reports whether two paths live in different top-level
