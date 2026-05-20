@@ -3,6 +3,7 @@ package repomap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,8 +60,11 @@ type execError struct {
 func (e execError) Error() string { return e.msg }
 
 // ExecExitCode extracts the exit code from an execError, defaulting to 1.
+// Uses errors.As so wrapped execError values (e.g. fmt.Errorf("...: %w", err))
+// still return the embedded code.
 func ExecExitCode(err error) int {
-	if e, ok := err.(execError); ok {
+	var e execError
+	if errors.As(err, &e) {
 		return e.code
 	}
 	return 1
