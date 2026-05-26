@@ -42,7 +42,8 @@ repomap ~/projects/my-app
 ```bash
 repomap -t 4000 | pbcopy                    # macOS clipboard
 repomap | llm "summarize this codebase"     # pipe to an LLM CLI
-repomap --json > map.json                   # structured for programmatic use
+repomap --json > map-lines.json             # schema-versioned rendered lines
+repomap --json-structured > map-data.json   # structured file/symbol/ranking data
 ```
 
 ## Inspect one symbol
