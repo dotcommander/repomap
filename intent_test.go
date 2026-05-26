@@ -178,7 +178,6 @@ func TestTokenizeIntent(t *testing.T) {
 		{"", nil},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 			got := tokenizeIntent(tc.input)
@@ -202,7 +201,6 @@ func TestTokenizeCamelCase(t *testing.T) {
 		{"", nil},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 			got := tokenizeCamelCase(tc.input)
@@ -245,7 +243,6 @@ func TestExtractNegated(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.input[0], func(t *testing.T) {
 			t.Parallel()
 			keep, negated := extractNegated(tc.input)

@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 
 	"github.com/dotcommander/repomap"
@@ -24,7 +22,7 @@ func newExplainCmd() *cobra.Command {
 				return err
 			}
 			m := repomap.New(root, repomap.DefaultConfig())
-			if err := m.Build(context.Background()); err != nil {
+			if err := m.Build(cmd.Context()); err != nil {
 				return err
 			}
 			explain, err := m.Explain(rel)
@@ -32,11 +30,11 @@ func newExplainCmd() *cobra.Command {
 				return err
 			}
 			if jsonOut {
-				enc := json.NewEncoder(os.Stdout)
+				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(explain)
 			}
-			printExplain(os.Stdout, explain)
+			printExplain(cmd.OutOrStdout(), explain)
 			return nil
 		},
 	}

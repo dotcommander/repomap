@@ -46,7 +46,6 @@ func TestParseFindQuery(t *testing.T) {
 		{"kind:func:New", "New", "func", ""},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 			name, kind, file := ParseFindQuery(tc.input)

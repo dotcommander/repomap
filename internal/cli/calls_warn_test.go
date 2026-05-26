@@ -46,7 +46,6 @@ func TestRenderCallsOutput_UnsupportedFormatsWarn(t *testing.T) {
 	callers := repomap.SymbolCallers{} // empty — no gopls needed
 
 	for _, format := range []string{"compact", "lines", "xml"} {
-		format := format
 		t.Run(format, func(t *testing.T) {
 			// Not parallel: shares os.Stderr redirect with parent.
 			var out bytes.Buffer
@@ -80,7 +79,6 @@ func TestRenderCallsOutput_SupportedFormatsNoWarn(t *testing.T) {
 		{"", "(default)"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.label, func(t *testing.T) {
 			// Not parallel: shares os.Stderr redirect with parent.
 			var out bytes.Buffer

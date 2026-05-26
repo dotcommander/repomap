@@ -51,8 +51,7 @@ func newCacheStatusCmd() *cobra.Command {
 				enc.SetIndent("", "  ")
 				return enc.Encode(status)
 			}
-			printCacheStatus(cmd.OutOrStdout(), status)
-			return nil
+			return printCacheStatus(cmd.OutOrStdout(), status)
 		},
 	}
 	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "Cache directory (default: $HOME/.cache/repomap)")
@@ -60,7 +59,7 @@ func newCacheStatusCmd() *cobra.Command {
 	return cmd
 }
 
-func printCacheStatus(w io.Writer, status repomap.CacheStatus) {
+func printCacheStatus(w io.Writer, status repomap.CacheStatus) error {
 	state := "missing"
 	switch {
 	case status.Usable && !status.Stale:
@@ -70,19 +69,34 @@ func printCacheStatus(w io.Writer, status repomap.CacheStatus) {
 	case status.Exists:
 		state = "unusable"
 	}
-	fmt.Fprintf(w, "cache: %s\n", state)
-	fmt.Fprintf(w, "  path: %s\n", status.CachePath)
+	if _, err := fmt.Fprintf(w, "cache: %s\n", state); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  path: %s\n", status.CachePath); err != nil {
+		return err
+	}
 	if status.Reason != "" {
-		fmt.Fprintf(w, "  reason: %s\n", status.Reason)
+		if _, err := fmt.Fprintf(w, "  reason: %s\n", status.Reason); err != nil {
+			return err
+		}
 	}
 	if status.BuiltAt != nil {
-		fmt.Fprintf(w, "  built: %s\n", status.BuiltAt.Format("2006-01-02 15:04:05 MST"))
+		if _, err := fmt.Fprintf(w, "  built: %s\n", status.BuiltAt.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
 	}
 	if status.TrackedFiles > 0 {
-		fmt.Fprintf(w, "  tracked files: %d\n", status.TrackedFiles)
+		if _, err := fmt.Fprintf(w, "  tracked files: %d\n", status.TrackedFiles); err != nil {
+			return err
+		}
 	}
 	if status.SavedHead != "" || status.CurrentHead != "" {
-		fmt.Fprintf(w, "  saved HEAD: %s\n", status.SavedHead)
-		fmt.Fprintf(w, "  current HEAD: %s\n", status.CurrentHead)
+		if _, err := fmt.Fprintf(w, "  saved HEAD: %s\n", status.SavedHead); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  current HEAD: %s\n", status.CurrentHead); err != nil {
+			return err
+		}
 	}
+	return nil
 }

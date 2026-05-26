@@ -89,7 +89,6 @@ func TestFirstSentence(t *testing.T) {
 		if tc.name == "nil comment group" {
 			continue // handled above
 		}
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var cg *ast.CommentGroup

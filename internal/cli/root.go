@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,7 +60,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 			}
 			m := repomap.New(absDir, cfg)
 
-			if err := m.Build(context.Background()); err != nil {
+			if err := m.Build(cmd.Context()); err != nil {
 				return err
 			}
 

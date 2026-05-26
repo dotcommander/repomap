@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -45,7 +44,7 @@ Flags override or supplement query qualifiers.`,
 			}
 
 			m := repomap.New(dir, repomap.DefaultConfig())
-			if err := m.Build(context.Background()); err != nil {
+			if err := m.Build(cmd.Context()); err != nil {
 				return fmt.Errorf("build: %w", err)
 			}
 
