@@ -25,6 +25,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,7 +53,10 @@ func RunSimplifyDetect(ctx context.Context, repoRoot string) ([]Candidate, error
 	script := dcScriptPath("simplify-detect.sh")
 	if _, err := os.Stat(script); err != nil {
 		// Script absent — treat as no findings, not an error.
-		return nil, nil
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat simplify-detect script: %w", err)
 	}
 
 	cmd := exec.CommandContext(ctx, "bash", script, repoRoot)

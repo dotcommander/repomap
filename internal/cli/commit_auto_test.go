@@ -88,7 +88,6 @@ func TestRunCommitAuto_ForceMode_OverridesPreflight(t *testing.T) {
 		{"force LOCAL", "LOCAL", "LOCAL"},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			root := initAutoTestRepo(t)

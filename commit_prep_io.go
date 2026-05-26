@@ -4,11 +4,19 @@ package repomap
 // shell-outs (release gate, git reset) and dc-plugin script resolution.
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+)
+
+// Commit-prep subprocess timeouts. Var (not const) so tests may shorten them.
+var (
+	stashGitTimeout    = 30 * time.Second //nolint:gochecknoglobals // test-overridable timeout
+	releaseGateTimeout = 5 * time.Minute  //nolint:gochecknoglobals // test-overridable timeout
 )
 
 // dcScriptPath returns the path to a dc-plugin script, honoring CLAUDE_PLUGIN_ROOT
@@ -46,8 +54,13 @@ func StashArtifacts(repoRoot string, artifacts []string) {
 		_ = atomicWriteFile(giPath, []byte(newContent), 0o644)
 	}
 	// Batch all artifacts into a single `git reset HEAD -- a b c` call.
+	// Bounded by stashGitTimeout — see var block.
+	ctx, cancel := context.WithTimeout(context.Background(), stashGitTimeout)
+	defer cancel()
 	args := append([]string{"-C", repoRoot, "reset", "HEAD", "--"}, artifacts...)
-	_ = exec.Command("git", args...).Run()
+	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // args are repo-internal paths, not user input
+	cmd.WaitDelay = 2 * time.Second
+	_ = cmd.Run()
 }
 
 // RunReleaseGate shells out to release-gate.sh and returns a summary.
@@ -57,8 +70,13 @@ func RunReleaseGate(repoRoot string) *PrepReleaseGate {
 	if _, err := os.Stat(script); err != nil {
 		return &PrepReleaseGate{Applied: []any{}, BuildOK: true}
 	}
-	cmd := exec.Command("bash", script, "--path", repoRoot, "--no-toolchain")
+	// Bounded by releaseGateTimeout — see var block. A wedged release-gate
+	// script (e.g. hung build) surfaces as build_ok=false rather than hanging.
+	ctx, cancel := context.WithTimeout(context.Background(), releaseGateTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", script, "--path", repoRoot, "--no-toolchain") //nolint:gosec // script path resolved via dcScriptPath, not user input
 	cmd.Dir = repoRoot
+	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
 	gate := &PrepReleaseGate{Applied: []any{}, BuildOK: err == nil}
 	var result struct {

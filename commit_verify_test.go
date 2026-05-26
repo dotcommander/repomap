@@ -1,7 +1,10 @@
 package repomap
 
 import (
+	"context"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestParsePorcelainLines(t *testing.T) {
@@ -88,6 +91,15 @@ func TestSelfVerifyConventionalRe(t *testing.T) {
 			t.Errorf("expected %q NOT to match conventional re", s)
 		}
 	}
+}
+
+func TestSelfVerifyLocalGitErrorReturnsError(t *testing.T) {
+	t.Parallel()
+
+	got, err := SelfVerify(context.Background(), t.TempDir(), "local")
+	require.Error(t, err)
+	require.False(t, got.OK)
+	require.Contains(t, got.FailureDetail, "failed to get last commit")
 }
 
 // TestVerifyResultJSON validates the struct marshals correctly (no live git calls needed).

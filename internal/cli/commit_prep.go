@@ -76,7 +76,7 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 
 	// Early exit: nothing to commit.
 	if analysis.EarlyExit {
-		preflight := buildPrepPreflight(repoRoot, analysis)
+		preflight := buildPrepPreflight(ctx, repoRoot, analysis)
 		return &repomap.PrepPayload{
 			Preflight:       preflight,
 			ModeHint:        repomap.ModeHint(preflight),
@@ -179,7 +179,7 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 	}
 
 	// Step 10: assemble payload.
-	preflight := buildPrepPreflight(repoRoot, analysis)
+	preflight := buildPrepPreflight(ctx, repoRoot, analysis)
 	return &repomap.PrepPayload{
 		Preflight:       preflight,
 		ModeHint:        repomap.ModeHint(preflight),
@@ -208,16 +208,16 @@ func prepStatus(a *repomap.CommitAnalysis, review []repomap.PrepReviewItem, lc [
 }
 
 // buildPrepPreflight runs the six git/gh probes synchronously.
-func buildPrepPreflight(repoRoot string, a *repomap.CommitAnalysis) repomap.PrepPreflight {
-	branch := runTrimmed("git", "-C", repoRoot, "branch", "--show-current")
-	working := runTrimmed("git", "-C", repoRoot, "status", "--short")
-	remote := runTrimmed("git", "-C", repoRoot, "remote")
+func buildPrepPreflight(ctx context.Context, repoRoot string, a *repomap.CommitAnalysis) repomap.PrepPreflight {
+	branch := runTrimmed(ctx, "git", "-C", repoRoot, "branch", "--show-current")
+	working := runTrimmed(ctx, "git", "-C", repoRoot, "status", "--short")
+	remote := runTrimmed(ctx, "git", "-C", repoRoot, "remote")
 	if remote == "" {
 		remote = "(none)"
 	} else if idx := strings.IndexByte(remote, '\n'); idx >= 0 {
 		remote = remote[:idx]
 	}
-	unpushed := runTrimmed("git", "-C", repoRoot, "log", "--oneline", "@{u}..HEAD")
+	unpushed := runTrimmed(ctx, "git", "-C", repoRoot, "log", "--oneline", "@{u}..HEAD")
 	latestTag := a.LatestTag
 	if latestTag == "" {
 		latestTag = "(none)"
@@ -228,7 +228,7 @@ func buildPrepPreflight(repoRoot string, a *repomap.CommitAnalysis) repomap.Prep
 		Remote:    remote,
 		Unpushed:  unpushed,
 		LatestTag: latestTag,
-		GHAuth:    ghAuthLine(),
+		GHAuth:    ghAuthLine(ctx),
 	}
 }
 

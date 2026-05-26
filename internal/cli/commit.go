@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -50,7 +49,7 @@ Typical usage from a commit agent:
 			if root == "" {
 				root = "."
 			}
-			analysis, err := repomap.AnalyzeCommit(context.Background(), repomap.AnalyzeOptions{
+			analysis, err := repomap.AnalyzeCommit(cmd.Context(), repomap.AnalyzeOptions{
 				Root:             root,
 				Tag:              tag,
 				ConfidenceCutoff: confidence,
@@ -63,10 +62,13 @@ Typical usage from a commit agent:
 			if err != nil {
 				return fmt.Errorf("encode: %w", err)
 			}
-			if _, err := os.Stdout.Write(data); err != nil {
+			out := cmd.OutOrStdout()
+			if _, err := out.Write(data); err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stdout)
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
 			return nil
 		},
 	}

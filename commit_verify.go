@@ -8,6 +8,7 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -31,8 +32,8 @@ type VerifyResult struct {
 	Mode              string `json:"mode"` // "local" | "full"
 	OK                bool   `json:"ok"`
 	LastCommitSubject string `json:"last_commit_subject,omitempty"` // local mode
-	Tag               string `json:"tag,omitempty"`                  // full mode
-	ReleaseURL        string `json:"release_url,omitempty"`          // full mode
+	Tag               string `json:"tag,omitempty"`                 // full mode
+	ReleaseURL        string `json:"release_url,omitempty"`         // full mode
 	FailureDetail     string `json:"failure_detail,omitempty"`
 }
 
@@ -96,7 +97,7 @@ func selfVerifyLocal(ctx context.Context, repoRoot string) (VerifyResult, error)
 	out, err := cmd.Output()
 	if err != nil {
 		r.FailureDetail = "failed to get last commit: " + err.Error()
-		return r, nil
+		return r, fmt.Errorf("get last commit: %w", err)
 	}
 
 	subject := strings.TrimSpace(string(out))
@@ -124,7 +125,7 @@ func selfVerifyFull(ctx context.Context, repoRoot string) (VerifyResult, error) 
 	out, err := cmd.Output()
 	if err != nil {
 		r.FailureDetail = "HEAD is not tagged"
-		return r, nil
+		return r, fmt.Errorf("get exact tag: %w", err)
 	}
 	tag := strings.TrimSpace(string(out))
 	r.Tag = tag
@@ -134,6 +135,9 @@ func selfVerifyFull(ctx context.Context, repoRoot string) (VerifyResult, error) 
 	out, err = cmd.Output()
 	if err != nil || strings.TrimSpace(string(out)) == "" {
 		r.FailureDetail = "tag " + tag + " not found on origin"
+		if err != nil {
+			return r, fmt.Errorf("check remote tag: %w", err)
+		}
 		return r, nil
 	}
 
@@ -143,7 +147,7 @@ func selfVerifyFull(ctx context.Context, repoRoot string) (VerifyResult, error) 
 	out, err = ghCmd.Output()
 	if err != nil {
 		r.FailureDetail = "no GitHub release for " + tag
-		return r, nil
+		return r, fmt.Errorf("check GitHub release: %w", err)
 	}
 
 	r.OK = true
