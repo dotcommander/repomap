@@ -122,7 +122,7 @@ func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts 
 		}
 	}
 	if opts.DryRun {
-		printDryRun(groups, opts)
+		printDryRun(os.Stdout, groups, opts)
 		return &ExecuteResult{Tag: tagPtr(opts.Tag)}, nil
 	}
 	if err := verifyWorkspaceClean(ctx, root, groups); err != nil {

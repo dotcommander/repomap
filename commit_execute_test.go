@@ -182,7 +182,7 @@ func Test_Execute_DryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExecuteCommit dry-run: %v", err)
 	}
-	_ = stdout // printDryRun writes to os.Stdout; result is what we inspect
+	_ = stdout // ExecuteCommit dispatches printDryRun to os.Stdout; buffer-capture coverage lives in Test_printDryRun_Buffer
 	_ = result
 
 	// No new commits should have landed.
@@ -195,6 +195,29 @@ func Test_Execute_DryRun(t *testing.T) {
 	porcelain := runGitOutput(t, root, "status", "--porcelain")
 	if strings.TrimSpace(porcelain) == "" {
 		t.Errorf("dry-run should leave working tree dirty; got clean status")
+	}
+}
+
+func Test_printDryRun_Buffer(t *testing.T) {
+	t.Parallel()
+	groups := []CommitGroup{
+		{ID: "g1", SuggestedMsg: "feat(x): hello", Files: []string{"a.go", "b.go"}},
+	}
+	var buf bytes.Buffer
+	printDryRun(&buf, groups, ExecuteOptions{Push: true, Tag: "v1.2.3"})
+	out := buf.String()
+	for _, want := range []string{
+		"DRY RUN",
+		"Commit 1: feat(x): hello",
+		"+ a.go",
+		"+ b.go",
+		"Tag: v1.2.3",
+		"Push: git push",
+		"Release: gh release create v1.2.3",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printDryRun output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 

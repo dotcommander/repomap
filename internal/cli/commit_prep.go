@@ -149,14 +149,14 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 	// Step 6: release gate (--tag).
 	var gate *repomap.PrepReleaseGate
 	if withTag {
-		gate = repomap.RunReleaseGate(repoRoot)
+		gate = repomap.RunReleaseGate(ctx, repoRoot)
 	}
 
 	// Step 7: detect Justfile release recipe.
 	hasRecipe := repomap.DetectJustfileRelease(repoRoot)
 
 	// Step 8: stash artifacts.
-	repomap.StashArtifacts(repoRoot, analysis.Artifacts)
+	repomap.StashArtifacts(ctx, repoRoot, analysis.Artifacts)
 
 	// Build review items (REVIEW findings, capped at 5).
 	reviewItems := repomap.BuildReviewItems(findings, 5)

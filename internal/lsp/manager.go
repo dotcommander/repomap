@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 )
 
 // ServerConfig describes how to start a language server.
@@ -55,9 +54,9 @@ var extToLanguage = map[string]string{
 type Manager struct {
 	cwd       string // immutable after construction
 	mu        sync.Mutex
-	clients   map[string]*Client // keyed by language ID
-	starting  map[string]bool    // languages currently being started
-	openFiles map[string]bool    // files already sent via didOpen
+	clients   map[string]*Client       // keyed by language ID
+	starting  map[string]chan struct{} // languages currently being started; chan closed when start completes (success or failure)
+	openFiles map[string]bool          // files already sent via didOpen
 }
 
 // NewManager creates a new server manager rooted at the given directory.
@@ -65,7 +64,7 @@ func NewManager(cwd string) *Manager {
 	return &Manager{
 		cwd:       cwd,
 		clients:   make(map[string]*Client),
-		starting:  make(map[string]bool),
+		starting:  make(map[string]chan struct{}),
 		openFiles: make(map[string]bool),
 	}
 }
@@ -87,26 +86,25 @@ func (m *Manager) ForFile(ctx context.Context, file string) (*Client, string, er
 		return c, lang, nil
 	}
 
-	// Wait for a server that's already starting.
-	if m.starting[lang] {
-		for range 3 {
-			m.mu.Unlock()
-			time.Sleep(200 * time.Millisecond)
-			m.mu.Lock()
-			if client, ok := m.clients[lang]; ok {
-				m.mu.Unlock()
-				return client, lang, nil
-			}
-			if !m.starting[lang] {
-				break // startup failed, fall through to start new
-			}
+	// Wait for a server that's already starting. The starter goroutine closes
+	// the channel after writing to m.clients (success) or removing from
+	// m.starting (failure); we block on it with ctx.Done() as escape.
+	if ch, ok := m.starting[lang]; ok {
+		m.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return nil, lang, ctx.Err()
 		}
-		if m.starting[lang] {
+		m.mu.Lock()
+		if client, ok := m.clients[lang]; ok {
 			m.mu.Unlock()
-			return nil, lang, fmt.Errorf("%s language server still starting after retries", lang)
+			return client, lang, nil
 		}
+		// Startup failed; fall through and retry from this caller.
 	}
-	m.starting[lang] = true
+	done := make(chan struct{})
+	m.starting[lang] = done
 	m.mu.Unlock()
 
 	// Start server outside lock to avoid blocking other languages.
@@ -118,6 +116,7 @@ func (m *Manager) ForFile(ctx context.Context, file string) (*Client, string, er
 		m.clients[lang] = c
 	}
 	m.mu.Unlock()
+	close(done)
 
 	if err != nil {
 		return nil, lang, err

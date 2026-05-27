@@ -54,7 +54,7 @@ type diskCache struct {
 const cacheVersion = 6
 
 // SaveCache writes the current map state to disk.
-func (m *Map) SaveCache(cacheDir string) error {
+func (m *Map) SaveCache(ctx context.Context, cacheDir string) error {
 	m.mu.Lock()
 	if m.builtAt.IsZero() || len(m.ranked) == 0 {
 		m.mu.Unlock()
@@ -79,7 +79,7 @@ func (m *Map) SaveCache(cacheDir string) error {
 	}
 	if isInsideGitRepo(m.root) {
 		entry.GitRoot = true
-		if sha, err := gitHeadSHA(context.Background(), m.root); err == nil {
+		if sha, err := gitHeadSHA(ctx, m.root); err == nil {
 			entry.LastSHA = sha
 		}
 	}

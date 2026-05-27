@@ -35,7 +35,7 @@ func dcScriptPath(name string) string {
 
 // StashArtifacts adds artifact paths to .gitignore and unstages them.
 // Best-effort: I/O failures are swallowed (artifacts are advisory).
-func StashArtifacts(repoRoot string, artifacts []string) {
+func StashArtifacts(ctx context.Context, repoRoot string, artifacts []string) {
 	if len(artifacts) == 0 {
 		return
 	}
@@ -55,7 +55,7 @@ func StashArtifacts(repoRoot string, artifacts []string) {
 	}
 	// Batch all artifacts into a single `git reset HEAD -- a b c` call.
 	// Bounded by stashGitTimeout — see var block.
-	ctx, cancel := context.WithTimeout(context.Background(), stashGitTimeout)
+	ctx, cancel := context.WithTimeout(ctx, stashGitTimeout)
 	defer cancel()
 	args := append([]string{"-C", repoRoot, "reset", "HEAD", "--"}, artifacts...)
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // args are repo-internal paths, not user input
@@ -65,14 +65,14 @@ func StashArtifacts(repoRoot string, artifacts []string) {
 
 // RunReleaseGate shells out to release-gate.sh and returns a summary.
 // build_ok=true when the script exits 0 or is absent.
-func RunReleaseGate(repoRoot string) *PrepReleaseGate {
+func RunReleaseGate(ctx context.Context, repoRoot string) *PrepReleaseGate {
 	script := dcScriptPath("release-gate.sh")
 	if _, err := os.Stat(script); err != nil {
 		return &PrepReleaseGate{Applied: []any{}, BuildOK: true}
 	}
 	// Bounded by releaseGateTimeout — see var block. A wedged release-gate
 	// script (e.g. hung build) surfaces as build_ok=false rather than hanging.
-	ctx, cancel := context.WithTimeout(context.Background(), releaseGateTimeout)
+	ctx, cancel := context.WithTimeout(ctx, releaseGateTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", script, "--path", repoRoot, "--no-toolchain") //nolint:gosec // script path resolved via dcScriptPath, not user input
 	cmd.Dir = repoRoot

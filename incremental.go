@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -89,7 +90,7 @@ func (m *Map) prepareIncremental(entry diskCache, added, modified, deleted []str
 	}
 
 	m.hydrateFromCache(entry)
-	m.dropPaths(append(append([]string{}, deleted...), modified...))
+	m.dropPaths(slices.Concat(deleted, modified))
 
 	changed := make([]string, 0, len(added)+len(modified))
 	changed = append(changed, added...)
@@ -126,7 +127,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 		m.builtAt = time.Now()
 		m.mu.Unlock()
 		if m.cacheDir != "" {
-			_ = m.SaveCache(m.cacheDir)
+			_ = m.SaveCache(ctx, m.cacheDir)
 		}
 		return nil
 	}
@@ -219,7 +220,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	m.mu.Unlock()
 
 	if m.cacheDir != "" {
-		_ = m.SaveCache(m.cacheDir)
+		_ = m.SaveCache(ctx, m.cacheDir)
 	}
 	return nil
 }

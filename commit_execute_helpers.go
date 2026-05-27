@@ -2,25 +2,26 @@ package repomap
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 )
 
-func printDryRun(groups []CommitGroup, opts ExecuteOptions) {
-	fmt.Printf("DRY RUN — no changes will be made\n\n")
+func printDryRun(w io.Writer, groups []CommitGroup, opts ExecuteOptions) {
+	fmt.Fprintf(w, "DRY RUN — no changes will be made\n\n")
 	for i, g := range groups {
-		fmt.Printf("Commit %d: %s\n", i+1, g.SuggestedMsg)
+		fmt.Fprintf(w, "Commit %d: %s\n", i+1, g.SuggestedMsg)
 		for _, f := range g.Files {
-			fmt.Printf("  + %s\n", f)
+			fmt.Fprintf(w, "  + %s\n", f)
 		}
 	}
 	if opts.Tag != "" {
-		fmt.Printf("\nTag: %s\n", opts.Tag)
+		fmt.Fprintf(w, "\nTag: %s\n", opts.Tag)
 	}
 	if opts.Push {
-		fmt.Printf("Push: git push origin <branch> --follow-tags\n")
+		fmt.Fprintf(w, "Push: git push origin <branch> --follow-tags\n")
 	}
 	if opts.Push && opts.Tag != "" && !opts.NoRelease {
-		fmt.Printf("Release: gh release create %s --generate-notes --latest\n", opts.Tag)
+		fmt.Fprintf(w, "Release: gh release create %s --generate-notes --latest\n", opts.Tag)
 	}
 }
 
