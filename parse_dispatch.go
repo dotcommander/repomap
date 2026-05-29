@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,18 +15,19 @@ import (
 )
 
 // sha256OfFile returns the hex-encoded SHA-256 digest of a file's contents.
-// Returns "" on any error (missing file, permission denied, etc.).
-func sha256OfFile(path string) string {
+// Returns ("", err) on any error (missing file, permission denied, I/O failure)
+// so callers can log/observe failures rather than silently skipping.
+func sha256OfFile(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
-		return ""
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // absPath returns the absolute path for a file relative to the project root.
@@ -45,9 +48,12 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 			continue
 		}
 		mtimes[abs] = info.ModTime()
-		if h := sha256OfFile(abs); h != "" {
-			hashes[abs] = h
+		h, hErr := sha256OfFile(abs)
+		if hErr != nil {
+			slog.Default().Warn("sha256 hash failed; skipping content hash for file", "path", abs, "err", hErr)
+			continue
 		}
+		hashes[abs] = h
 	}
 
 	var (

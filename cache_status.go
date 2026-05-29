@@ -82,7 +82,8 @@ func cacheEntryFilesStale(entry diskCache) (bool, string) {
 			return true, "tracked_file_missing"
 		}
 		if savedHash := entry.ContentHashes[path]; savedHash != "" {
-			if currentHash := sha256OfFile(path); currentHash == "" || currentHash != savedHash {
+			currentHash, hErr := sha256OfFile(path)
+			if hErr != nil || currentHash != savedHash {
 				return true, "content_changed"
 			}
 			continue
