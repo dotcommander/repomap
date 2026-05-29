@@ -4,6 +4,27 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.12.0 — 2026-05-29
+
+### Features
+
+- Add cache and context inspection subcommands.
+
+### Fixes
+
+- Preserve exported API compatibility while keeping context-aware cache and commit-prep internals.
+- Serialize LSP startup retries after failed language-server launches.
+- Unwrap commit execute exit codes with `errors.As`.
+
+### Other
+
+- Document cache, context, and `--json-structured` usage.
+- Add CLI cache/explain coverage and modernize test loops.
+- Extract commit finish I/O helpers and simplify commit flow.
+- Clean up incremental cache and commit-prep internals.
+
+---
+
 ## v0.8.0 — 2026-04-18
 
 ### PHP parity with Go
