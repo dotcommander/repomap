@@ -35,7 +35,12 @@ func dcScriptPath(name string) string {
 
 // StashArtifacts adds artifact paths to .gitignore and unstages them.
 // Best-effort: I/O failures are swallowed (artifacts are advisory).
-func StashArtifacts(ctx context.Context, repoRoot string, artifacts []string) {
+func StashArtifacts(repoRoot string, artifacts []string) {
+	StashArtifactsContext(context.Background(), repoRoot, artifacts)
+}
+
+// StashArtifactsContext is StashArtifacts with caller cancellation.
+func StashArtifactsContext(ctx context.Context, repoRoot string, artifacts []string) {
 	if len(artifacts) == 0 {
 		return
 	}
@@ -65,7 +70,12 @@ func StashArtifacts(ctx context.Context, repoRoot string, artifacts []string) {
 
 // RunReleaseGate shells out to release-gate.sh and returns a summary.
 // build_ok=true when the script exits 0 or is absent.
-func RunReleaseGate(ctx context.Context, repoRoot string) *PrepReleaseGate {
+func RunReleaseGate(repoRoot string) *PrepReleaseGate {
+	return RunReleaseGateContext(context.Background(), repoRoot)
+}
+
+// RunReleaseGateContext is RunReleaseGate with caller cancellation.
+func RunReleaseGateContext(ctx context.Context, repoRoot string) *PrepReleaseGate {
 	script := dcScriptPath("release-gate.sh")
 	if _, err := os.Stat(script); err != nil {
 		return &PrepReleaseGate{Applied: []any{}, BuildOK: true}

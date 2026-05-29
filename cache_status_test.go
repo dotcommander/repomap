@@ -60,3 +60,17 @@ func TestInspectCache_Corrupt(t *testing.T) {
 	assert.False(t, got.Usable)
 	assert.Equal(t, "corrupt_cache", got.Reason)
 }
+
+func TestSaveCacheLegacySignature(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cacheDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/cache\n\ngo 1.22\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc Run() {}\n"), 0o644))
+
+	m := New(root, DefaultConfig())
+	require.NoError(t, m.Build(context.Background()))
+	require.NoError(t, m.SaveCache(cacheDir))
+	require.True(t, m.LoadCache(cacheDir))
+}

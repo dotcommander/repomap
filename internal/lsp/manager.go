@@ -79,33 +79,27 @@ func (m *Manager) ForFile(ctx context.Context, file string) (*Client, string, er
 		return nil, "", fmt.Errorf("unsupported file type: %s", filepath.Ext(file))
 	}
 
-	// Fast path: server already running.
-	m.mu.Lock()
-	if c, ok := m.clients[lang]; ok {
-		m.mu.Unlock()
-		return c, lang, nil
-	}
-
-	// Wait for a server that's already starting. The starter goroutine closes
-	// the channel after writing to m.clients (success) or removing from
-	// m.starting (failure); we block on it with ctx.Done() as escape.
-	if ch, ok := m.starting[lang]; ok {
-		m.mu.Unlock()
-		select {
-		case <-ch:
-		case <-ctx.Done():
-			return nil, lang, ctx.Err()
-		}
+	var done chan struct{}
+	for {
 		m.mu.Lock()
-		if client, ok := m.clients[lang]; ok {
+		if c, ok := m.clients[lang]; ok {
 			m.mu.Unlock()
-			return client, lang, nil
+			return c, lang, nil
 		}
-		// Startup failed; fall through and retry from this caller.
+		if ch, ok := m.starting[lang]; ok {
+			m.mu.Unlock()
+			select {
+			case <-ch:
+			case <-ctx.Done():
+				return nil, lang, ctx.Err()
+			}
+			continue
+		}
+		done = make(chan struct{})
+		m.starting[lang] = done
+		m.mu.Unlock()
+		break
 	}
-	done := make(chan struct{})
-	m.starting[lang] = done
-	m.mu.Unlock()
 
 	// Start server outside lock to avoid blocking other languages.
 	c, err := m.startServer(ctx, lang)

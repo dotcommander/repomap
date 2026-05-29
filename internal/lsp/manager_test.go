@@ -1,10 +1,13 @@
 package lsp
 
 import (
+	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLanguageForFile(t *testing.T) {
@@ -89,6 +92,29 @@ func TestIsSymbolInformationArray(t *testing.T) {
 	assert.False(t, isSymbolInformationArray(dsJSON), "should not flag DocumentSymbol array")
 	assert.False(t, isSymbolInformationArray(nil), "nil input")
 	assert.False(t, isSymbolInformationArray([]byte(`{}`)), "object not array")
+}
+
+func TestForFileConcurrentFailedStartIsBounded(t *testing.T) {
+	// Not parallel: mutates package-global defaultServers.
+	original := defaultServers["go"]
+	defaultServers["go"] = []ServerConfig{{Command: "sh", Args: []string{"-c", "sleep 0.02; exit 1"}}}
+	t.Cleanup(func() { defaultServers["go"] = original })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	mgr := NewManager(t.TempDir())
+	errs := make(chan error, 6)
+	for range 6 {
+		go func() {
+			_, _, err := mgr.ForFile(ctx, "main.go")
+			errs <- err
+		}()
+	}
+
+	for range 6 {
+		require.Error(t, <-errs)
+	}
 }
 
 // writeFile is a test helper that writes content to path.

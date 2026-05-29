@@ -54,7 +54,12 @@ type diskCache struct {
 const cacheVersion = 6
 
 // SaveCache writes the current map state to disk.
-func (m *Map) SaveCache(ctx context.Context, cacheDir string) error {
+func (m *Map) SaveCache(cacheDir string) error {
+	return m.SaveCacheContext(context.Background(), cacheDir)
+}
+
+// SaveCacheContext writes the current map state to disk with caller cancellation.
+func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 	m.mu.Lock()
 	if m.builtAt.IsZero() || len(m.ranked) == 0 {
 		m.mu.Unlock()

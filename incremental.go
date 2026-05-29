@@ -127,7 +127,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 		m.builtAt = time.Now()
 		m.mu.Unlock()
 		if m.cacheDir != "" {
-			_ = m.SaveCache(ctx, m.cacheDir)
+			_ = m.SaveCacheContext(ctx, m.cacheDir)
 		}
 		return nil
 	}
@@ -220,7 +220,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	m.mu.Unlock()
 
 	if m.cacheDir != "" {
-		_ = m.SaveCache(ctx, m.cacheDir)
+		_ = m.SaveCacheContext(ctx, m.cacheDir)
 	}
 	return nil
 }

@@ -26,3 +26,17 @@ func TestRunSimplifyDetect_StatErrorReturnsError(t *testing.T) {
 	require.Contains(t, err.Error(), "stat simplify-detect script")
 	require.Nil(t, got)
 }
+
+func TestCommitPrepLegacyWrappers(t *testing.T) {
+	t.Setenv("CLAUDE_PLUGIN_ROOT", "")
+	t.Setenv("HOME", t.TempDir())
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), nil, 0o644))
+
+	StashArtifacts(root, nil)
+	gate := RunReleaseGate(root)
+	require.NotNil(t, gate)
+	require.True(t, gate.BuildOK)
+	require.Empty(t, gate.Applied)
+}

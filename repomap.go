@@ -145,7 +145,7 @@ func (m *Map) Build(ctx context.Context) error {
 	m.mu.Unlock()
 
 	if m.cacheDir != "" {
-		_ = m.SaveCache(ctx, m.cacheDir) // best-effort
+		_ = m.SaveCacheContext(ctx, m.cacheDir) // best-effort
 	}
 
 	return nil
