@@ -90,3 +90,5 @@ repomap --json                         # JSON array of lines
 ```
 
 Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines), `--json`, `-i/--intent` (BM25 task-aware ranking)
+
+For the full flag and subcommand surface (`--explain` confidence tiers, `--calls`, `--consumed`, `--symbol-refs`, plus `explain`/`impact`/`context`/`find`/`commit`/LSP subcommands) with worked examples, see [docs/11-usage-examples.md](docs/11-usage-examples.md).

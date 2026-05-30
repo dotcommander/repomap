@@ -370,7 +370,7 @@ Pipeline:
 scan -> parse -> rank -> budget -> format
 ```
 
-Docs live in `docs/`. Start with [docs/02-quick-start.md](docs/02-quick-start.md), then [docs/03-output-formats.md](docs/03-output-formats.md), [docs/06-ranking.md](docs/06-ranking.md), and [docs/08-languages.md](docs/08-languages.md).
+Docs live in `docs/`. Start with [docs/02-quick-start.md](docs/02-quick-start.md), then [docs/03-output-formats.md](docs/03-output-formats.md), [docs/06-ranking.md](docs/06-ranking.md), and [docs/08-languages.md](docs/08-languages.md). For a task-by-task tour from cold start to commit, see [docs/11-usage-examples.md](docs/11-usage-examples.md).
 
 ## Acknowledgments
 

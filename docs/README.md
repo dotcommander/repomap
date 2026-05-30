@@ -12,6 +12,7 @@ Read these in order if you're new. Jump around if you're not.
 8. [Languages](08-languages.md) — parser tiers and supported languages
 9. [Architecture](09-architecture.md) — the pipeline, stage by stage
 10. [Troubleshooting](10-troubleshooting.md) — when things look wrong
+11. [Usage Examples](11-usage-examples.md) — a tour by task, from cold start to commit
 
 ## See also
 
