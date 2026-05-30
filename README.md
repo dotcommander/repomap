@@ -9,6 +9,10 @@ repomap --intent "fix token refresh race" -t 4096
 ```text
 ## Repository Map (138 files, 807 symbols)
 
+### Flow
+entry: cmd/repomap/main.go
+spine: repomap.go, types.go, ranker.go, budget.go, render.go
+
 ### Dependencies
 repomap/cmd/repomap -> repomap/internal/cli
 repomap/internal/cli -> repomap, repomap/internal/lsp
@@ -248,7 +252,8 @@ repomap ranks files before budgeting. Main signals:
 | Direct importers | heavily depended-on files rise |
 | Transitive fan-in | deep core files rise |
 | Boundary imports | HTTP, database, shell, and similar edges rise |
-| Tests and deep paths | mild penalty |
+| Deep paths | mild penalty |
+| Tests (`_test.go`) | demoted by default; `--include-tests` ranks them at full weight |
 | `--intent` | task-relevant files rise |
 | `--symbol-refs` | non-Go symbols mentioned by many other files rise |
 | `--consumed` | read files fall; their importers rise |

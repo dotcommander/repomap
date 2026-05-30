@@ -27,6 +27,10 @@ repomap
 ```
 ## Repository Map (162 files, 880 symbols)
 
+### Flow
+entry: cmd/repomap/main.go
+spine: repomap.go, types.go, calls.go, ranker.go, budget.go
+
 ### Dependencies
 repomap → repomap/internal/lsp
 repomap/cmd/repomap → repomap/internal/cli
@@ -37,6 +41,20 @@ calls.go [imported by 17, imports: 1]
     // controls --calls mode behaviour
   type CallsStats{OK int, Timeout int, Error int}
     // holds counters from a call-expansion run
+```
+
+Two lines orient you before the file list:
+
+- **`### Flow`** names the detected entry point and the *spine* — the top behavioral
+  files (rank-ordered implementation files with exported functions or methods). It
+  answers "where does this start, and what's the backbone?" before you read a single
+  symbol.
+- The map leads with implementation. Test files are **demoted by default**, so
+  `_test.go` never crowds out the code it covers. When you're working *on* the tests,
+  rank them at full weight with `--include-tests`:
+
+```bash
+repomap --include-tests ./src
 ```
 
 Need a wider or narrower view? Move the budget:
