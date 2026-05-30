@@ -415,11 +415,6 @@ func isSymbolInformationArray(raw json.RawMessage) bool {
 // URI helpers
 // ---------------------------------------------------------------------------
 
-// PathToURI converts a filesystem path to a file:// URI.
-func PathToURI(path string) string {
-	return pathToURI(path)
-}
-
 func pathToURI(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {

@@ -134,14 +134,6 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	return true
 }
 
-// Dirty marks the map as needing a rebuild by zeroing builtAt,
-// bypassing the stale debounce. Use after code-changing tool calls.
-func (m *Map) Dirty() {
-	m.mu.Lock()
-	m.builtAt = time.Time{}
-	m.mu.Unlock()
-}
-
 func cachePath(cacheDir, root string) string {
 	h := sha256.Sum256([]byte(root))
 	name := fmt.Sprintf("repomap-%x.json", h[:8])

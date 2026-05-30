@@ -33,15 +33,6 @@ type CallsConfig struct {
 	IncludeTests bool
 }
 
-// DefaultCallsConfig returns the default --calls settings.
-func DefaultCallsConfig() CallsConfig {
-	return CallsConfig{
-		Threshold:    2,
-		Limit:        10,
-		IncludeTests: false,
-	}
-}
-
 // RefsQuerier abstracts the refs backend so tests can inject a fake and callers
 // can choose between in-process gopls and exec-based lspq.
 type RefsQuerier interface {
