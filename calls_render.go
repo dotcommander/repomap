@@ -148,7 +148,7 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 	}
 
 	var b strings.Builder
-	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
+	fmt.Fprint(&b, buildHeader("calls", files, totalFiles, totalSymbols))
 
 	if verbose {
 		for _, f := range files {

@@ -14,6 +14,24 @@ Every command assumes you're at the root of a git repository.
 
 ---
 
+## Choosing an output mode
+
+| Mode | Invocation | What it emits | Best for |
+|------|-----------|---------------|----------|
+| enriched (default) | _(no `-f`)_ | exported symbols + signatures + godoc first line + struct fields, budget-trimmed | the everyday "read me first" map |
+| compact | `-f compact` | exported symbol **names** only, no signatures/docs/fields | wide orientation — more files fit the same budget |
+| verbose | `-f verbose` | **all** files (no budget cut), all symbols incl. unexported, grouped by kind, names only | a full inventory of every symbol |
+| detail | `-f detail` | all files, full signatures + struct fields | the most verbose text mode |
+| lines | `-f lines` | actual source lines read from disk, budget-trimmed | reading code, not summaries |
+| xml | `-f xml` | structured XML: dependency graph + `<file>`/`<symbols>`/`<sym>` (name, kind, line, span, params, implements) | machine consumption |
+| json-structured | `--json-structured` | structured JSON repository map (files, symbols, scores; tier breakdown after `explain`) | programmatic ranking/selection |
+
+**Gotchas.** The default (enriched) is **richer** than `-f compact` — compact is names only. `-f verbose` is *wider* but *shallower* per file than the default: it lists every file and symbol but drops signatures. And `--intent` reranks files **silently** — add `--explain` to see why files ranked.
+
+The header now reports `~T tokens` (e.g. `## Repository Map · enriched (168 files, 874 symbols, ~1496 tokens)`), so an orchestrating agent can scale `-t` from the estimate.
+
+---
+
 ## 1. Get oriented in an unfamiliar repo
 
 The default run is the one you'll use most. No flags: repomap discovers source files,

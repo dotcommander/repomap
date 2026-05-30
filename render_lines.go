@@ -17,7 +17,7 @@ func FormatLines(files []RankedFile, maxTokens int, root string) string {
 	}
 
 	var b strings.Builder
-	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
+	fmt.Fprint(&b, buildHeader("lines", files, totalFiles, totalSymbols))
 
 	budgetBytes := maxTokens * 4
 	shownFiles := 0

@@ -83,12 +83,12 @@ Optional `.repomap.yaml` at project root. Loader in `config.go`; filters applied
 ## CLI
 
 ```
-repomap [directory]                    # default: compact, 2048 tokens
+repomap [directory]                    # default: enriched, 2048 tokens
 repomap -t 4096 -f verbose ./src      # more tokens, verbose
 repomap -f lines ./src                # source-line format
 repomap --json                         # JSON array of lines
 ```
 
-Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines), `--json`, `-i/--intent` (BM25 task-aware ranking), `--include-tests` (rank `_test.go` at full weight; demoted by default)
+Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines|xml — default with no `-f` is the **enriched** mode: richer per file than compact), `--json`, `-i/--intent` (BM25 task-aware ranking; pair with `--explain` to see why files ranked), `--include-tests` (rank `_test.go` at full weight; demoted by default)
 
 For the full flag and subcommand surface (`--explain` confidence tiers, `--calls`, `--consumed`, `--symbol-refs`, plus `explain`/`impact`/`context`/`find`/`commit`/LSP subcommands) with worked examples, see [docs/11-usage-examples.md](docs/11-usage-examples.md).

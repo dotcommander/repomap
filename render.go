@@ -17,6 +17,14 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 		return ""
 	}
 
+	// Mode label for the self-identifying header.
+	mode := "enriched"
+	if detail {
+		mode = "detail"
+	} else if verbose {
+		mode = "verbose"
+	}
+
 	// Render body first, then prepend a header carrying its estimated token count.
 	var body strings.Builder
 
@@ -33,7 +41,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 			}
 		}
 		var b strings.Builder
-		fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+		fmt.Fprint(&b, buildHeaderWithTokens(mode, files, totalFiles, totalSymbols, estimateTokens(body.String())))
 		fmt.Fprint(&b, body.String())
 		return b.String()
 	}
@@ -66,7 +74,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 	}
 
 	var b strings.Builder
-	fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+	fmt.Fprint(&b, buildHeaderWithTokens(mode, files, totalFiles, totalSymbols, estimateTokens(body.String())))
 	fmt.Fprint(&b, body.String())
 	return b.String()
 }
@@ -120,7 +128,7 @@ func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig, e
 	}
 
 	var b strings.Builder
-	fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+	fmt.Fprint(&b, buildHeaderWithTokens("compact", files, totalFiles, totalSymbols, estimateTokens(body.String())))
 	fmt.Fprint(&b, body.String())
 	return b.String()
 }

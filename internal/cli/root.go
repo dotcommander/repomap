@@ -41,6 +41,23 @@ func newRootCmd() *cobra.Command {
 (functions, methods, structs, interfaces, types, constants, variables),
 ranks files by importance, and outputs a compact Markdown summary.
 Pass --intent to bias the output toward files relevant to a specific task.`,
+		Example: `  # Default "enriched" map — exported symbols + signatures + godoc, 2048-token budget
+  repomap ./src
+
+  # Lean orientation — symbol NAMES only; fits more files in the same budget
+  repomap -f compact ./src
+
+  # Every symbol with full signatures + struct fields, no budget limit
+  repomap -f detail ./src
+
+  # Machine-readable XML — dependency graph + symbol attributes (line, span, params)
+  repomap -f xml ./src
+
+  # Structured JSON repository map (distinct schema from --json)
+  repomap --json-structured ./src
+
+  # Task-aware ranking; pair with --explain to see WHY each file ranked
+  repomap --intent "auth middleware" --explain ./src`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := "."
@@ -87,10 +104,10 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.Flags().IntVar(&callsLimit, "calls-limit", 10, "Max callers shown per symbol")
 	cmd.Flags().BoolVar(&callsIncludeTests, "calls-include-tests", false, "Include _test.go callers (excluded by default)")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Bypass --calls cache (force fresh queries)")
-	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Natural language query for task-aware ranking (BM25)")
+	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Natural-language query for task-aware ranking (BM25). Reranks files silently — add --explain to see the score breakdown.")
 	cmd.Flags().StringSliceVar(&consumed, "consumed", nil, "Comma-separated file paths already read; these are downranked and their importers upranked")
 	cmd.Flags().BoolVar(&symbolRefs, "symbol-refs", false, "Enable approximate cross-language symbol reference scoring")
-	cmd.Flags().BoolVar(&explain, "explain", false, "Append per-file confidence-tier score breakdown to text output")
+	cmd.Flags().BoolVar(&explain, "explain", false, "Append per-file confidence-tier score breakdown (including the --intent contribution) to text output.")
 	cmd.Flags().BoolVar(&includeTests, "include-tests", false, "Rank _test.go files at full weight (default: demoted)")
 	cmd.Flags().BoolVar(&callsUseBinary, "calls-use-binary", false, "Fall back to shelling out to lspq instead of in-process gopls")
 	if err := cmd.Flags().MarkHidden("calls-use-binary"); err != nil {

@@ -35,6 +35,7 @@ func TestDefaultMapHeaderHasTokenEstimate(t *testing.T) {
 		assert.Contains(t, out, "~")
 		assert.Contains(t, out, "tokens)")
 		assert.Regexp(t, `~\d+ tokens\)`, out)
+		assert.Contains(t, out, "· enriched")
 	})
 
 	t.Run("FormatMapCompact header carries ~N tokens", func(t *testing.T) {
@@ -43,6 +44,7 @@ func TestDefaultMapHeaderHasTokenEstimate(t *testing.T) {
 		assert.Contains(t, out, "~")
 		assert.Contains(t, out, "tokens)")
 		assert.Regexp(t, `~\d+ tokens\)`, out)
+		assert.Contains(t, out, "· compact")
 	})
 }
 

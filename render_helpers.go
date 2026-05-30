@@ -117,9 +117,9 @@ func formatFileLineDefault(f RankedFile, explain bool) string {
 
 // buildHeader returns the shared header block (title + dependency graph) used
 // by all format modes.
-func buildHeader(files []RankedFile, totalFiles, totalSymbols int) string {
+func buildHeader(mode string, files []RankedFile, totalFiles, totalSymbols int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## Repository Map (%d files, %d symbols)\n\n", totalFiles, totalSymbols)
+	fmt.Fprintf(&b, "## Repository Map · %s (%d files, %d symbols)\n\n", mode, totalFiles, totalSymbols)
 	if flow := formatFlowSpine(files); flow != "" {
 		fmt.Fprint(&b, flow)
 	}
@@ -135,9 +135,9 @@ func estimateTokens(s string) int { return len(s) / 4 }
 
 // buildHeaderWithTokens is buildHeader plus an estimated token count in the title,
 // used by the default map modes so orchestrating agents can scale their -t budget.
-func buildHeaderWithTokens(files []RankedFile, totalFiles, totalSymbols, tokens int) string {
+func buildHeaderWithTokens(mode string, files []RankedFile, totalFiles, totalSymbols, tokens int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "## Repository Map (%d files, %d symbols, ~%d tokens)\n\n", totalFiles, totalSymbols, tokens)
+	fmt.Fprintf(&b, "## Repository Map · %s (%d files, %d symbols, ~%d tokens)\n\n", mode, totalFiles, totalSymbols, tokens)
 	if flow := formatFlowSpine(files); flow != "" {
 		fmt.Fprint(&b, flow)
 	}
