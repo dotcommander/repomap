@@ -13,8 +13,10 @@ type ExplainResult struct {
 	ComponentTotal  int               `json:"component_total"`
 	DetailLevel     int               `json:"detail_level"`
 	OmittedReason   string            `json:"omitted_reason,omitempty"`
-	ScoreByTier     map[string]int    `json:"score_by_tier,omitempty"`   // tier label -> summed subtotal
-	ComponentTiers  map[string]string `json:"component_tiers,omitempty"` // component key -> tier label
+	ScoreByTier     map[string]int    `json:"score_by_tier,omitempty"`    // tier label -> summed subtotal
+	ComponentTiers  map[string]string `json:"component_tiers,omitempty"`  // component key -> tier label
+	ParseMethod     string            `json:"parse_method,omitempty"`     // parser tier: go_ast/tree_sitter/ctags/regex
+	ParseConfidence string            `json:"parse_confidence,omitempty"` // confidence tier of ParseMethod
 }
 
 // Explain returns score and budget evidence for relPath.
@@ -56,6 +58,8 @@ func (m *Map) Explain(relPath string) (ExplainResult, error) {
 			OmittedReason:   omitted,
 			ScoreByTier:     scoreByTier,
 			ComponentTiers:  componentTiers,
+			ParseMethod:     f.ParseMethod,
+			ParseConfidence: string(parseMethodConfidence(f.ParseMethod)),
 		}, nil
 	}
 	return ExplainResult{}, fmt.Errorf("file %q not found in repomap", relPath)

@@ -31,5 +31,26 @@ func TestExplainReportsScoreAndDetailEvidence(t *testing.T) {
 	assert.Equal(t, 13, got.ComponentTotal)
 	assert.Equal(t, 3, got.ScoreComponents[scoreComponentSymbols])
 	assert.Equal(t, "go_ast", got.File.ParseMethod)
+	assert.Equal(t, "go_ast", got.ParseMethod)
+	assert.Equal(t, "structural", got.ParseConfidence)
 	assert.NotEqual(t, -1, got.DetailLevel)
+}
+
+// TestParseMethodConfidence verifies the parser-tier -> confidence mapping:
+// structural parsers (go_ast, tree_sitter) are high-fidelity; lexical fallbacks
+// (ctags, regex) and unknown methods default to lexical.
+func TestParseMethodConfidence(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]Confidence{
+		"go_ast":      ConfidenceStructural,
+		"tree_sitter": ConfidenceStructural,
+		"ctags":       ConfidenceLexical,
+		"regex":       ConfidenceLexical,
+		"":            ConfidenceLexical,
+		"unknown":     ConfidenceLexical,
+	}
+	for pm, want := range cases {
+		assert.Equal(t, want, parseMethodConfidence(pm), "parseMethodConfidence(%q)", pm)
+	}
 }

@@ -61,6 +61,13 @@ func printExplain(w io.Writer, explain repomap.ExplainResult) {
 		}
 		fmt.Fprintln(w)
 	}
+	if explain.ParseMethod != "" {
+		marker := ""
+		if explain.ParseMethod == "regex" || explain.ParseMethod == "ctags" {
+			marker = " ⚠ low-fidelity symbols"
+		}
+		fmt.Fprintf(w, "  parsed: %s (%s-confidence)%s\n", explain.ParseMethod, explain.ParseConfidence, marker)
+	}
 	if len(explain.ScoreComponents) == 0 {
 		return
 	}

@@ -71,6 +71,20 @@ func tierOf(componentKey string) Confidence {
 	return ConfidenceStructural
 }
 
+// parseMethodConfidence maps a parser-tier label (FileSymbols.ParseMethod) to its
+// confidence tier. Structural parsers (go/ast, tree-sitter) yield high-fidelity
+// symbols; lexical fallbacks (ctags, regex) may be coincidental.
+func parseMethodConfidence(pm string) Confidence {
+	switch pm {
+	case "go_ast", "tree_sitter":
+		return ConfidenceStructural
+	case "ctags", "regex":
+		return ConfidenceLexical
+	default:
+		return ConfidenceLexical
+	}
+}
+
 // ConfidenceOrder returns tier labels in canonical render order (highest confidence first).
 func ConfidenceOrder() []string {
 	out := make([]string, len(confidenceOrder))
