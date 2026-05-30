@@ -24,7 +24,7 @@ func FormatLines(files []RankedFile, maxTokens int, root string) string {
 
 	for _, f := range files {
 		if len(f.Symbols) == 0 {
-			block := formatFileHeaderOnly(f)
+			block := formatFileHeaderOnly(f, false)
 			if shownFiles > 0 && budgetBytes > 0 && b.Len()+len(block) > budgetBytes {
 				break
 			}
@@ -66,7 +66,7 @@ func FormatLines(files []RankedFile, maxTokens int, root string) string {
 // formatFileBlockLines shows actual source lines for each symbol in a file.
 func formatFileBlockLines(f RankedFile, lines []string) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, false))
 
 	// Collect symbols with known line numbers, sorted by position.
 	type symLine struct {

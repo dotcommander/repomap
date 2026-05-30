@@ -233,7 +233,7 @@ func TestEnrichedCost_MatchesRenderer(t *testing.T) {
 	checkWithin10Pct := func(t *testing.T, syms []Symbol, path string) {
 		t.Helper()
 		f := RankedFile{FileSymbols: &FileSymbols{Path: path, Language: "go", Symbols: syms}}
-		rendered := symbolLines(formatFileBlockDefault(f))
+		rendered := symbolLines(formatFileBlockDefault(f, false))
 		cost := enrichedCost(syms)
 		actual := len(rendered)
 		lo := int(float64(cost) * 0.90)

@@ -49,9 +49,10 @@ type diskCache struct {
 	Ranked        []RankedFile         `json:"ranked"`
 	LastSHA       string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
 	GitRoot       bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
+	Explain       bool                 `json:"explain,omitempty"`  // whether --explain was active at write time
 }
 
-const cacheVersion = 6
+const cacheVersion = 7
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -66,8 +67,9 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		return nil
 	}
 	// Compute lazy strings if not yet cached, so they are persisted.
+	// Cache always stores the non-explain output; explain is a rendering flag, not a build artifact.
 	compact := m.outputs.get(&m.outputs.compact, func() string {
-		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist)
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist, false)
 	})
 	lines := m.outputs.get(&m.outputs.lines, func() string {
 		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
@@ -81,6 +83,7 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		Output:        compact,
 		OutputLines:   lines,
 		Ranked:        m.ranked,
+		Explain:       m.config.Explain,
 	}
 	if isInsideGitRepo(m.root) {
 		entry.GitRoot = true
@@ -115,7 +118,7 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return false
 	}
-	if entry.Version != cacheVersion || entry.Root != m.root {
+	if entry.Version != cacheVersion || entry.Root != m.root || entry.Explain != m.config.Explain {
 		return false
 	}
 

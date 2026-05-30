@@ -326,7 +326,7 @@ func TestFormatMap(t *testing.T) {
 		Score: 0,
 	}
 
-	out := FormatMap([]RankedFile{entry, mid, low}, 8192, false, false, nil)
+	out := FormatMap([]RankedFile{entry, mid, low}, 8192, false, false, nil, false)
 
 	assert.True(t, strings.HasPrefix(out, "## Repository Map"), "output must start with '## Repository Map'")
 	assert.Contains(t, out, "[entry]")
@@ -363,7 +363,7 @@ func TestFormatMap_TokenBudget(t *testing.T) {
 	}
 
 	// maxTokens=3 → budgetBytes=12, far smaller than any single file block.
-	out := FormatMap(files, 3, false, false, nil)
+	out := FormatMap(files, 3, false, false, nil, false)
 	assert.NotEmpty(t, out)
 
 	// Footer must appear because not all content fits. v0.7.0 format: omission
@@ -376,10 +376,10 @@ func TestFormatMap_TokenBudget(t *testing.T) {
 func TestFormatMap_Empty(t *testing.T) {
 	t.Parallel()
 
-	out := FormatMap(nil, 4096, false, false, nil)
+	out := FormatMap(nil, 4096, false, false, nil, false)
 	assert.Equal(t, "", out)
 
-	out = FormatMap([]RankedFile{}, 4096, false, false, nil)
+	out = FormatMap([]RankedFile{}, 4096, false, false, nil, false)
 	assert.Equal(t, "", out)
 }
 
@@ -514,12 +514,12 @@ func TestFormatMap_Verbose(t *testing.T) {
 	}
 
 	// Default (budget) mode shows exported symbol names directly (no category summaries).
-	defaultOut := FormatMap(files, 8192, false, false, nil)
+	defaultOut := FormatMap(files, 8192, false, false, nil, false)
 	assert.Contains(t, defaultOut, "Symbol0")
 	assert.Contains(t, defaultOut, "Symbol9")
 
 	// Verbose mode shows all symbols grouped by category.
-	verbose := FormatMap(files, 8192, true, false, nil)
+	verbose := FormatMap(files, 8192, true, false, nil, false)
 	assert.Contains(t, verbose, "Symbol9") // Last symbol must be visible
 	// Verbose uses group labels, not the enriched default format.
 	assert.Contains(t, verbose, "funcs:")
@@ -591,7 +591,7 @@ func TestFormatMap_ZeroSymbolFiles(t *testing.T) {
 
 	files := []RankedFile{noSymbols, withSymbols}
 
-	out := FormatMap(files, 8192, false, false, nil)
+	out := FormatMap(files, 8192, false, false, nil, false)
 
 	// Header must count all files.
 	assert.Contains(t, out, "2 files", "header must count all files including zero-symbol")
@@ -761,7 +761,7 @@ func TestFormatFileLine_DependsOn(t *testing.T) {
 		FileSymbols: &FileSymbols{Path: "core/agent.go"},
 		DependsOn:   4,
 	}
-	line := formatFileLine(f)
+	line := formatFileLine(f, false)
 	assert.Contains(t, line, "imports: 4", "DependsOn should render as 'imports: 4'")
 	assert.Contains(t, line, "core/agent.go", "path should be present")
 }
@@ -780,7 +780,7 @@ func TestFormatFileLine_CombinedTags(t *testing.T) {
 		DependsOn:  2,
 		Untested:   true,
 	}
-	line := formatFileLine(f)
+	line := formatFileLine(f, false)
 
 	assert.Contains(t, line, "entry", "must contain 'entry' tag")
 	assert.Contains(t, line, "imported by 3", "must contain 'imported by 3' tag")
@@ -947,7 +947,7 @@ func TestFormatFileBlockVerbose_SizeAnnotation(t *testing.T) {
 		Score: 10,
 	}
 
-	out := formatFileBlockVerbose(f)
+	out := formatFileBlockVerbose(f, false)
 	assert.NotContains(t, out, "TinyFunc [", "small symbol should have no size tag")
 	assert.Contains(t, out, "GodObject [200L]", "large struct should have size tag")
 }

@@ -31,6 +31,7 @@ func newRootCmd() *cobra.Command {
 	var intent string
 	var consumed []string
 	var symbolRefs bool
+	var explain bool
 
 	cmd := &cobra.Command{
 		Use:   "repomap [directory]",
@@ -57,6 +58,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 				Intent:         intent,
 				ConsumedPaths:  consumed,
 				SymbolRefs:     symbolRefs,
+				Explain:        explain,
 			}
 			m := repomap.New(absDir, cfg)
 
@@ -86,6 +88,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Natural language query for task-aware ranking (BM25)")
 	cmd.Flags().StringSliceVar(&consumed, "consumed", nil, "Comma-separated file paths already read; these are downranked and their importers upranked")
 	cmd.Flags().BoolVar(&symbolRefs, "symbol-refs", false, "Enable approximate cross-language symbol reference scoring")
+	cmd.Flags().BoolVar(&explain, "explain", false, "Append per-file confidence-tier score breakdown to text output")
 	cmd.Flags().BoolVar(&callsUseBinary, "calls-use-binary", false, "Fall back to shelling out to lspq instead of in-process gopls")
 	if err := cmd.Flags().MarkHidden("calls-use-binary"); err != nil {
 		panic(err)

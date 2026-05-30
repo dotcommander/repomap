@@ -126,7 +126,7 @@ func TestKindWeightSymbolOrdering(t *testing.T) {
 	}
 
 	f := makeRankedFile("core/agent.go", 2, syms)
-	out := formatFileBlockDefault(f)
+	out := formatFileBlockDefault(f, false)
 
 	// Unexported symbol must not appear.
 	assert.NotContains(t, out, "helper", "unexported func must be omitted")
@@ -154,7 +154,7 @@ func TestKindWeightSymbolOrdering_WithFunction(t *testing.T) {
 	}
 
 	f := makeRankedFile("pkg/config.go", 2, syms)
-	out := formatFileBlockDefault(f)
+	out := formatFileBlockDefault(f, false)
 
 	configPos := strings.Index(out, "Config")
 	newPos := strings.Index(out, "New")

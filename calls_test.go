@@ -288,7 +288,7 @@ func TestFormatMapWithCallers_CompactInjectsCallers(t *testing.T) {
 		},
 	}
 
-	out := FormatMapWithCallers([]RankedFile{rf}, 0, false, false, callers, 10, nil)
+	out := FormatMapWithCallers([]RankedFile{rf}, 0, false, false, callers, 10, nil, false)
 	assert.Contains(t, out, "callers")
 }
 
@@ -306,7 +306,7 @@ func TestFormatMapWithCallers_VerboseInjectsCallerCount(t *testing.T) {
 		},
 	}
 
-	out := FormatMapWithCallers([]RankedFile{rf}, 0, true, false, callers, 10, nil)
+	out := FormatMapWithCallers([]RankedFile{rf}, 0, true, false, callers, 10, nil, false)
 	assert.Contains(t, out, "[callers: 2]")
 }
 
@@ -316,7 +316,7 @@ func TestFormatMapWithCallers_EmptyCallersNoAnnotation(t *testing.T) {
 	sym := Symbol{Name: "Foo", Kind: "function", Exported: true, Line: 1}
 	rf := makeRankedFile("pkg/foo/foo.go", 2, []Symbol{sym})
 
-	out := FormatMapWithCallers([]RankedFile{rf}, 0, true, false, SymbolCallers{}, 10, nil)
+	out := FormatMapWithCallers([]RankedFile{rf}, 0, true, false, SymbolCallers{}, 10, nil, false)
 	assert.NotContains(t, out, "callers")
 }
 
@@ -417,7 +417,7 @@ func TestFormatMapWithCallers_TokenBudget(t *testing.T) {
 	}
 
 	// Very tight budget — should still produce output without panicking.
-	out := FormatMapWithCallers(files, 128, false, false, callers, 10, nil)
+	out := FormatMapWithCallers(files, 128, false, false, callers, 10, nil, false)
 	assert.NotEmpty(t, out)
 	// Output should be bounded.
 	assert.Less(t, len(out), 128*10, "output should respect budget roughly")
@@ -468,7 +468,7 @@ func TestFormatFileBlockCompactWithCallers(t *testing.T) {
 		},
 	}
 
-	out := formatFileBlockCompactWithCallers(rf, nil, callers)
+	out := formatFileBlockCompactWithCallers(rf, nil, callers, false)
 	assert.Contains(t, out, "callers")
 	assert.True(t, strings.Contains(out, "callers") || strings.Contains(out, "3"))
 }

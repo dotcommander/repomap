@@ -43,32 +43,46 @@ func fileDiagnostics(f RankedFile, minImportedBy int) []fileDiagnostic {
 }
 
 // formatFileLine returns the header line for a file block (path + tag/badge annotations).
-// Does NOT include boundary labels — use formatFileLineVerbose for detail/verbose modes.
-func formatFileLine(f RankedFile) string {
+// Does NOT include boundary labels — use formatFileLineDetail for detail/verbose modes.
+// When explain is true, appends a confidence-tier score annotation.
+func formatFileLine(f RankedFile, explain bool) string {
 	diags := fileDiagnostics(f, 2)
+	var base string
 	if len(diags) == 0 {
-		return f.Path + "\n"
+		base = f.Path
+	} else {
+		labels := make([]string, len(diags))
+		for i, d := range diags {
+			labels[i] = d.Label
+		}
+		base = fmt.Sprintf("%s [%s]", f.Path, strings.Join(labels, ", "))
 	}
-	labels := make([]string, len(diags))
-	for i, d := range diags {
-		labels[i] = d.Label
+	if explain {
+		return base + scoreExplainAnnotation(f) + "\n"
 	}
-	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(labels, ", "))
+	return base + "\n"
 }
 
 // formatFileLineDetail returns the header line for detail/verbose file blocks,
 // including boundary labels when present. Compact mode uses formatFileLine instead.
-func formatFileLineDetail(f RankedFile) string {
+// When explain is true, appends a confidence-tier score annotation.
+func formatFileLineDetail(f RankedFile, explain bool) string {
 	diags := fileDiagnostics(f, 2)
 	labels := make([]string, 0, len(diags)+len(f.Boundaries))
 	for _, d := range diags {
 		labels = append(labels, d.Label)
 	}
 	labels = append(labels, f.Boundaries...)
+	var base string
 	if len(labels) == 0 {
-		return f.Path + "\n"
+		base = f.Path
+	} else {
+		base = fmt.Sprintf("%s [%s]", f.Path, strings.Join(labels, ", "))
 	}
-	return fmt.Sprintf("%s [%s]\n", f.Path, strings.Join(labels, ", "))
+	if explain {
+		return base + scoreExplainAnnotation(f) + "\n"
+	}
+	return base + "\n"
 }
 
 // docTag returns a parenthetical tag annotating whether doc-line extraction
@@ -85,15 +99,20 @@ func docTag(f RankedFile) string {
 
 // formatFileLineDefault returns the header line for the enriched default block,
 // appending [doc: n/a] for non-Go files where doc extraction is unavailable.
-func formatFileLineDefault(f RankedFile) string {
+// When explain is true, appends a confidence-tier score annotation.
+func formatFileLineDefault(f RankedFile, explain bool) string {
 	tag := docTag(f)
 	if tag == "" {
-		return formatFileLine(f)
+		return formatFileLine(f, explain)
 	}
-	// Insert docTag before the trailing newline.
-	base := formatFileLine(f)
-	// base ends with "\n"; trim it, append tag, restore newline.
-	return strings.TrimSuffix(base, "\n") + tag + "\n"
+	// Insert docTag before the explain annotation and trailing newline.
+	base := formatFileLine(f, false)
+	// base ends with "\n"; trim it, append docTag, then explain annotation, restore newline.
+	trimmed := strings.TrimSuffix(base, "\n") + tag
+	if explain {
+		return trimmed + scoreExplainAnnotation(f) + "\n"
+	}
+	return trimmed + "\n"
 }
 
 // buildHeader returns the shared header block (title + dependency graph) used

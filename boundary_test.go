@@ -108,24 +108,24 @@ func TestRenderDetail_BoundaryLabels(t *testing.T) {
 
 	t.Run("detail mode shows boundary labels", func(t *testing.T) {
 		t.Parallel()
-		out := formatFileBlockDetail(withBoundaries)
+		out := formatFileBlockDetail(withBoundaries, false)
 		assert.Contains(t, out, "[HTTP, Postgres]")
 	})
 
 	t.Run("verbose mode shows boundary labels", func(t *testing.T) {
 		t.Parallel()
-		out := formatFileBlockVerbose(withBoundaries)
+		out := formatFileBlockVerbose(withBoundaries, false)
 		assert.Contains(t, out, "[HTTP, Postgres]")
 	})
 
 	t.Run("compact mode does not show boundary labels", func(t *testing.T) {
 		t.Parallel()
 		// withoutBoundaries: same file but no Boundaries set — compact never shows them.
-		out := formatFileBlockCompact(withoutBoundaries, nil)
+		out := formatFileBlockCompact(withoutBoundaries, nil, false)
 		assert.NotContains(t, out, "HTTP")
 		assert.NotContains(t, out, "Postgres")
 		// Also verify that even when Boundaries are set, compact does not render them.
-		outWithSet := formatFileBlockCompact(withBoundaries, nil)
+		outWithSet := formatFileBlockCompact(withBoundaries, nil, false)
 		assert.NotContains(t, outWithSet, "[HTTP")
 	})
 }

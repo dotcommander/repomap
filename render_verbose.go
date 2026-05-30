@@ -10,9 +10,9 @@ import (
 // exported symbol names + signatures + godoc first line + exported struct fields.
 // Symbols are ordered by renderKindWeight descending, then alphabetically for ties.
 // Unexported symbols are omitted.
-func formatFileBlockDefault(f RankedFile) string {
+func formatFileBlockDefault(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLineDefault(f))
+	fmt.Fprint(&b, formatFileLineDefault(f, explain))
 
 	// Sort symbols: high renderKindWeight first, then alphabetically within the same weight.
 	syms := make([]Symbol, len(f.Symbols))
@@ -53,9 +53,9 @@ func formatFileBlockDefault(f RankedFile) string {
 }
 
 // formatFileBlockDetail returns a detailed block showing signatures and struct fields.
-func formatFileBlockDetail(f RankedFile) string {
+func formatFileBlockDetail(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLineDetail(f))
+	fmt.Fprint(&b, formatFileLineDetail(f, explain))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		slices.SortFunc(g.syms, func(a, b Symbol) int {
@@ -90,9 +90,9 @@ func formatFileBlockDetail(f RankedFile) string {
 }
 
 // formatFileBlockVerbose returns a verbose block showing all symbols without summarization.
-func formatFileBlockVerbose(f RankedFile) string {
+func formatFileBlockVerbose(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLineDetail(f))
+	fmt.Fprint(&b, formatFileLineDetail(f, explain))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		names := make([]string, 0, len(g.syms))
@@ -107,9 +107,9 @@ func formatFileBlockVerbose(f RankedFile) string {
 }
 
 // formatFileHeaderOnly returns a minimal block for files with no exported symbols.
-func formatFileHeaderOnly(f RankedFile) string {
+func formatFileHeaderOnly(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, explain))
 	if f.Package != "" {
 		fmt.Fprintf(&b, "  (package %s)\n", f.Package)
 	}

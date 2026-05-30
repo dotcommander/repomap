@@ -42,9 +42,9 @@ func kindKeyword(kind string) string {
 // path + exported symbol names only — no signatures, no godoc, no struct fields.
 // Symbols are grouped as comma-separated names on a single indented line per category
 // (using existing orderedGroups machinery) to keep the output scannable.
-func formatFileBlockLean(f RankedFile) string {
+func formatFileBlockLean(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, explain))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		names := make([]string, 0, len(g.syms))
@@ -63,9 +63,9 @@ func formatFileBlockLean(f RankedFile) string {
 }
 
 // formatFileBlockSummary returns a summary block showing category counts only.
-func formatFileBlockSummary(f RankedFile) string {
+func formatFileBlockSummary(f RankedFile, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, explain))
 
 	groups := summarizeSymbols(f)
 	counts := make([]string, 0, len(groups))
@@ -80,9 +80,9 @@ func formatFileBlockSummary(f RankedFile) string {
 }
 
 // formatFileBlockCompact returns the compact block with struct fields for top-ranked types.
-func formatFileBlockCompact(f RankedFile, topTypes map[string]bool) string {
+func formatFileBlockCompact(f RankedFile, topTypes map[string]bool, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, explain))
 
 	groups := summarizeSymbols(f)
 	for _, g := range groups {

@@ -11,7 +11,7 @@ import (
 // Returns empty string if no files have symbols.
 // When verbose is true, shows all symbols without summarization.
 // When detail is true, shows signatures for funcs/methods and fields for structs.
-func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *BlocklistConfig) string {
+func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *BlocklistConfig, explain bool) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -23,13 +23,13 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 	if verbose {
 		for _, f := range files {
 			if len(f.Symbols) == 0 {
-				fmt.Fprint(&b, formatFileHeaderOnly(f))
+				fmt.Fprint(&b, formatFileHeaderOnly(f, explain))
 				continue
 			}
 			if detail {
-				fmt.Fprint(&b, formatFileBlockDetail(f))
+				fmt.Fprint(&b, formatFileBlockDetail(f, explain))
 			} else {
-				fmt.Fprint(&b, formatFileBlockVerbose(f))
+				fmt.Fprint(&b, formatFileBlockVerbose(f, explain))
 			}
 		}
 		return b.String()
@@ -49,7 +49,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 			shownFiles++
 			continue
 		}
-		fmt.Fprint(&b, f.formatDetail())
+		fmt.Fprint(&b, f.formatDetail(explain))
 		shownFiles++
 	}
 
@@ -70,7 +70,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 // Budget is applied using compactCost so more files fit vs. the enriched default.
 // cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
-func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig) string {
+func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig, explain bool) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -95,11 +95,11 @@ func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig) s
 		}
 		switch f.DetailLevel {
 		case 0:
-			fmt.Fprint(&b, formatFileHeaderOnly(f))
+			fmt.Fprint(&b, formatFileHeaderOnly(f, explain))
 		case 1:
-			fmt.Fprint(&b, formatFileBlockSummary(f))
+			fmt.Fprint(&b, formatFileBlockSummary(f, explain))
 		default:
-			fmt.Fprint(&b, formatFileBlockLean(f))
+			fmt.Fprint(&b, formatFileBlockLean(f, explain))
 		}
 		shownFiles++
 	}
@@ -120,14 +120,14 @@ func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig) s
 // DetailLevel 2 and 3 both dispatch to formatFileBlockDefault (enriched default).
 // DetailLevel 3 aliasing DetailLevel 2 is intentional for v0.7.0;
 // distinction deferred to v0.8.0 (e.g. unexported fields at level 3).
-func (f RankedFile) formatDetail() string {
+func (f RankedFile) formatDetail(explain bool) string {
 	switch f.DetailLevel {
 	case 0:
-		return formatFileHeaderOnly(f)
+		return formatFileHeaderOnly(f, explain)
 	case 1:
-		return formatFileBlockSummary(f)
+		return formatFileBlockSummary(f, explain)
 	case 2, 3:
-		return formatFileBlockDefault(f)
+		return formatFileBlockDefault(f, explain)
 	default:
 		return ""
 	}

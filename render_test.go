@@ -38,7 +38,7 @@ func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 	t.Run("formatFileBlockDetail emits subtitle", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFile("core/batch.go", 2, []Symbol{sym})
-		out := formatFileBlockDetail(f)
+		out := formatFileBlockDetail(f, false)
 		assert.Contains(t, out, "ProcessBatch")
 		assert.Contains(t, out, "// applies the batch rules to items")
 	})
@@ -48,7 +48,7 @@ func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 		noDoc := sym
 		noDoc.Doc = ""
 		f := makeRankedFile("core/batch.go", 2, []Symbol{noDoc})
-		out := formatFileBlockDetail(f)
+		out := formatFileBlockDetail(f, false)
 		assert.Contains(t, out, "ProcessBatch")
 		assert.NotContains(t, out, "//")
 	})
@@ -56,7 +56,7 @@ func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 	t.Run("formatFileBlockVerbose does not emit subtitle", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFile("core/batch.go", 2, []Symbol{sym})
-		out := formatFileBlockVerbose(f)
+		out := formatFileBlockVerbose(f, false)
 		assert.Contains(t, out, "ProcessBatch")
 		assert.NotContains(t, out, "//")
 	})
@@ -64,7 +64,7 @@ func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 	t.Run("formatFileBlockCompact does not emit subtitle", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFile("core/batch.go", 2, []Symbol{sym})
-		out := formatFileBlockCompact(f, nil)
+		out := formatFileBlockCompact(f, nil, false)
 		assert.NotContains(t, out, "//")
 	})
 }
@@ -86,21 +86,21 @@ func TestDocSubtitleRendering_FormatMap(t *testing.T) {
 	t.Run("detail=true verbose=true emits subtitle", func(t *testing.T) {
 		t.Parallel()
 		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
-		out := FormatMap(files, 0, true, true, nil)
+		out := FormatMap(files, 0, true, true, nil, false)
 		assert.Contains(t, out, "// starts the main server loop")
 	})
 
 	t.Run("detail=false verbose=true no subtitle", func(t *testing.T) {
 		t.Parallel()
 		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
-		out := FormatMap(files, 0, true, false, nil)
+		out := FormatMap(files, 0, true, false, nil, false)
 		assert.NotContains(t, out, "//")
 	})
 
 	t.Run("default mode emits subtitle", func(t *testing.T) {
 		t.Parallel()
 		files := []RankedFile{makeRankedFile("cmd/main.go", 2, []Symbol{sym})}
-		out := FormatMap(files, 0, false, false, nil)
+		out := FormatMap(files, 0, false, false, nil, false)
 		assert.Contains(t, out, "// starts the main server loop")
 	})
 }
@@ -320,7 +320,7 @@ func TestFormatFileBlockDefault(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := makeRankedFile("pkg/test.go", 2, tc.syms)
-			out := formatFileBlockDefault(f)
+			out := formatFileBlockDefault(f, false)
 			for _, want := range tc.shouldContain {
 				assert.Contains(t, out, want, "output should contain %q", want)
 			}
@@ -381,7 +381,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 	t.Run("go file header: no doc n/a tag", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("server/handler.go", "go", 2, []Symbol{sym})
-		out := formatFileBlockDefault(f)
+		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "server/handler.go")
 		assert.NotContains(t, out, "[doc: n/a]")
 	})
@@ -389,7 +389,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 	t.Run("php file header: no doc n/a tag (PHPDoc extraction supported)", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("src/Controller.php", "php", 2, []Symbol{sym})
-		out := formatFileBlockDefault(f)
+		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "src/Controller.php")
 		assert.NotContains(t, out, "[doc: n/a]")
 	})
@@ -397,7 +397,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 	t.Run("typescript file header: doc n/a tag present", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("lib/utils.ts", "typescript", 2, []Symbol{sym})
-		out := formatFileBlockDefault(f)
+		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "lib/utils.ts")
 		assert.Contains(t, out, "[doc: n/a]")
 	})
@@ -405,7 +405,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 	t.Run("empty language: doc n/a tag present", func(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("misc/script", "", 2, []Symbol{sym})
-		out := formatFileBlockDefault(f)
+		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "misc/script")
 		assert.Contains(t, out, "[doc: n/a]")
 	})
@@ -414,7 +414,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("app/router.php", "php", 2, []Symbol{sym})
 		// PHP now supports PHPDoc extraction — no [doc: n/a] tag on the header line.
-		line := formatFileLineDefault(f)
+		line := formatFileLineDefault(f, false)
 		assert.Contains(t, line, "app/router.php", "header line should contain file path")
 		assert.NotContains(t, line, "[doc: n/a]", "PHP header must not carry doc tag")
 	})
@@ -423,7 +423,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 		t.Parallel()
 		f := makeRankedFileWithLang("lib/base.rb", "ruby", 2, []Symbol{sym})
 		f.ImportedBy = 3
-		out := formatFileBlockDefault(f)
+		out := formatFileBlockDefault(f, false)
 		// Header should contain path, imported-by badge, and doc n/a tag.
 		assert.Contains(t, out, "lib/base.rb")
 		assert.Contains(t, out, "imported by 3")
@@ -474,7 +474,7 @@ type Bar struct{ X int }
 		Score:       10,
 	}
 
-	out := formatFileBlockDefault(rf)
+	out := formatFileBlockDefault(rf, false)
 
 	// File header must not carry [doc: n/a] for Go.
 	assert.NotContains(t, out, "[doc: n/a]")
@@ -495,7 +495,7 @@ func TestFormatFileBlockLean(t *testing.T) {
 		{Name: "helper", Kind: "function", Signature: "(x int) bool", Exported: false, Doc: "internal only"},
 	}
 	f := makeRankedFile("server/main.go", 2, syms)
-	out := formatFileBlockLean(f)
+	out := formatFileBlockLean(f, false)
 
 	// Path header must appear.
 	assert.Contains(t, out, "server/main.go")
@@ -525,7 +525,7 @@ func TestFormatMapCompact_NamesOnly(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("budget.go", 2, syms)}
 
-	out := FormatMapCompact(files, 4096, nil)
+	out := FormatMapCompact(files, 4096, nil, false)
 
 	// Names must appear.
 	assert.Contains(t, out, "BudgetFiles")
@@ -548,8 +548,8 @@ func TestFormatMapCompact_DefaultModeUnchanged(t *testing.T) {
 	}
 	files := []RankedFile{makeRankedFile("server.go", 2, syms)}
 
-	defaultOut := FormatMap(files, 0, false, false, nil)
-	compactOut := FormatMapCompact(files, 4096, nil)
+	defaultOut := FormatMap(files, 0, false, false, nil, false)
+	compactOut := FormatMapCompact(files, 4096, nil, false)
 
 	// Default must include the signature.
 	assert.Contains(t, defaultOut, "(cfg Config) *Server",
@@ -577,7 +577,7 @@ func TestFormatMapCompact_BudgetHonored(t *testing.T) {
 
 	// Very tight budget — should still honour it (output bytes ≤ budget*4 approximately).
 	const budget = 32 // tokens
-	out := FormatMapCompact(files, budget, nil)
+	out := FormatMapCompact(files, budget, nil, false)
 
 	// Output must not grossly exceed budget (allow 2x for headers/overhead).
 	assert.LessOrEqual(t, len(out), budget*4*2,

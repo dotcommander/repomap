@@ -135,9 +135,10 @@ func renderCallsOutput(
 	callers repomap.SymbolCallers,
 	limit int,
 ) error {
+	explain := m.Config().Explain
 	switch {
 	case asJSON:
-		verbose := repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil)
+		verbose := repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil, false)
 		lines := strings.Split(strings.TrimRight(verbose, "\n"), "\n")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -146,9 +147,9 @@ func renderCallsOutput(
 		}
 		return enc.Encode(jsonOutput{SchemaVersion: 1, Lines: lines})
 	case format == "verbose":
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, false, callers, limit, nil, explain))
 	case format == "detail":
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit, nil))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit, nil, explain))
 	case format == "compact":
 		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format compact\n")
 		fmt.Fprint(w, m.StringCompact())
@@ -161,7 +162,7 @@ func renderCallsOutput(
 	default:
 		// enriched default with callers.
 		maxTokens := m.Config().MaxTokens
-		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit, nil))
+		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, maxTokens, false, false, callers, limit, nil, explain))
 	}
 	return nil
 }

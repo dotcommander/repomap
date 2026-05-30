@@ -26,9 +26,9 @@ func formatCallersInline(locs []Location, total int) string {
 
 // formatFileBlockVerboseWithCallers is like formatFileBlockVerbose but annotates
 // each symbol group line with caller counts from the callers map.
-func formatFileBlockVerboseWithCallers(f RankedFile, callers SymbolCallers, limit int) string {
+func formatFileBlockVerboseWithCallers(f RankedFile, callers SymbolCallers, limit int, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLineDetail(f))
+	fmt.Fprint(&b, formatFileLineDetail(f, explain))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		names := make([]string, 0, len(g.syms))
@@ -47,9 +47,9 @@ func formatFileBlockVerboseWithCallers(f RankedFile, callers SymbolCallers, limi
 }
 
 // formatFileBlockDetailWithCallers extends formatFileBlockDetail to show callers.
-func formatFileBlockDetailWithCallers(f RankedFile, callers SymbolCallers, limit int) string {
+func formatFileBlockDetailWithCallers(f RankedFile, callers SymbolCallers, limit int, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLineDetail(f))
+	fmt.Fprint(&b, formatFileLineDetail(f, explain))
 
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		slices.SortFunc(g.syms, func(a, b Symbol) int {
@@ -89,9 +89,9 @@ func formatFileBlockDetailWithCallers(f RankedFile, callers SymbolCallers, limit
 // formatFileBlockCompactWithCallers extends compact output to show per-group caller counts.
 // For each symbol group, if any symbol in the group has callers, it appends
 // a callers annotation to the group header.
-func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, callers SymbolCallers) string {
+func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, callers SymbolCallers, explain bool) string {
 	var b strings.Builder
-	fmt.Fprint(&b, formatFileLine(f))
+	fmt.Fprint(&b, formatFileLine(f, explain))
 
 	// Use orderedGroups (which carries the symbols) to compute per-group caller counts,
 	// but still emit the summary strings from summarizeSymbols for display consistency.
@@ -141,7 +141,7 @@ func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, c
 // FormatMapWithCallers formats the ranked files like FormatMap but injects caller
 // information from the callers map into the output.
 // cfg may be nil — nil means no file-level detail overrides.
-func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail bool, callers SymbolCallers, limit int, cfg *BlocklistConfig) string {
+func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail bool, callers SymbolCallers, limit int, cfg *BlocklistConfig, explain bool) string {
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -153,13 +153,13 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 	if verbose {
 		for _, f := range files {
 			if len(f.Symbols) == 0 {
-				fmt.Fprint(&b, formatFileHeaderOnly(f))
+				fmt.Fprint(&b, formatFileHeaderOnly(f, explain))
 				continue
 			}
 			if detail {
-				fmt.Fprint(&b, formatFileBlockDetailWithCallers(f, callers, limit))
+				fmt.Fprint(&b, formatFileBlockDetailWithCallers(f, callers, limit, explain))
 			} else {
-				fmt.Fprint(&b, formatFileBlockVerboseWithCallers(f, callers, limit))
+				fmt.Fprint(&b, formatFileBlockVerboseWithCallers(f, callers, limit, explain))
 			}
 		}
 		return b.String()
@@ -179,7 +179,7 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 			shownFiles++
 			continue
 		}
-		fmt.Fprint(&b, f.formatDetailWithCallers(callers, limit))
+		fmt.Fprint(&b, f.formatDetailWithCallers(callers, limit, explain))
 		shownFiles++
 	}
 
@@ -196,14 +196,14 @@ func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail boo
 }
 
 // formatDetailWithCallers renders the file at its assigned DetailLevel, injecting callers.
-func (f RankedFile) formatDetailWithCallers(callers SymbolCallers, limit int) string {
+func (f RankedFile) formatDetailWithCallers(callers SymbolCallers, limit int, explain bool) string {
 	switch f.DetailLevel {
 	case 0:
-		return formatFileHeaderOnly(f)
+		return formatFileHeaderOnly(f, explain)
 	case 1:
-		return formatFileBlockSummary(f)
+		return formatFileBlockSummary(f, explain)
 	case 2:
-		return formatFileBlockCompactWithCallers(f, nil, callers)
+		return formatFileBlockCompactWithCallers(f, nil, callers, explain)
 	case 3:
 		top := make(map[string]bool)
 		for _, s := range f.Symbols {
@@ -211,7 +211,7 @@ func (f RankedFile) formatDetailWithCallers(callers SymbolCallers, limit int) st
 				top[s.Name] = true
 			}
 		}
-		return formatFileBlockCompactWithCallers(f, top, callers)
+		return formatFileBlockCompactWithCallers(f, top, callers, explain)
 	default:
 		return ""
 	}

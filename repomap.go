@@ -31,6 +31,7 @@ type Config struct {
 	Intent         string   // optional BM25 query for task-aware ranking
 	ConsumedPaths  []string // optional: paths the caller has already read — these are downranked
 	SymbolRefs     bool     // optional approximate cross-language symbol reference scoring
+	Explain        bool     // append per-file confidence-tier score breakdown to text output
 }
 
 // DefaultConfig returns the default configuration.
@@ -157,7 +158,7 @@ func (m *Map) String() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.compact, func() string {
-		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist)
+		return FormatMap(m.ranked, m.config.MaxTokens, false, false, m.blocklist, m.config.Explain)
 	})
 }
 
@@ -169,7 +170,7 @@ func (m *Map) StringCompact() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.orientation, func() string {
-		return FormatMapCompact(m.ranked, m.config.MaxTokens, m.blocklist)
+		return FormatMapCompact(m.ranked, m.config.MaxTokens, m.blocklist, m.config.Explain)
 	})
 }
 
@@ -178,7 +179,7 @@ func (m *Map) StringVerbose() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.verbose, func() string {
-		return FormatMap(m.ranked, 0, true, false, m.blocklist)
+		return FormatMap(m.ranked, 0, true, false, m.blocklist, m.config.Explain)
 	})
 }
 
@@ -187,7 +188,7 @@ func (m *Map) StringDetail() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.outputs.get(&m.outputs.detail, func() string {
-		return FormatMap(m.ranked, 0, true, true, m.blocklist)
+		return FormatMap(m.ranked, 0, true, true, m.blocklist, m.config.Explain)
 	})
 }
 
