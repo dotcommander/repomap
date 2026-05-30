@@ -120,6 +120,9 @@ func formatFileLineDefault(f RankedFile, explain bool) string {
 func buildHeader(files []RankedFile, totalFiles, totalSymbols int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## Repository Map (%d files, %d symbols)\n\n", totalFiles, totalSymbols)
+	if flow := formatFlowSpine(files); flow != "" {
+		fmt.Fprint(&b, flow)
+	}
 	if graph := formatDependencyGraph(files); graph != "" {
 		fmt.Fprint(&b, graph)
 		fmt.Fprint(&b, "\n")
