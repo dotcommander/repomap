@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 
 	"github.com/dotcommander/repomap"
 	"github.com/spf13/cobra"
@@ -42,6 +42,13 @@ func newExplainCmd() *cobra.Command {
 	return cmd
 }
 
+// tierAnnotation returns the short clarifying suffix for a tier label.
+var tierAnnotation = map[string]string{
+	"confirmed":  " (gopls-verified)",
+	"lexical":    " (by-name, may be coincidental)",
+	"contextual": " (query-dependent)",
+}
+
 func printExplain(w io.Writer, explain repomap.ExplainResult) {
 	fmt.Fprintf(w, "%s\n", explain.File.Path)
 	fmt.Fprintf(w, "  score: %d\n", explain.Score)
@@ -57,13 +64,24 @@ func printExplain(w io.Writer, explain repomap.ExplainResult) {
 	if len(explain.ScoreComponents) == 0 {
 		return
 	}
-	keys := make([]string, 0, len(explain.ScoreComponents))
-	for k := range explain.ScoreComponents {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	fmt.Fprintln(w, "  components:")
-	for _, k := range keys {
-		fmt.Fprintf(w, "    %s: %+d\n", k, explain.ScoreComponents[k])
+
+	// Group components by tier in canonical order.
+	for _, tier := range repomap.ConfidenceOrder() {
+		// Collect keys that belong to this tier.
+		var keys []string
+		for k, t := range explain.ComponentTiers {
+			if t == tier {
+				keys = append(keys, k)
+			}
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		slices.Sort(keys)
+		annotation := tierAnnotation[tier]
+		fmt.Fprintf(w, "  %s%s\n", tier, annotation)
+		for _, k := range keys {
+			fmt.Fprintf(w, "    %-12s %+d\n", k, explain.ScoreComponents[k])
+		}
 	}
 }
