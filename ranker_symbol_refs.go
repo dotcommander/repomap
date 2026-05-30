@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	symbolRefsMaxFileBytes = 1 << 20
-	symbolRefsBonusPerRef  = 2
-	symbolRefsMaxBonus     = 24
-	symbolRefsMinNameLen   = 4
+	symbolRefsMaxFileBytes    = 1 << 20
+	symbolRefsBonusPerRef     = 2
+	symbolRefsMaxBonus        = 24
+	symbolRefsMinNameLen      = 4
+	symbolRefsMaxDocFreqRatio = 0.40 // skip names appearing in >40% of files (identifier-space stop-words)
 )
 
 // ApplySymbolReferenceBonus adds a cheap, approximate cross-language usage
@@ -46,6 +47,17 @@ func ApplySymbolReferenceBonus(root string, ranked []RankedFile) {
 	}
 	if len(byName) == 0 {
 		return
+	}
+
+	// Identifier-space stop-word filter: drop names common enough to be coincidental.
+	// A name exported by >40% of files is too generic to signal intentional coupling.
+	// Floor: only apply when threshold would be ≥2 (avoids false drops in tiny repos).
+	if docFreqThreshold := int(float64(len(ranked)) * symbolRefsMaxDocFreqRatio); docFreqThreshold >= 2 {
+		for name, targets := range byName {
+			if len(targets) > docFreqThreshold {
+				delete(byName, name)
+			}
+		}
 	}
 
 	refFiles := make(map[string]map[string]struct{})
