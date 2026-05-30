@@ -23,6 +23,29 @@ func makeRankedFile(path string, detailLevel int, syms []Symbol) RankedFile {
 	}
 }
 
+func TestDefaultMapHeaderHasTokenEstimate(t *testing.T) {
+	t.Parallel()
+
+	sym := Symbol{Name: "ProcessBatch", Kind: "function", Exported: true, Line: 5}
+	files := []RankedFile{makeRankedFile("core/batch.go", 2, []Symbol{sym})}
+
+	t.Run("FormatMap header carries ~N tokens", func(t *testing.T) {
+		t.Parallel()
+		out := FormatMap(files, 2048, false, false, nil, false)
+		assert.Contains(t, out, "~")
+		assert.Contains(t, out, "tokens)")
+		assert.Regexp(t, `~\d+ tokens\)`, out)
+	})
+
+	t.Run("FormatMapCompact header carries ~N tokens", func(t *testing.T) {
+		t.Parallel()
+		out := FormatMapCompact(files, 2048, nil, false)
+		assert.Contains(t, out, "~")
+		assert.Contains(t, out, "tokens)")
+		assert.Regexp(t, `~\d+ tokens\)`, out)
+	})
+}
+
 func TestDocSubtitleRendering_DetailFormat(t *testing.T) {
 	t.Parallel()
 

@@ -35,13 +35,13 @@ func formatFileBlockDefault(f RankedFile, explain bool) string {
 		case isPHP && s.Signature != "":
 			// PHP signatures are self-contained (include keyword + name + params).
 			// Rendering "  <signature>" avoids double-printing keyword or name.
-			line = fmt.Sprintf("  %s%s", s.Signature, annotationTag(s))
+			line = fmt.Sprintf("  %s%s%s", s.Signature, annotationTag(s), lineAnchor(s))
 		case s.Kind == "method" && s.Receiver != "":
-			line = fmt.Sprintf("  func (%s) %s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s))
+			line = fmt.Sprintf("  func (%s) %s%s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s), lineAnchor(s))
 		case s.Signature != "" && s.Signature != "{}":
-			line = fmt.Sprintf("  %s %s%s%s", kindKeyword(s.Kind), s.Name, s.Signature, annotationTag(s))
+			line = fmt.Sprintf("  %s %s%s%s%s", kindKeyword(s.Kind), s.Name, s.Signature, annotationTag(s), lineAnchor(s))
 		default:
-			line = fmt.Sprintf("  %s %s%s", kindKeyword(s.Kind), s.Name, annotationTag(s))
+			line = fmt.Sprintf("  %s %s%s%s", kindKeyword(s.Kind), s.Name, annotationTag(s), lineAnchor(s))
 		}
 		fmt.Fprintln(&b, line)
 		if s.Doc != "" {
@@ -68,16 +68,16 @@ func formatFileBlockDetail(f RankedFile, explain bool) string {
 			switch {
 			case g.key == "methods" && s.Receiver != "":
 				if s.Signature != "" {
-					line = fmt.Sprintf("%s.%s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s))
+					line = fmt.Sprintf("%s.%s%s%s%s", s.Receiver, s.Name, s.Signature, annotationTag(s), lineAnchor(s))
 				} else {
-					line = fmt.Sprintf("%s.%s%s", s.Receiver, s.Name, annotationTag(s))
+					line = fmt.Sprintf("%s.%s%s%s", s.Receiver, s.Name, annotationTag(s), lineAnchor(s))
 				}
 			case (g.key == "types" || g.key == "interfaces") && s.Signature != "":
-				line = fmt.Sprintf("%s %s%s%s", s.Name, s.Signature, annotationTag(s), implementsTag(s))
+				line = fmt.Sprintf("%s %s%s%s%s", s.Name, s.Signature, annotationTag(s), implementsTag(s), lineAnchor(s))
 			case g.key == "funcs" && s.Signature != "":
-				line = fmt.Sprintf("%s%s%s", s.Name, s.Signature, annotationTag(s))
+				line = fmt.Sprintf("%s%s%s%s", s.Name, s.Signature, annotationTag(s), lineAnchor(s))
 			default:
-				line = s.Name + annotationTag(s)
+				line = s.Name + annotationTag(s) + lineAnchor(s)
 			}
 			fmt.Fprintf(&b, "    %s\n", line)
 			if s.Doc != "" {
@@ -97,7 +97,7 @@ func formatFileBlockVerbose(f RankedFile, explain bool) string {
 	for _, g := range orderedGroups(f.Path, f.Symbols) {
 		names := make([]string, 0, len(g.syms))
 		for _, s := range g.syms {
-			names = append(names, symDisplayName(s))
+			names = append(names, symDisplayName(s)+lineAnchor(s))
 		}
 		slices.Sort(names)
 		fmt.Fprintf(&b, "  %s: %s\n", g.label, strings.Join(names, ", "))

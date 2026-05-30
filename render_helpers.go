@@ -130,6 +130,24 @@ func buildHeader(files []RankedFile, totalFiles, totalSymbols int) string {
 	return b.String()
 }
 
+// estimateTokens approximates token count from byte length (~4 bytes/token).
+func estimateTokens(s string) int { return len(s) / 4 }
+
+// buildHeaderWithTokens is buildHeader plus an estimated token count in the title,
+// used by the default map modes so orchestrating agents can scale their -t budget.
+func buildHeaderWithTokens(files []RankedFile, totalFiles, totalSymbols, tokens int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Repository Map (%d files, %d symbols, ~%d tokens)\n\n", totalFiles, totalSymbols, tokens)
+	if flow := formatFlowSpine(files); flow != "" {
+		fmt.Fprint(&b, flow)
+	}
+	if graph := formatDependencyGraph(files); graph != "" {
+		fmt.Fprint(&b, graph)
+		fmt.Fprint(&b, "\n")
+	}
+	return b.String()
+}
+
 // Symbol-level diagnostic thresholds. A symbol exceeding any of these gets
 // an annotation in the rendered output so an LLM can spot the smell quickly.
 const (
@@ -176,6 +194,14 @@ func annotationTag(s Symbol) string {
 		return ""
 	}
 	return " [" + strings.Join(parts, ", ") + "]"
+}
+
+// lineAnchor returns a " :N" start-line suffix for precise edits, or "" when unknown.
+func lineAnchor(s Symbol) string {
+	if s.Line > 0 {
+		return fmt.Sprintf(" :%d", s.Line)
+	}
+	return ""
 }
 
 // implementsTag returns " [impl: A, B]" for structs that satisfy interfaces,

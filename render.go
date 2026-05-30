@@ -17,21 +17,24 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 		return ""
 	}
 
-	var b strings.Builder
-	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
+	// Render body first, then prepend a header carrying its estimated token count.
+	var body strings.Builder
 
 	if verbose {
 		for _, f := range files {
 			if len(f.Symbols) == 0 {
-				fmt.Fprint(&b, formatFileHeaderOnly(f, explain))
+				fmt.Fprint(&body, formatFileHeaderOnly(f, explain))
 				continue
 			}
 			if detail {
-				fmt.Fprint(&b, formatFileBlockDetail(f, explain))
+				fmt.Fprint(&body, formatFileBlockDetail(f, explain))
 			} else {
-				fmt.Fprint(&b, formatFileBlockVerbose(f, explain))
+				fmt.Fprint(&body, formatFileBlockVerbose(f, explain))
 			}
 		}
+		var b strings.Builder
+		fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+		fmt.Fprint(&b, body.String())
 		return b.String()
 	}
 
@@ -49,19 +52,22 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 			shownFiles++
 			continue
 		}
-		fmt.Fprint(&b, f.formatDetail(explain))
+		fmt.Fprint(&body, f.formatDetail(explain))
 		shownFiles++
 	}
 
 	if len(headerOnly) > 0 {
-		fmt.Fprint(&b, formatCollapsedPaths(headerOnly))
+		fmt.Fprint(&body, formatCollapsedPaths(headerOnly))
 	}
 
 	if shownFiles < totalFiles {
 		omitted := totalFiles - shownFiles
-		fmt.Fprintf(&b, "(%d files omitted — increase -t or use -f compact)\n", omitted)
+		fmt.Fprintf(&body, "(%d files omitted — increase -t or use -f compact)\n", omitted)
 	}
 
+	var b strings.Builder
+	fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+	fmt.Fprint(&b, body.String())
 	return b.String()
 }
 
@@ -76,8 +82,8 @@ func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig, e
 		return ""
 	}
 
-	var b strings.Builder
-	fmt.Fprint(&b, buildHeader(files, totalFiles, totalSymbols))
+	// Render body first, then prepend a header carrying its estimated token count.
+	var body strings.Builder
 
 	// Budget mode using compact cost — more files fit vs. enriched default.
 	files = BudgetFilesCompact(files, maxTokens, cfg)
@@ -95,24 +101,27 @@ func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig, e
 		}
 		switch f.DetailLevel {
 		case 0:
-			fmt.Fprint(&b, formatFileHeaderOnly(f, explain))
+			fmt.Fprint(&body, formatFileHeaderOnly(f, explain))
 		case 1:
-			fmt.Fprint(&b, formatFileBlockSummary(f, explain))
+			fmt.Fprint(&body, formatFileBlockSummary(f, explain))
 		default:
-			fmt.Fprint(&b, formatFileBlockLean(f, explain))
+			fmt.Fprint(&body, formatFileBlockLean(f, explain))
 		}
 		shownFiles++
 	}
 
 	if len(headerOnly) > 0 {
-		fmt.Fprint(&b, formatCollapsedPaths(headerOnly))
+		fmt.Fprint(&body, formatCollapsedPaths(headerOnly))
 	}
 
 	if shownFiles < totalFiles {
 		omitted := totalFiles - shownFiles
-		fmt.Fprintf(&b, "(%d files omitted — increase -t)\n", omitted)
+		fmt.Fprintf(&body, "(%d files omitted — increase -t)\n", omitted)
 	}
 
+	var b strings.Builder
+	fmt.Fprint(&b, buildHeaderWithTokens(files, totalFiles, totalSymbols, estimateTokens(body.String())))
+	fmt.Fprint(&b, body.String())
 	return b.String()
 }
 
