@@ -304,9 +304,7 @@ func firstSentence(cg *ast.CommentGroup, name string) string {
 	}
 	text = strings.TrimSpace(text)
 	// Rune-safe truncation at 60 chars.
-	if runes := []rune(text); len(runes) > 60 {
-		text = string(runes[:60])
-	}
+	text = truncateAtWord(text, 60)
 	if len(text) < 5 {
 		return ""
 	}

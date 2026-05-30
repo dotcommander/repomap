@@ -41,10 +41,7 @@ func phpFirstSentence(text string) string {
 		}
 	}
 	text = strings.TrimSpace(text)
-	runes := []rune(text)
-	if len(runes) > 60 {
-		text = string(runes[:60])
-	}
+	text = truncateAtWord(text, 60)
 	if len([]rune(text)) < 5 {
 		return ""
 	}

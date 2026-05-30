@@ -50,7 +50,7 @@ func TestFirstSentence(t *testing.T) {
 			name:    "truncate at 60 runes",
 			comment: "Foo " + strings.Repeat("x", 80),
 			ident:   "Foo",
-			want:    strings.Repeat("x", 60),
+			want:    strings.Repeat("x", 60) + "…",
 		},
 		{
 			name:    "unicode rune boundary",
@@ -377,10 +377,10 @@ const DefaultTimeout = 30
 
 	// Function doc: strip prefix "ProcessBatch ", truncated at 60 runes.
 	// Full sentence: "applies the batch rules to items and returns an error if any fail"
-	// = 65 runes → truncated to 60.
+	// = 65 runes → truncated at the last word boundary within 60, then "…".
 	fn, ok := byName["ProcessBatch"]
 	require.True(t, ok, "ProcessBatch not found")
-	assert.Equal(t, "applies the batch rules to items and returns an error if any", fn.Doc)
+	assert.Equal(t, "applies the batch rules to items and returns an error if…", fn.Doc)
 
 	// Type doc: strip prefix "Config "
 	cfg, ok := byName["Config"]
