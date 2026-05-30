@@ -209,6 +209,36 @@ func TestTokenizeCamelCase(t *testing.T) {
 	}
 }
 
+func TestIntentScorer_DocOnlyMatch(t *testing.T) {
+	t.Parallel()
+	// All three files have equal base scores; the query terms appear ONLY in the
+	// Doc string of session.go's exported symbol — not in any basename, package
+	// name, symbol name, or import path. The BM25 doc-field boost must be
+	// sufficient to rank session.go first.
+	ranked := []RankedFile{
+		makeIntentRankedFile("scanner.go", "repomap", 100, []Symbol{
+			{Name: "ScanFiles", Exported: true},
+		}, nil),
+		makeIntentRankedFile("ranker.go", "repomap", 100, []Symbol{
+			{Name: "RankFiles", Exported: true},
+		}, nil),
+		{
+			FileSymbols: &FileSymbols{
+				Path:    "session.go",
+				Package: "repomap",
+				Symbols: []Symbol{
+					{Name: "Retry", Exported: true, Doc: "validates jwt tokens and refreshes sessions"},
+				},
+			},
+			Score: 100,
+		},
+	}
+	scorer := NewIntentScorer(ranked)
+	result := scorer.Score(ranked, "jwt refresh")
+	require.Len(t, result, 3)
+	assert.Equal(t, "session.go", result[0].Path, "session.go should rank first: doc string is the only source of jwt/refresh terms")
+}
+
 func TestExtractNegated(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

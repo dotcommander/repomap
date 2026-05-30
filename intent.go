@@ -76,6 +76,15 @@ func NewIntentScorer(ranked []RankedFile) *IntentScorer {
 			}
 		}
 
+		// Field: exported symbol doc strings (weight 1.5 — richer than imports, noisier than names)
+		for _, sym := range rf.Symbols {
+			if sym.Exported && sym.Doc != "" {
+				for _, tok := range tokenizeIntent(sym.Doc) {
+					terms[tok] += 1.5
+				}
+			}
+		}
+
 		var totalTF float64
 		for _, v := range terms {
 			totalTF += v
