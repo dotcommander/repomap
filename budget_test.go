@@ -480,31 +480,61 @@ func TestBudgetFiles_BeyondCutoffOmitted(t *testing.T) {
 	}
 }
 
-// TestBudgetFiles_HighRankOmittedWhenBudgetExhausted verifies that a high-rank file
-// with a very large enriched cost is demoted through summary to omit when the budget
-// is exhausted by previous files.
-func TestBudgetFiles_HighRankOmittedWhenBudgetExhausted(t *testing.T) {
+// TestBudgetFiles_HighRankNotOmittedUnderBreadthFirst verifies that under
+// breadth-first allocation a high-rank file with a very large enriched cost stays
+// VISIBLE (level 0 or 1) rather than being omitted (-1) when the budget is
+// exhausted by depth-promotion of earlier files. Only the top file gets level 2.
+func TestBudgetFiles_HighRankNotOmittedUnderBreadthFirst(t *testing.T) {
 	t.Parallel()
 
 	// Budget: 150 tokens = 600 bytes.
 	// File 1 (ranked highest): 3 symbols, sig=5 → enrichedCost ≈ 3*(8+1+6)=45 bytes → level 2.
-	// File 2: 40 symbols, sig=20 → enrichedCost ≈ 40*(8+1+21)=1200 bytes > 600;
-	//          summaryCost = 1 group * 30 = 30 bytes → level 1.
-	// File 3: after file 1+2 consume budget, level depends on remaining bytes.
+	// File 2: 40 symbols, sig=20 → enrichedCost ≈ 40*(8+1+21)=1200 bytes > remaining;
+	//          stays at summary (level 1) under breadth-first.
+	// File 3: lower-ranked large file stays at level 1 (visible summary), never -1.
 	f1 := mkRankedFunc("top.go", 3, 5, 0)
 	f2 := mkRankedFunc("large.go", 40, 20, 0)
 	f3 := mkRankedFunc("other.go", 40, 20, 0)
 	ranked := BudgetFiles([]RankedFile{f1, f2, f3}, 150, nil)
 	require.Len(t, ranked, 3)
 	assert.Equal(t, 2, ranked[0].DetailLevel, "top.go must be level 2 (fits enriched)")
-	assert.Equal(t, 1, ranked[1].DetailLevel, "large.go must fall to summary")
-	// ranked[2] (other.go) must be level 1 or -1 — never level 2 given exhausted budget.
+	// large.go and other.go stay VISIBLE: level 0 or 1, never omitted (-1).
+	assert.GreaterOrEqual(t, ranked[1].DetailLevel, 0, "large.go must stay visible, not omitted")
+	assert.LessOrEqual(t, ranked[1].DetailLevel, 1, "large.go must not reach level 2 with exhausted budget")
+	assert.GreaterOrEqual(t, ranked[2].DetailLevel, 0,
+		"lower-ranked large file must stay visible (level 0 or 1), never omitted")
 	assert.LessOrEqual(t, ranked[2].DetailLevel, 1,
 		"third large file must not get level 2 with exhausted budget")
 }
 
-// TestBudgetFiles_OmitSingleHighRankFile verifies that when a single file is so
-// large its enriched AND summary costs both exceed the budget, it is omitted (-1).
+// TestBudgetBreadthFirst_AllVisible verifies the breadth-first guarantee: under a
+// tight budget across many files, every file stays VISIBLE (DetailLevel >= 0) and
+// the top-ranked file is promoted to level 2. No file is omitted (-1).
+func TestBudgetBreadthFirst_AllVisible(t *testing.T) {
+	t.Parallel()
+
+	// 6 files of varying size under a tight budget. The top (smallest) file fits
+	// enriched (level 2); the rest stay at summary or header, never omitted.
+	files := []RankedFile{
+		mkRankedFunc("top.go", 2, 5, 0),
+		mkRankedFunc("a.go", 20, 20, 0),
+		mkRankedFunc("b.go", 20, 20, 0),
+		mkRankedFunc("c.go", 20, 20, 0),
+		mkRankedFunc("d.go", 20, 20, 0),
+		mkRankedFunc("e.go", 20, 20, 0),
+	}
+	ranked := BudgetFiles(files, 300, nil)
+	require.Len(t, ranked, 6)
+	for i, f := range ranked {
+		assert.GreaterOrEqual(t, f.DetailLevel, 0,
+			"file %d (%s) must stay visible under breadth-first — never omitted (-1)", i, f.Path)
+	}
+	assert.Equal(t, 2, ranked[0].DetailLevel, "top file must be promoted to level 2")
+}
+
+// TestBudgetFiles_OmitSingleHighRankFile verifies the headerCap guard: when a
+// file's PATH header alone can't fit within the budget, it is omitted (-1).
+// Breadth-first keeps the headerCap guard so pathological tiny budgets stay bounded.
 func TestBudgetFiles_OmitSingleHighRankFile(t *testing.T) {
 	t.Parallel()
 
@@ -535,11 +565,14 @@ func TestBudgetFiles_MultipleOverrides(t *testing.T) {
 	// f1 must be level 2 (small enriched cost fits easily).
 	assert.Equal(t, 2, ranked[0].DetailLevel, "f1 must be level 2")
 	// f2 and f3 must not both get level 2 — at least one must be demoted.
+	// Under breadth-first, "demoted" means level 1 (visible summary), never -1.
 	level2Count := 0
 	for _, r := range ranked {
 		if r.DetailLevel == 2 {
 			level2Count++
 		}
+		assert.GreaterOrEqual(t, r.DetailLevel, 0,
+			"breadth-first keeps every file visible — no file may be omitted (-1)")
 	}
 	assert.LessOrEqual(t, level2Count, 2,
 		"tight budget must prevent all three files from reaching level 2")

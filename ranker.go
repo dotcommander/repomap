@@ -31,6 +31,10 @@ const (
 	scoreComponentConsumed    = "consumed"
 	scoreComponentCallers     = "callers"
 	scoreComponentSymbolRefs  = "symbol_refs"
+	scoreComponentIntraRefs   = "intra_refs"
+	scoreComponentOrient      = "orientation"
+	scoreComponentDTO         = "dto"
+	scoreComponentTestDemote  = "test_demote"
 )
 
 func addScoreComponent(rf *RankedFile, key string, delta int) {
@@ -59,6 +63,7 @@ func RankFiles(files []*FileSymbols) []RankedFile {
 	applyTransitiveImportScores(ranked)
 	applyDiagnosticSignals(ranked, files)
 	applyBoundaryBoost(ranked)
+	applyDTOPenalty(ranked)
 	markDeadExports(ranked)
 
 	slices.SortFunc(ranked, func(a, b RankedFile) int {
@@ -89,6 +94,25 @@ func applyEntryBoosts(ranked []RankedFile) {
 			addScoreComponent(&ranked[i], scoreComponentEntry, 30)
 			ranked[i].Tag = "entry"
 		}
+
+		// Orientation boosts: structurally salient files that are not entry
+		// points. Kept separate from scoreComponentEntry so they are not
+		// mislabeled with Tag="entry". Capped at +35 total per file.
+		orient := 0
+		if pkg := ranked[i].Package; pkg != "" && strings.TrimSuffix(base, filepath.Ext(base)) == pkg {
+			orient += 25
+		}
+		if base == "types.go" {
+			orient += 20
+		}
+		if strings.Count(path, string(filepath.Separator)) == 0 &&
+			filepath.Ext(path) == ".go" && !isTestFile(path) {
+			orient += 8
+		}
+		if orient > 35 {
+			orient = 35
+		}
+		addScoreComponent(&ranked[i], scoreComponentOrient, orient)
 	}
 }
 
@@ -138,9 +162,6 @@ func applyDepthPenalty(ranked []RankedFile) {
 		depth := strings.Count(ranked[i].Path, string(filepath.Separator))
 		if depth > 2 {
 			penalty -= depth - 2
-		}
-		if isTestFile(ranked[i].Path) {
-			penalty -= 5
 		}
 		addScoreComponent(&ranked[i], scoreComponentDepth, penalty)
 	}

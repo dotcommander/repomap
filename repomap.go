@@ -32,6 +32,7 @@ type Config struct {
 	ConsumedPaths  []string // optional: paths the caller has already read — these are downranked
 	SymbolRefs     bool     // optional approximate cross-language symbol reference scoring
 	Explain        bool     // append per-file confidence-tier score breakdown to text output
+	IncludeTests   bool     // rank test files at full weight (default: demoted)
 }
 
 // DefaultConfig returns the default configuration.
@@ -119,6 +120,10 @@ func (m *Map) Build(ctx context.Context) error {
 	}
 
 	ranked := RankFiles(parsed)
+
+	ApplyIntraPackageRefs(m.root, ranked)
+
+	applyTestDemotion(ranked, m.config.IncludeTests)
 
 	if m.config.Intent != "" {
 		scorer := NewIntentScorer(ranked)

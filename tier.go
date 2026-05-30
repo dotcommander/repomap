@@ -33,6 +33,10 @@ var componentConfidence = map[string]Confidence{
 	scoreComponentBoundary:   ConfidenceStructural,
 	scoreComponentDepth:      ConfidenceStructural,
 	scoreComponentSymbolRefs: ConfidenceLexical,
+	scoreComponentIntraRefs:  ConfidenceLexical,
+	scoreComponentOrient:     ConfidenceStructural,
+	scoreComponentDTO:        ConfidenceStructural,
+	scoreComponentTestDemote: ConfidenceStructural,
 	scoreComponentIntent:     ConfidenceContextual,
 	scoreComponentConsumed:   ConfidenceContextual,
 }
@@ -51,6 +55,10 @@ var allScoreComponents = []string{
 	scoreComponentConsumed,
 	scoreComponentCallers,
 	scoreComponentSymbolRefs,
+	scoreComponentIntraRefs,
+	scoreComponentOrient,
+	scoreComponentDTO,
+	scoreComponentTestDemote,
 }
 
 // tierOf returns the confidence tier for a score component key.

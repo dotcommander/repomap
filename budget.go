@@ -30,79 +30,17 @@ func fileAllDead(syms []Symbol) bool {
 }
 
 func BudgetFiles(ranked []RankedFile, maxTokens int, cfg *BlocklistConfig) []RankedFile {
-	if len(ranked) == 0 {
-		return ranked
-	}
-
-	// Unlimited mode: everything gets full symbols.
-	if maxTokens == 0 {
-		for i := range ranked {
-			ranked[i].DetailLevel = 2
-		}
-		return ranked
-	}
-
-	budgetBytes := maxTokens * 4
-
-	// Phase 1: Estimate header cost per file, cap at 70% of budget.
-	headerCap := budgetBytes * 70 / 100
-	headerCost := 0
+	budgetFilesBreadthFirst(ranked, maxTokens, enrichedCost, cfg)
+	// promoteFieldExpansion is enriched-only: it upgrades level-2 files to level 3
+	// (inline field expansion), which the lean/compact renderer does not emit.
 	cutoff := len(ranked)
-	for i, f := range ranked {
-		cost := len(f.Path) + 30 // path + annotation + newline overhead
-		if headerCost+cost > headerCap {
-			cutoff = i
-			break
+	budgetBytes := maxTokens * 4
+	used := 0
+	for i := range ranked {
+		if ranked[i].DetailLevel == 2 {
+			used += enrichedCost(ranked[i].Symbols)
 		}
-		headerCost += cost
 	}
-
-	// Files beyond cutoff are omitted.
-	for i := cutoff; i < len(ranked); i++ {
-		ranked[i].DetailLevel = -1
-	}
-
-	// Phase 2: Walk files in rank order, assign detail levels within budget.
-	// Invariant: a file at DetailLevel=2 gets ALL enriched content or is demoted.
-	// Never assign DetailLevel=2 with partial content — the LLM consumer must
-	// either see a file in full or know (via footer) that it was omitted.
-	used := headerCost
-	for i := 0; i < cutoff; i++ {
-		if len(ranked[i].Symbols) == 0 {
-			ranked[i].DetailLevel = 0
-			continue
-		}
-
-		// Estimate cost of summary line (~30 bytes per group).
-		groups := countGroups(ranked[i].Path, ranked[i].Symbols)
-		summaryCost := groups * 30
-
-		// Try enriched (DetailLevel=2) FIRST using the all-or-nothing cost.
-		enriched := enrichedCost(ranked[i].Symbols)
-		if fileAllDead(ranked[i].Symbols) {
-			enriched = enriched / 2
-		}
-		if used+enriched <= budgetBytes {
-			ranked[i].DetailLevel = 2
-			used += enriched
-			continue
-		}
-
-		// Fall back to summary if it fits.
-		if used+summaryCost <= budgetBytes {
-			ranked[i].DetailLevel = 1
-			used += summaryCost
-			continue
-		}
-
-		// Neither fits — omit. Header bytes were already counted in Phase 1; we
-		// leave them "spent" even though the file won't render. This is
-		// conservative and correct: over-omitting under tight budgets is the
-		// documented v0.7.0 tradeoff per the Risk table in the parent spec.
-		ranked[i].DetailLevel = -1
-	}
-
-	applyFileOverrides(ranked, cutoff, budgetBytes, &used, enrichedCost, cfg)
 	promoteFieldExpansion(ranked, cutoff, budgetBytes, used)
 	return ranked
 }
@@ -177,72 +115,7 @@ func BudgetFilesCompact(ranked []RankedFile, maxTokens int, cfg *BlocklistConfig
 // BudgetFiles (enriched default) and BudgetFilesCompact (lean orientation) both use it.
 // cfg may be nil — nil means no file-level overrides (backward compatible).
 func budgetFilesWithCost(ranked []RankedFile, maxTokens int, costFn func([]Symbol) int, cfg *BlocklistConfig) []RankedFile {
-	if len(ranked) == 0 {
-		return ranked
-	}
-
-	// Unlimited mode: everything gets full symbols.
-	if maxTokens == 0 {
-		for i := range ranked {
-			ranked[i].DetailLevel = 2
-		}
-		return ranked
-	}
-
-	budgetBytes := maxTokens * 4
-
-	// Phase 1: Estimate header cost per file, cap at 70% of budget.
-	headerCap := budgetBytes * 70 / 100
-	headerCost := 0
-	cutoff := len(ranked)
-	for i, f := range ranked {
-		cost := len(f.Path) + 30
-		if headerCost+cost > headerCap {
-			cutoff = i
-			break
-		}
-		headerCost += cost
-	}
-
-	// Files beyond cutoff are omitted.
-	for i := cutoff; i < len(ranked); i++ {
-		ranked[i].DetailLevel = -1
-	}
-
-	// Phase 2: Walk files in rank order, assign detail levels within budget.
-	used := headerCost
-	for i := 0; i < cutoff; i++ {
-		if len(ranked[i].Symbols) == 0 {
-			ranked[i].DetailLevel = 0
-			continue
-		}
-
-		groups := countGroups(ranked[i].Path, ranked[i].Symbols)
-		summaryCost := groups * 30
-
-		// Try full detail (level 2) using the caller-supplied cost function.
-		fullCost := costFn(ranked[i].Symbols)
-		if fileAllDead(ranked[i].Symbols) {
-			fullCost = fullCost / 2
-		}
-		if used+fullCost <= budgetBytes {
-			ranked[i].DetailLevel = 2
-			used += fullCost
-			continue
-		}
-
-		// Fall back to summary if it fits.
-		if used+summaryCost <= budgetBytes {
-			ranked[i].DetailLevel = 1
-			used += summaryCost
-			continue
-		}
-
-		ranked[i].DetailLevel = -1
-	}
-
-	applyFileOverrides(ranked, cutoff, budgetBytes, &used, costFn, cfg)
-	return ranked
+	return budgetFilesBreadthFirst(ranked, maxTokens, costFn, cfg)
 }
 
 // promoteFieldExpansion upgrades up to 10 top-ranked DetailLevel-2 files to
