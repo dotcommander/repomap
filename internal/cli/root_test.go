@@ -225,6 +225,11 @@ func TestDefaultModeContainsSymbols(t *testing.T) {
 	// of the enriched format vs. the lean compact format.
 	assert.Contains(t, out, "func (*Map)",
 		"default mode must include method signatures in enriched format")
+
+	// Default mode must append a " :N" start-line anchor to symbol lines so an LLM
+	// can write precise edits in its first turn. Use a regexp — line numbers drift.
+	assert.Regexp(t, ` :\d+`, out,
+		"default mode must include a start-line anchor for symbols")
 }
 
 // TestCompactModeFlagDefault verifies that the -f flag has empty default
