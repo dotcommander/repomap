@@ -273,7 +273,34 @@ repomap commit auto                      # prep + finish when ready, else report
 
 ---
 
-## 10. Set up a project
+## 10. Seed a deep audit
+
+Before a broad review, ask repomap for deterministic leads instead of loading
+the whole tree into a model:
+
+```bash
+repomap audit brief --json --limit 20
+repomap audit hygiene --json
+repomap audit risks --json --limit 20
+repomap audit surface --json --limit 20
+repomap audit effects --json --limit 20
+```
+
+`audit brief` builds the map once and emits risks, surface, effects, and a
+grouped first-read queue for workflow tools. Use the narrower commands when you
+only need one packet.
+`audit hygiene` catches tracked-vs-worktree drift such as ignored source files.
+`audit risks` groups central files, entrypoints, boundary files, and large
+symbols into repo-audit lanes. `audit surface` extracts the user-facing
+contract: commands, flags, env vars, config keys, JSON schema fields, routes,
+and output paths. `audit effects` extracts side-effect boundaries such as
+filesystem writes, subprocesses, HTTP, DB calls, serialization, secrets, crypto,
+time, and randomness. Treat these outputs as audit packets: promote a lead only
+after source, docs, runtime, or command corroboration.
+
+---
+
+## 11. Set up a project
 
 Scaffold a `.repomap.yaml` and install a post-commit hook that keeps the cache warm:
 

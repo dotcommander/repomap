@@ -117,6 +117,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.AddCommand(newCommitCmd())
 	cmd.AddCommand(newCommitPreflightCmd())
 	cmd.AddCommand(newInitCmd())
+	cmd.AddCommand(newAuditCmd())
 	cmd.AddCommand(newCacheCmd())
 	cmd.AddCommand(newFindCmd())
 	cmd.AddCommand(newImpactCmd())

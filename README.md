@@ -196,6 +196,28 @@ repomap cache status --json
 
 `cache status` reports whether the disk cache for the current root exists, is usable, and appears fresh. It checks the saved cache version, root, tracked file hashes/mtimes, and saved HEAD when present.
 
+### Seed a Deep Audit
+
+```bash
+repomap audit brief --json --limit 20
+repomap audit hygiene --json
+repomap audit risks --json --limit 20
+repomap audit surface --json --limit 20
+repomap audit effects --json --limit 20
+```
+
+`audit brief` builds the map once and emits risks, surface, effects, and a
+grouped first-read queue for workflow tools. Use the narrower commands when you
+only need one packet.
+`audit hygiene` reports tracked, untracked, and ignored source-file leads so
+release audits can catch local-only code. `audit risks` converts rank, boundary,
+and symbol-size facts into lane packets for tools such as repo-audit-deep.
+`audit surface` extracts commands, flags, env vars, config keys, JSON schema
+fields, routes, and output paths. `audit effects` extracts side-effect
+boundaries such as filesystem writes, subprocesses, HTTP, DB calls,
+serialization, secrets, crypto, time, and randomness. These are deterministic
+leads, not final findings.
+
 ## Commands
 
 ```bash
@@ -212,6 +234,11 @@ repomap --json-structured           # schema-versioned map data
 repomap find RankFiles              # locate symbols
 repomap context RankFiles           # source + impact context for one symbol
 repomap impact ranker.go            # blast-radius facts for a file
+repomap audit brief                 # single-pass audit packets + first-read queue
+repomap audit hygiene               # tracked/untracked/ignored source leads
+repomap audit risks                 # lane-oriented audit risk packets
+repomap audit surface               # command/flag/config/schema/API/output surfaces
+repomap audit effects               # side-effect and trust-boundary packets
 repomap cache status                # inspect disk cache freshness
 repomap explain ranker.go           # ranking and budget evidence
 repomap init                        # scaffold .repomap.yaml and post-commit cache hook
