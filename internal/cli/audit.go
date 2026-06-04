@@ -296,8 +296,8 @@ func printAuditSurface(w io.Writer, report repomap.AuditSurfaceReport) error {
 	if _, err := fmt.Fprintf(w, "audit surface: %s\n", report.Root); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "  commands=%d flags=%d env=%d config=%d schema=%d routes=%d outputs=%d\n",
-		len(report.Commands), len(report.Flags), len(report.EnvVars), len(report.ConfigKeys), len(report.SchemaFields), len(report.Routes), len(report.Outputs)); err != nil {
+	if _, err := fmt.Fprintf(w, "  commands=%d flags=%d env=%d config=%d schema=%d routes=%d outputs=%d manifests=%d\n",
+		len(report.Commands), len(report.Flags), len(report.EnvVars), len(report.ConfigKeys), len(report.SchemaFields), len(report.Routes), len(report.Outputs), len(report.DependencyManifests)); err != nil {
 		return err
 	}
 	for _, file := range report.Files {

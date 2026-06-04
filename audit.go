@@ -206,6 +206,12 @@ func auditRiskForFile(f RankedFile) AuditFileRisk {
 	if f.ImportedBy >= 5 {
 		add(15, "architecture", fmt.Sprintf("central dependency imported by %d files", f.ImportedBy))
 	}
+	if f.DependsOn >= 4 {
+		add(10, "coupling", fmt.Sprintf("imports %d internal dependencies", f.DependsOn))
+	}
+	if f.Untested {
+		add(10, "test-risk", "exported symbols without package test coverage")
+	}
 	if len(f.Boundaries) > 0 {
 		for _, boundary := range f.Boundaries {
 			switch boundary {
@@ -225,8 +231,11 @@ func auditRiskForFile(f RankedFile) AuditFileRisk {
 	if fileHasLargeSymbol(f.Symbols) {
 		add(8, "large-functions", "symbol spans at least 80 lines")
 	}
+	if fileAllDead(f.Symbols) {
+		add(8, "dead-code", "all exported symbols have no in-repo importers")
+	}
 	if f.ParseMethod != "" && f.ParseMethod != "go_ast" && f.ParseMethod != "tree_sitter" {
-		add(6, "best-practices", "low-fidelity parser: "+f.ParseMethod)
+		add(6, "parse-fidelity", "low-fidelity parser: "+f.ParseMethod)
 	}
 
 	return risk
@@ -264,12 +273,26 @@ func auditLaneReason(name string) string {
 		return "git hygiene can change what ships or builds from a clean checkout"
 	case "data-integrity":
 		return "database, queue, or persistence boundaries need correctness checks"
+	case "dead-code":
+		return "orphaned exported symbols need caller and API-intent checks"
+	case "coupling":
+		return "high fan-out files need package-boundary and change-amplification checks"
+	case "dependency-policy":
+		return "dependency manifests need policy, vulnerability, and replacement checks"
 	case "error-handling":
 		return "subprocess or failure boundaries need actionable errors and cleanup checks"
 	case "large-functions":
 		return "large symbols are harder to review and change safely"
+	case "lifecycle-concurrency":
+		return "goroutines and cancellation boundaries need lifecycle checks"
+	case "parse-fidelity":
+		return "low-fidelity parser output can hide symbols and audit surface"
+	case "performance":
+		return "unbounded reads and hot-path allocations need resource-bound checks"
 	case "security":
 		return "security-sensitive boundaries need explicit review before promotion"
+	case "test-risk":
+		return "public behavior without detected test coverage needs verification checks"
 	default:
 		return "deterministic rank or boundary signal"
 	}
@@ -281,6 +304,8 @@ func auditLaneCommand(name string) string {
 		return "repomap audit hygiene --json"
 	case "cli-ux":
 		return "repomap audit risks --json --limit 20"
+	case "dependency-policy":
+		return "repomap audit surface --json"
 	default:
 		return "repomap audit risks --json"
 	}

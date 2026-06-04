@@ -79,6 +79,18 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 		riskFiles = append(riskFiles, file.Path)
 	}
 	add("ranked-risk-packets", "architecture", "repomap ranked audit score", riskFiles)
+	for _, lane := range risks.Lanes {
+		switch lane.Name {
+		case "test-risk":
+			add("test-risk", "test-risk", lane.Reason, lane.Files)
+		case "dead-code":
+			add("dead-export-surface", "dead-code", lane.Reason, lane.Files)
+		case "coupling":
+			add("coupling-hotspots", "coupling", lane.Reason, lane.Files)
+		case "parse-fidelity":
+			add("parse-fidelity", "parse-fidelity", lane.Reason, lane.Files)
+		}
+	}
 
 	addSurfaceGroup := func(group, lane, reason string, hits []AuditSurfaceHit) {
 		files := make([]string, 0, len(hits))
@@ -94,6 +106,7 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 	addSurfaceGroup("config-surface", "config", "env vars and config keys", surface.ConfigKeys)
 	addSurfaceGroup("api-schema", "api-contracts", "routes and JSON schema fields", surface.Routes)
 	addSurfaceGroup("api-schema", "api-contracts", "routes and JSON schema fields", surface.SchemaFields)
+	addSurfaceGroup("dependency-policy", "dependency-policy", "dependency manifests and policy surface", surface.DependencyManifests)
 
 	for _, kind := range effects.Kinds {
 		switch kind.Name {
@@ -107,6 +120,10 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 			add("secret-and-crypto", "security", kind.Reason, kind.Files)
 		case "time", "filesystem-read":
 			add("state-and-time", "data-integrity", kind.Reason, kind.Files)
+		case "context-background", "goroutine":
+			add("lifecycle-concurrency", "lifecycle-concurrency", kind.Reason, kind.Files)
+		case "unbounded-read":
+			add("resource-bounds", "performance", kind.Reason, kind.Files)
 		}
 	}
 
@@ -115,11 +132,18 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 		"writes-and-persistence":  1,
 		"network-and-api-effects": 2,
 		"subprocess-and-exit":     3,
-		"config-surface":          4,
-		"secret-and-crypto":       5,
-		"ranked-risk-packets":     6,
-		"state-and-time":          7,
-		"api-schema":              8,
+		"dependency-policy":       4,
+		"config-surface":          5,
+		"secret-and-crypto":       6,
+		"lifecycle-concurrency":   7,
+		"resource-bounds":         8,
+		"test-risk":               9,
+		"coupling-hotspots":       10,
+		"dead-export-surface":     11,
+		"parse-fidelity":          12,
+		"ranked-risk-packets":     13,
+		"state-and-time":          14,
+		"api-schema":              15,
 	}
 
 	out := make([]AuditReadGroup, 0, len(groups))
@@ -174,6 +198,7 @@ func compactBriefSurface(report AuditSurfaceReport) AuditSurfaceReport {
 	report.SchemaFields = capBriefSurface(report.SchemaFields, 40)
 	report.Routes = capBriefSurface(report.Routes, 32)
 	report.Outputs = capBriefSurface(report.Outputs, 32)
+	report.DependencyManifests = capBriefSurface(report.DependencyManifests, 16)
 	return report
 }
 

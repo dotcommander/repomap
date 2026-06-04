@@ -60,6 +60,7 @@ func main() {
 	_ = exec.Command("git", "status").Run()
 }
 `
+	require.NoError(t, os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"audit-fixture"}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644))
 
 	cmd := newRootCmd()
@@ -73,6 +74,7 @@ func main() {
 	assert.NotEmpty(t, surface.EnvVars)
 	assert.NotEmpty(t, surface.Routes)
 	assert.NotEmpty(t, surface.SchemaFields)
+	assert.NotEmpty(t, surface.DependencyManifests)
 
 	cmd = newRootCmd()
 	var effectsOut bytes.Buffer

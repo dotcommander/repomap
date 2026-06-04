@@ -16,16 +16,17 @@ const maxAuditLineBytes = 1024 * 1024
 // AuditSurfaceReport captures deterministic user-facing contracts that are
 // useful audit entrypoints before a model starts reading source broadly.
 type AuditSurfaceReport struct {
-	SchemaVersion int                `json:"schema_version"`
-	Root          string             `json:"root"`
-	Files         []AuditSurfaceFile `json:"files"`
-	Commands      []AuditSurfaceHit  `json:"commands,omitempty"`
-	Flags         []AuditSurfaceHit  `json:"flags,omitempty"`
-	EnvVars       []AuditSurfaceHit  `json:"env_vars,omitempty"`
-	ConfigKeys    []AuditSurfaceHit  `json:"config_keys,omitempty"`
-	SchemaFields  []AuditSurfaceHit  `json:"schema_fields,omitempty"`
-	Routes        []AuditSurfaceHit  `json:"routes,omitempty"`
-	Outputs       []AuditSurfaceHit  `json:"outputs,omitempty"`
+	SchemaVersion       int                `json:"schema_version"`
+	Root                string             `json:"root"`
+	Files               []AuditSurfaceFile `json:"files"`
+	Commands            []AuditSurfaceHit  `json:"commands,omitempty"`
+	Flags               []AuditSurfaceHit  `json:"flags,omitempty"`
+	EnvVars             []AuditSurfaceHit  `json:"env_vars,omitempty"`
+	ConfigKeys          []AuditSurfaceHit  `json:"config_keys,omitempty"`
+	SchemaFields        []AuditSurfaceHit  `json:"schema_fields,omitempty"`
+	Routes              []AuditSurfaceHit  `json:"routes,omitempty"`
+	Outputs             []AuditSurfaceHit  `json:"outputs,omitempty"`
+	DependencyManifests []AuditSurfaceHit  `json:"dependency_manifests,omitempty"`
 }
 
 // AuditSurfaceFile groups user-facing contract hits by source file.
@@ -119,10 +120,22 @@ var effectPatterns = []auditPattern{
 	{kind: "http", lane: "api-contracts", weight: 8, re: regexp.MustCompile(`\b(?:http\.Client|http\.NewRequest|http\.Get|http\.Post|http\.Handle|http\.HandleFunc|ListenAndServe)\b`), name: firstToken},
 	{kind: "database", lane: "data-integrity", weight: 10, re: regexp.MustCompile(`\b(?:sql\.Open|QueryContext|ExecContext|BeginTx|Commit|Rollback|sqlite|pgx|database/sql)\b`), name: firstToken},
 	{kind: "serialization", lane: "api-contracts", weight: 5, re: regexp.MustCompile(`\b(?:json|yaml|toml|xml)\.(?:Marshal|Unmarshal|NewEncoder|NewDecoder)\b`), name: firstToken},
-	{kind: "secret", lane: "security", weight: 9, re: regexp.MustCompile(`(?i)\b(?:api[_-]?key|token|secret|password|credential)\b`), name: literalName("secret-like identifier")},
+	{kind: "secret", lane: "security", weight: 9, re: regexp.MustCompile(`(?i)(?:api[_-]?key|apikey|token|secret|password|passwd|credentials?)\s*[:=]\s*["']?[A-Za-z0-9_/+.-]{8,}`), name: literalName("secret-like assignment")},
 	{kind: "crypto", lane: "security", weight: 8, re: regexp.MustCompile(`\b(?:crypto/|x/crypto|bcrypt|sha256|sha512|hmac|cipher)\b`), name: firstToken},
 	{kind: "time", lane: "data-integrity", weight: 3, re: regexp.MustCompile(`\btime\.(?:Now|Since|After|NewTicker|NewTimer)\(`), name: firstToken},
 	{kind: "randomness", lane: "security", weight: 5, re: regexp.MustCompile(`\b(?:rand\.|crypto/rand)\b`), name: firstToken},
+	{kind: "context-background", lane: "lifecycle-concurrency", weight: 7, re: regexp.MustCompile(`\bcontext\.Background\(\)`), name: literalName("context.Background")},
+	{kind: "goroutine", lane: "lifecycle-concurrency", weight: 8, re: regexp.MustCompile(`\bgo\s+func\s*\(`), name: literalName("go func")},
+	{kind: "unbounded-read", lane: "performance", weight: 9, re: regexp.MustCompile(`\bio\.ReadAll\s*\(`), name: literalName("io.ReadAll")},
+}
+
+var dependencyManifestNames = []string{
+	"go.mod",
+	"package.json",
+	"composer.json",
+	"Cargo.toml",
+	"pyproject.toml",
+	"Gemfile",
 }
 
 // AuditSurface extracts command, flag, env, config, route, and output surfaces.
@@ -164,6 +177,7 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 			}
 		}
 	}
+	m.addDependencyManifestSurface(&report)
 	sortSurfaceFiles(report.Files)
 	if limit > 0 && len(report.Files) > limit {
 		report.Files = report.Files[:limit]
@@ -282,6 +296,9 @@ func scanEffectFile(file auditStaticFile) ([]AuditEffect, int) {
 			if match == nil {
 				continue
 			}
+			if pattern.kind == "unbounded-read" && strings.Contains(line.text, "LimitReader") {
+				continue
+			}
 			effects = append(effects, AuditEffect{
 				Kind:     pattern.kind,
 				Op:       patternName(pattern, match),
@@ -294,6 +311,29 @@ func scanEffectFile(file auditStaticFile) ([]AuditEffect, int) {
 		}
 	}
 	return effects, score + min(file.score/20, 10)
+}
+
+func (m *Map) addDependencyManifestSurface(report *AuditSurfaceReport) {
+	for _, name := range dependencyManifestNames {
+		info, err := os.Stat(filepath.Join(m.root, name))
+		if err != nil || info.IsDir() {
+			continue
+		}
+		hit := AuditSurfaceHit{
+			Kind:     "dependency-manifest",
+			Name:     name,
+			Path:     name,
+			Lane:     "dependency-policy",
+			Evidence: "root dependency manifest",
+		}
+		report.DependencyManifests = append(report.DependencyManifests, hit)
+		report.Files = append(report.Files, AuditSurfaceFile{
+			Path:  name,
+			Score: 15,
+			Kinds: []string{"dependency-manifest"},
+			Hits:  []AuditSurfaceHit{hit},
+		})
+	}
 }
 
 func patternName(pattern auditPattern, match []string) string {
@@ -441,13 +481,19 @@ func effectKindReason(name string) string {
 	case "serialization":
 		return "serialization boundaries define API, file, and persistence contracts"
 	case "secret":
-		return "secret-like identifiers need storage, logging, and config review"
+		return "secret-like assignments need storage, logging, and config review"
 	case "crypto":
 		return "crypto boundaries need algorithm and key-handling review"
 	case "time":
 		return "time-dependent logic can affect ordering, expiry, and reproducibility"
 	case "randomness":
 		return "randomness can affect security, determinism, and reproducibility"
+	case "context-background":
+		return "context.Background in source can break caller cancellation chains"
+	case "goroutine":
+		return "goroutine launches need exit and ownership checks"
+	case "unbounded-read":
+		return "io.ReadAll without an obvious local cap needs resource-bound review"
 	default:
 		return "static side-effect signal"
 	}
@@ -463,6 +509,10 @@ func effectKindLane(name string) string {
 		return "api-contracts"
 	case "secret", "crypto", "randomness":
 		return "security"
+	case "context-background", "goroutine":
+		return "lifecycle-concurrency"
+	case "unbounded-read":
+		return "performance"
 	default:
 		return "best-practices"
 	}
