@@ -113,10 +113,63 @@ func ApplyFixFindings(ctx context.Context, repoRoot string, findings []Finding) 
 	return applied, skipped, nil
 }
 
+// ReviewFindingCount returns the number of findings requiring judgment.
+func ReviewFindingCount(findings []Finding) int {
+	count := 0
+	for _, f := range findings {
+		if f.DefaultAction == ActionReview {
+			count++
+		}
+	}
+	return count
+}
+
+// ValidateReviewDecisions verifies that all REVIEW findings have one explicit
+// verdict before commit finish executes the prepared plan.
+func ValidateReviewDecisions(findings []Finding, decisions []ReviewDecision) error {
+	reviewByID := make(map[string]Finding)
+	for _, f := range findings {
+		if f.DefaultAction == ActionReview {
+			reviewByID[findingID(f)] = f
+		}
+	}
+
+	seen := make(map[string]struct{}, len(decisions))
+	for _, d := range decisions {
+		if d.ID == "" {
+			return fmt.Errorf("decision missing id")
+		}
+		if _, ok := seen[d.ID]; ok {
+			return fmt.Errorf("duplicate decision for %s", d.ID)
+		}
+		seen[d.ID] = struct{}{}
+
+		if _, ok := reviewByID[d.ID]; !ok {
+			return fmt.Errorf("decision for unknown review finding %s", d.ID)
+		}
+		switch d.Verdict {
+		case VerdictSafe:
+		case VerdictUnsafe:
+			if d.Replacement == "" {
+				return fmt.Errorf("unsafe decision for %s missing replacement", d.ID)
+			}
+		default:
+			return fmt.Errorf("decision for %s has unsupported verdict %q", d.ID, d.Verdict)
+		}
+	}
+
+	for id := range reviewByID {
+		if _, ok := seen[id]; !ok {
+			return fmt.Errorf("missing decision for review finding %s", id)
+		}
+	}
+	return nil
+}
+
 // ApplyReviewDecisions applies LLM-adjudicated verdicts to REVIEW findings.
 // For verdict="unsafe": applies the decision's Replacement at the finding's
 // file+line. For verdict="safe": no-op (finding is cleared without edit).
-// Decisions referencing unknown findings are silently skipped.
+// Callers should validate decisions before applying them.
 func ApplyReviewDecisions(ctx context.Context, repoRoot string, decisions []ReviewDecision, findings []Finding) error {
 	// Build finding lookup by ID (file:line).
 	findByID := make(map[string]Finding, len(findings))

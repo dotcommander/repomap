@@ -220,7 +220,7 @@ func (m *Map) StringXML() string {
 func (m *Map) Ranked() []RankedFile {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.ranked
+	return cloneRanked(m.ranked)
 }
 
 // Config returns the configuration this Map was created with.

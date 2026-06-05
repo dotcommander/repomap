@@ -12,6 +12,7 @@ import (
 // When verbose is true, shows all symbols without summarization.
 // When detail is true, shows signatures for funcs/methods and fields for structs.
 func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *BlocklistConfig, explain bool) string {
+	files = cloneRanked(files)
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""
@@ -85,6 +86,7 @@ func FormatMap(files []RankedFile, maxTokens int, verbose, detail bool, cfg *Blo
 // cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
 func FormatMapCompact(files []RankedFile, maxTokens int, cfg *BlocklistConfig, explain bool) string {
+	files = cloneRanked(files)
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""

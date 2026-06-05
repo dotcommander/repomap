@@ -3,6 +3,7 @@ package repomap
 import (
 	"encoding/json"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,6 +47,36 @@ func TestDefaultMapHeaderHasTokenEstimate(t *testing.T) {
 		assert.Regexp(t, `~\d+ tokens\)`, out)
 		assert.Contains(t, out, "· compact")
 	})
+}
+
+func TestFormatMapConcurrentSharedInput(t *testing.T) {
+	t.Parallel()
+
+	sym := Symbol{
+		Name:      "ProcessBatch",
+		Kind:      "function",
+		Exported:  true,
+		Line:      5,
+		Signature: "(items []string) error",
+		Doc:       "applies batch rules",
+	}
+	files := []RankedFile{makeRankedFile("core/batch.go", 2, []Symbol{sym})}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			out := FormatMap(files, 2048, false, false, nil, false)
+			assert.Contains(t, out, "Repository Map")
+		}()
+		go func() {
+			defer wg.Done()
+			out := FormatMapCompact(files, 2048, nil, false)
+			assert.Contains(t, out, "Repository Map")
+		}()
+	}
+	wg.Wait()
 }
 
 func TestDocSubtitleRendering_DetailFormat(t *testing.T) {

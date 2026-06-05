@@ -142,6 +142,7 @@ func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, c
 // information from the callers map into the output.
 // cfg may be nil — nil means no file-level detail overrides.
 func FormatMapWithCallers(files []RankedFile, maxTokens int, verbose, detail bool, callers SymbolCallers, limit int, cfg *BlocklistConfig, explain bool) string {
+	files = cloneRanked(files)
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""

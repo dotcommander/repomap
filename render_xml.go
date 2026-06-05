@@ -10,6 +10,7 @@ import (
 // cfg may be nil — nil means no file-level detail overrides.
 // Returns empty string if no files have symbols.
 func FormatXML(files []RankedFile, maxTokens int, cfg *BlocklistConfig) string {
+	files = cloneRanked(files)
 	totalFiles, totalSymbols := countTotals(files)
 	if totalFiles == 0 {
 		return ""

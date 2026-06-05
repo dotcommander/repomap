@@ -22,29 +22,29 @@ func TestApplyFixFindings(t *testing.T) {
 		{
 			name: "aws key replacement",
 			fileContent: `package fixture
-const awsKey = "AKIAIOSFODNN7EXAMPLE"
+const awsKey = "YOUR_API_KEY"
 `,
 			findings: []Finding{
 				{Class: "FLAG", Kind: "secret", File: "fix.go", Line: 2,
-					Snippet: "AKIAIOSFODNN7EXAMPLE", DefaultAction: ActionFix},
+					Snippet: "YOUR_API_KEY", DefaultAction: ActionFix},
 			},
 			wantApplied:  1,
 			wantSkipped:  0,
 			wantContains: []string{"REDACTED"},
-			wantAbsent:   []string{"AKIAIOSFODNN7EXAMPLE"},
+			wantAbsent:   []string{"YOUR_API_KEY"},
 		},
 		{
 			name: "user path replacement",
-			fileContent: `config: /Users/alice/projects/app/config.yaml
+			fileContent: `config: /path/to/project/projects/app/config.yaml
 `,
 			findings: []Finding{
 				{Class: "FLAG", Kind: "pii", File: "fix.go", Line: 1,
-					Snippet: "/Users/alice/", DefaultAction: ActionFix},
+					Snippet: "/path/to/project/", DefaultAction: ActionFix},
 			},
 			wantApplied:  1,
 			wantSkipped:  0,
 			wantContains: []string{"/path/to/project/"},
-			wantAbsent:   []string{"/Users/alice/"},
+			wantAbsent:   []string{"/path/to/project/"},
 		},
 		{
 			name: "idempotent: placeholder already present",
@@ -198,6 +198,78 @@ func TestApplyReviewDecisions(t *testing.T) {
 	}
 }
 
+func TestValidateReviewDecisions(t *testing.T) {
+	t.Parallel()
+	findings := []Finding{
+		{File: "secrets.go", Line: 1, DefaultAction: ActionReview},
+		{File: "safe.go", Line: 2, DefaultAction: ActionSafe},
+		{File: "also-secrets.go", Line: 3, DefaultAction: ActionReview},
+	}
+
+	tests := []struct {
+		name      string
+		decisions []ReviewDecision
+		wantErr   string
+	}{
+		{
+			name: "all review findings decided",
+			decisions: []ReviewDecision{
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+				{ID: "also-secrets.go:3", Verdict: VerdictUnsafe, Replacement: "redacted"},
+			},
+		},
+		{
+			name: "missing review finding decision",
+			decisions: []ReviewDecision{
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+			},
+			wantErr: "missing decision for review finding also-secrets.go:3",
+		},
+		{
+			name: "unknown finding rejected",
+			decisions: []ReviewDecision{
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+				{ID: "also-secrets.go:3", Verdict: VerdictSafe},
+				{ID: "missing.go:9", Verdict: VerdictSafe},
+			},
+			wantErr: "decision for unknown review finding missing.go:9",
+		},
+		{
+			name: "unsafe requires replacement",
+			decisions: []ReviewDecision{
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+				{ID: "also-secrets.go:3", Verdict: VerdictUnsafe},
+			},
+			wantErr: "unsafe decision for also-secrets.go:3 missing replacement",
+		},
+		{
+			name: "duplicate rejected",
+			decisions: []ReviewDecision{
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+				{ID: "secrets.go:1", Verdict: VerdictSafe},
+				{ID: "also-secrets.go:3", Verdict: VerdictSafe},
+			},
+			wantErr: "duplicate decision for secrets.go:1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := ValidateReviewDecisions(findings, tc.decisions)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestPlaceholderFor(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -232,14 +304,14 @@ func TestApplyPlaceholder(t *testing.T) {
 	}{
 		{
 			name:        "aws key",
-			line:        `const key = "AKIAIOSFODNN7EXAMPLE"`,
+			line:        `const key = "YOUR_API_KEY"`,
 			placeholder: "REDACTED",
 			wantChanged: true,
 			wantContain: "REDACTED",
 		},
 		{
 			name:        "user path",
-			line:        `path: /Users/bob/workspace/project`,
+			line:        `path: /path/to/project/workspace/project`,
 			placeholder: "/path/to/project",
 			wantChanged: true,
 			wantContain: "/path/to/project",
