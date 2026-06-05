@@ -93,18 +93,21 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 
 	// Step 2: parse and apply decisions.
 	groups := state.Plan
+	dec := &finishDecisions{}
 	if decisionsArg != "" {
-		dec, parseErr := parseDecisions(decisionsArg)
+		parsed, parseErr := parseDecisions(decisionsArg)
 		if parseErr != nil {
 			return finishFatal(jsonOut, 2, fmt.Sprintf("parse decisions: %v", parseErr))
 		}
+		dec = parsed
+	}
+
+	if err := validateAndApplyReviewDecisions(ctx, repoRoot, state, dec.ReviewDecisions); err != nil {
+		return finishFatal(jsonOut, 2, err.Error())
+	}
+
+	if decisionsArg != "" {
 		// Apply review decisions (secret/PII substitutions).
-		if len(dec.ReviewDecisions) > 0 {
-			findings, _ := repomap.LoadFindings(state.Analysis.Refs.Findings)
-			if applyErr := repomap.ApplyReviewDecisions(ctx, repoRoot, dec.ReviewDecisions, findings); applyErr != nil {
-				return finishFatal(jsonOut, 2, fmt.Sprintf("apply review decisions: %v", applyErr))
-			}
-		}
 		// Override group subjects from LLM polishing.
 		if len(dec.Subjects) > 0 {
 			subjectMap := make(map[string]string, len(dec.Subjects))
@@ -144,6 +147,36 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 	}
 
 	return runVerifyAndEmit(ctx, repoRoot, state.SessionRepos, execResult, tag, jsonOut)
+}
+
+func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state *repomap.PrepState, decisions []repomap.ReviewDecision) error {
+	if state.Analysis == nil {
+		if len(decisions) > 0 {
+			return fmt.Errorf("review decisions: missing analysis state")
+		}
+		return nil
+	}
+	if state.Analysis.Secrets.AmbiguousCount == 0 && len(decisions) == 0 {
+		return nil
+	}
+	if state.Analysis.Refs.Findings == "" {
+		return fmt.Errorf("review decisions: missing findings artifact")
+	}
+
+	findings, err := repomap.LoadFindings(state.Analysis.Refs.Findings)
+	if err != nil {
+		return fmt.Errorf("load findings: %w", err)
+	}
+	if err := repomap.ValidateReviewDecisions(findings, decisions); err != nil {
+		return fmt.Errorf("review decisions: %w", err)
+	}
+	if len(decisions) == 0 {
+		return nil
+	}
+	if err := repomap.ApplyReviewDecisions(ctx, repoRoot, decisions, findings); err != nil {
+		return fmt.Errorf("apply review decisions: %w", err)
+	}
+	return nil
 }
 
 // runVerifyAndEmit runs cross-repo + self-verify then emits the final JSON.

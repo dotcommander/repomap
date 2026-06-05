@@ -3,6 +3,11 @@ package lsp
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -117,7 +122,55 @@ func TestForFileConcurrentFailedStartIsBounded(t *testing.T) {
 	}
 }
 
+func TestForFileFailedInitializeCleansStartedProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses POSIX process signaling")
+	}
+
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	script := "echo $$ > " + pidFile + "\n" +
+		"while true; do sleep 30; done\n"
+
+	original := defaultServers["go"]
+	defaultServers["go"] = []ServerConfig{{Command: "sh", Args: []string{"-c", script}}}
+	t.Cleanup(func() { defaultServers["go"] = original })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	mgr := NewManager(dir)
+	_, _, err := mgr.ForFile(ctx, "main.go")
+	require.Error(t, err)
+
+	pid := waitForPIDFile(t, pidFile)
+	require.Eventually(t, func() bool {
+		return !processAlive(pid)
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 // writeFile is a test helper that writes content to path.
 func writeFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+func waitForPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+			require.NoError(t, parseErr)
+			return pid
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("pid file %s was not written", path)
+	return 0
+}
+
+func processAlive(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil
 }

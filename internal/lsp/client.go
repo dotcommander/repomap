@@ -9,13 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ErrServerDied is returned when the language server process exits unexpectedly.
 var ErrServerDied = errors.New("language server died")
+
+const shutdownTimeout = 2 * time.Second
 
 // Client is an LSP client connected to a language server process.
 type Client struct {
@@ -30,11 +34,15 @@ type Client struct {
 	done    chan struct{} // closed when readLoop exits
 
 	initDone atomic.Bool
+
+	shutdownOnce sync.Once
+	shutdownErr  error
 }
 
 // NewClient spawns a language server process and returns a connected client.
 func NewClient(ctx context.Context, command string, args ...string) (*Client, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
+	cmd.WaitDelay = shutdownTimeout
 	// Discard gopls stderr — it's chatty and we don't need it.
 	cmd.Stderr = io.Discard
 
@@ -215,10 +223,60 @@ func (c *Client) DidClose(file string) error {
 
 // Shutdown sends the shutdown request and exit notification.
 func (c *Client) Shutdown(ctx context.Context) error {
-	if !c.initDone.Load() {
+	c.shutdownOnce.Do(func() {
+		c.shutdownErr = c.shutdown(ctx)
+	})
+	return c.shutdownErr
+}
+
+func (c *Client) shutdown(ctx context.Context) error {
+	if c.initDone.Load() {
+		_ = c.call(ctx, "shutdown", nil, nil)
+		_ = c.notify("exit", nil)
+	}
+	return c.closeProcess(ctx)
+}
+
+func (c *Client) closeProcess(ctx context.Context) error {
+	_ = c.stdin.Close()
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- c.cmd.Wait()
+	}()
+
+	select {
+	case err := <-waitCh:
+		if errors.Is(err, os.ErrProcessDone) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		killErr := killProcess(c.cmd)
+		waitErr := <-waitCh
+		if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+			return killErr
+		}
+		if waitErr != nil && !errors.Is(waitErr, os.ErrProcessDone) {
+			return waitErr
+		}
+		return ctx.Err()
+	case <-time.After(shutdownTimeout):
+		killErr := killProcess(c.cmd)
+		waitErr := <-waitCh
+		if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+			return killErr
+		}
+		if waitErr != nil && !errors.Is(waitErr, os.ErrProcessDone) {
+			return waitErr
+		}
+		return fmt.Errorf("lsp shutdown timed out")
+	}
+}
+
+func killProcess(cmd *exec.Cmd) error {
+	if cmd.Process == nil {
 		return nil
 	}
-	_ = c.call(ctx, "shutdown", nil, nil)
-	_ = c.notify("exit", nil)
-	return c.cmd.Wait()
+	return cmd.Process.Kill()
 }

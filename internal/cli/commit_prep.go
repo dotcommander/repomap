@@ -160,9 +160,10 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 
 	// Build review items (REVIEW findings, capped at 5).
 	reviewItems := repomap.BuildReviewItems(findings, 5)
+	reviewCount := repomap.ReviewFindingCount(findings)
 
 	// Status determination.
-	status, abortReason := prepStatus(analysis, reviewItems, lowConf)
+	status, abortReason := prepStatus(analysis, reviewCount, lowConf)
 
 	// Step 9: persist state.
 	state := &repomap.PrepState{
@@ -196,9 +197,9 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 }
 
 // prepStatus returns the status string and abort reason for the payload.
-func prepStatus(a *repomap.CommitAnalysis, review []repomap.PrepReviewItem, lc []repomap.PrepLowConf) (string, string) {
+func prepStatus(a *repomap.CommitAnalysis, reviewCount int, lc []repomap.PrepLowConf) (string, string) {
 	switch {
-	case len(review) > 5 || len(lc) > 3:
+	case reviewCount > 5 || len(lc) > 3:
 		return repomap.PrepStatusAbort, "too many ambiguous items, run /dc:commit interactively"
 	case a.Secrets.AmbiguousCount > 0 || len(lc) > 0:
 		return repomap.PrepStatusNeedsJudgment, ""
