@@ -315,6 +315,41 @@ pin specific files to a detail level. See [Configuration](04-configuration.md).
 
 ---
 
+## 12. Start a warm JSON-RPC server
+
+For coding agents and editors that ask many small questions, `repomap serve` keeps
+one map warm per project root instead of rebuilding on every invocation. It starts a
+long-lived JSON-RPC 2.0 server on stdin/stdout using NDJSON framing — one JSON
+object per line — so map and symbol queries can answer in microseconds after the
+startup build.
+
+```bash
+repomap serve . 2>/dev/null <<'EOF'
+{"jsonrpc":"2.0","id":1,"method":"map/status","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"symbol/find","params":{"query":"kind:struct:Map"}}
+EOF
+```
+
+| Method | Params | Result |
+|--------|--------|--------|
+| `map/render` | `{"format":""}` or `compact`, `verbose`, `detail`, `lines`, `xml`, `structured` | `{"content":"..."}` |
+| `map/status` | `{}` | `{"built_at":"<RFC3339>","stale":false,"root":"<abs path>"}` |
+| `symbol/find` | `{"query":"[kind:<kind>:][file:<path>:]<name>"}` | `{"matches":[...]}` |
+| `file/explain` | `{"path":"<rel>"}` | `ExplainResult` JSON |
+| `file/context` | `{"query":"...","kind":"...","file":"...","max_source_lines":120}` | `SymbolContext` JSON |
+
+`symbol/find` and `file/context` share the positional query syntax:
+`[kind:<kind>:][file:<path>:]<name>`. Qualifiers may appear in either order; the
+remaining token is the symbol name.
+
+Each request checks whether the map is stale. The mtime check is debounced for 30s;
+when stale, `serve` rebuilds synchronously before answering. Close stdin (EOF) to
+shut it down. Lifecycle messages such as build, ready, rebuild, and shutdown go to
+stderr only; stdout stays JSON-RPC. JSON-RPC errors use `-32700` parse error,
+`-32601` method not found, `-32602` invalid params, and `-32000` server error.
+
+---
+
 ## A worked agent loop
 
 Putting it together — how an agent might use repomap across a single task ("fix the

@@ -4,6 +4,14 @@ All notable changes to repomap are documented here.
 
 ---
 
+## Unreleased
+
+### Features
+
+- serve: stdio JSON-RPC 2.0 server for warm map queries (NDJSON; map/render, map/status, symbol/find, file/explain, file/context)
+
+---
+
 ## v0.12.0 — 2026-05-29
 
 ### Features
