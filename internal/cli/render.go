@@ -53,16 +53,26 @@ func renderWithCalls(
 		if cached != nil {
 			callers = cached
 		} else {
-			var err error
-			callers, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
+			var (
+				err   error
+				stats repomap.CallsStats
+			)
+			callers, stats, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
 			if err != nil {
 				return err
 			}
-			_ = repomap.SaveCallsCache(cacheDir, hash, callers) // best-effort
+			// Degraded run = any LSP timeout or error. Caching a degraded
+			// (possibly incomplete) result as authoritative would poison
+			// future runs, so skip the write and tell the user once.
+			if callsRunDegraded(stats) {
+				fmt.Fprintf(os.Stderr, "repomap: calls cache not written: %d LSP errors/timeouts\n", stats.Timeout+stats.Error)
+			} else {
+				_ = repomap.SaveCallsCache(cacheDir, hash, callers) // best-effort
+			}
 		}
 	} else {
 		var err error
-		callers, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
+		callers, _, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
 		if err != nil {
 			return err
 		}
@@ -84,16 +94,16 @@ func renderWithCalls(
 	return renderCallsOutput(os.Stdout, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }
 
-func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, error) {
+func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {
 	var q repomap.RefsQuerier
 	if useBinary {
 		if err := repomap.CheckLspq(); err != nil {
-			return nil, err
+			return nil, repomap.CallsStats{}, err
 		}
 		q = repomap.DefaultQuerier()
 	} else {
 		if err := repomap.CheckGopls(); err != nil {
-			return nil, err
+			return nil, repomap.CallsStats{}, err
 		}
 		mgr := lsp.NewManager(root)
 		defer mgr.Shutdown(context.WithoutCancel(ctx))
@@ -113,7 +123,15 @@ func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile,
 	if stats.OK+stats.Timeout+stats.Error > 0 {
 		fmt.Fprintf(os.Stderr, "call expansion: %d OK, %d timeout, %d error\n", stats.OK, stats.Timeout, stats.Error)
 	}
-	return callers, nil
+	return callers, stats, nil
+}
+
+// callsRunDegraded reports whether an expansion run had any LSP timeout or
+// error, in which case its (possibly incomplete) result must NOT be cached as
+// authoritative. Pure predicate so the cache-write gate is unit-testable
+// without a live LSP backend.
+func callsRunDegraded(stats repomap.CallsStats) bool {
+	return stats.Timeout > 0 || stats.Error > 0
 }
 
 func buildProgressFn(isTTY bool) func(done, total int) {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 )
 
 // callsCacheEntry is the on-disk format for a cached --calls expansion.
@@ -20,7 +19,11 @@ type callsCacheEntry struct {
 const callsCacheVersion = 1
 
 // CallsCacheKey computes the FNV hash key for a --calls cache entry.
-// Components: absolute repo root + sorted (path, mtime) pairs + flag combo string.
+// Components: absolute repo root + sorted (path, content-sha256) pairs + flag
+// combo string. The key changes whenever any scanned source file's CONTENT
+// changes, even if its path, mtime, and the flag values are unchanged. Files
+// that cannot be hashed (deleted, unreadable) are skipped, matching the prior
+// behaviour for un-stattable files.
 func CallsCacheKey(root string, ranked []RankedFile, cfg CallsConfig) string {
 	h := fnv.New64a()
 
@@ -28,24 +31,23 @@ func CallsCacheKey(root string, ranked []RankedFile, cfg CallsConfig) string {
 	fmt.Fprint(h, root)
 	fmt.Fprint(h, "\x00")
 
-	// Sorted file paths and their mtimes (use the path as mtime proxy —
-	// we scan mtimes from disk to detect changes).
+	// Sorted file paths and their content hashes.
 	type entry struct {
-		path  string
-		mtime time.Time
+		path string
+		hash string
 	}
 	entries := make([]entry, 0, len(ranked))
 	for _, rf := range ranked {
 		abs := filepath.Join(root, rf.Path)
-		info, err := os.Stat(abs)
+		sum, err := sha256OfFile(abs)
 		if err != nil {
 			continue
 		}
-		entries = append(entries, entry{rf.Path, info.ModTime()})
+		entries = append(entries, entry{rf.Path, sum})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 	for _, e := range entries {
-		fmt.Fprintf(h, "%s\x00%d\x00", e.path, e.mtime.UnixNano())
+		fmt.Fprintf(h, "%s\x00%s\x00", e.path, e.hash)
 	}
 
 	// Flag combo.
