@@ -4,6 +4,14 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.13.1 — 2026-06-13
+
+### Fixes
+
+- commit: collapse finding placeholder replacement into a focused helper with coverage for generic project paths and placeholder-shaped test credentials.
+
+---
+
 ## v0.13.0 — 2026-06-13
 
 ### Features
