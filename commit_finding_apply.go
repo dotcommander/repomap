@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -83,7 +82,7 @@ func ApplyFixFindings(ctx context.Context, repoRoot string, findings []Finding) 
 				continue
 			}
 
-			newLine, changed := applyPlaceholder(lines[idx], placeholder)
+			newLine, changed := applyFindingPlaceholder(lines[idx], f.Snippet, placeholder)
 			if !changed {
 				// Already substituted — idempotent skip.
 				skipped = append(skipped, f)
@@ -247,66 +246,6 @@ func placeholderFor(kind string) string {
 		}
 	}
 	return ""
-}
-
-// userPathRe matches /Users/<name>/... or /home/<name>/... paths.
-var userPathRe = regexp.MustCompile(`(/Users/[A-Za-z0-9_.-]+|/home/[A-Za-z0-9_.-]+)/`)
-
-var secretAssignRe = regexp.MustCompile(
-	`(?i)((?:api_key|apikey|api-key|token|secret|password|passwd|credentials)\s*[:=]\s*)(["']?)([^"'\s]+)(["']?)`,
-)
-
-var secretTokenRe = regexp.MustCompile(
-	`(AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|pk_live_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{36,})`,
-)
-
-// applyPlaceholder rewrites a line to replace detected sensitive content with
-// the placeholder. It preserves the surrounding line syntax:
-//   - For path PII (/path/to/project/): replaces the path prefix with the placeholder.
-//   - For secrets (API keys, passwords, tokens): replaces the value portion
-//     after the separator (: = -) while keeping the key name and quote style.
-//
-// Returns (newLine, changed).
-func applyPlaceholder(line, placeholder string) (string, bool) {
-	// Idempotency guard: if placeholder already present, don't re-apply.
-	if strings.Contains(line, placeholder) {
-		return line, false
-	}
-
-	// Path replacement: /Users/<name>/ or /home/<name>/
-	if userPathRe.MatchString(line) && (placeholder == "/path/to/project" ||
-		placeholder == "REDACTED") {
-		newLine := userPathRe.ReplaceAllString(line, "/path/to/project/")
-		if newLine != line {
-			return newLine, true
-		}
-	}
-
-	// Secret replacement: look for key=value or key: value patterns.
-	// Preserve everything up to and including the separator+whitespace+open-quote,
-	// then substitute the value with the placeholder.
-	if m := secretAssignRe.FindStringSubmatchIndex(line); m != nil {
-		// Groups: 0=full, 1=key+sep, 2=open-quote, 3=value, 4=close-quote
-		prefix := line[m[2]:m[3]] // key+separator
-		openQ := line[m[4]:m[5]]  // open quote (may be empty)
-		closeQ := line[m[8]:m[9]] // close quote
-		replacement := line[:m[2]] + prefix + openQ + placeholder + closeQ + line[m[9]:]
-		if replacement != line {
-			return replacement, true
-		}
-	}
-
-	// Fallback: if the line contains a recognizable secret pattern (AKIA..., sk-...),
-	// replace the matched token directly.
-	if secretTokenRe.MatchString(line) {
-		newLine := secretTokenRe.ReplaceAllString(line, placeholder)
-		if newLine != line {
-			return newLine, true
-		}
-	}
-
-	// No pattern matched; return unchanged (caller marks as skipped).
-	return line, false
 }
 
 // findingID returns a stable string identity for a finding used as a map key.
