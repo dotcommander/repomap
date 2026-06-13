@@ -100,6 +100,8 @@ func main() {
 	assert.NotEmpty(t, brief.Surface.Files)
 	assert.NotEmpty(t, brief.Effects.Files)
 	assert.NotEmpty(t, brief.FirstReadQueue)
+	assert.NotEmpty(t, brief.ReviewPlan)
+	assert.NotEmpty(t, brief.ReviewPlan[0].Gates)
 }
 
 func TestAuditCommandRegistered(t *testing.T) {

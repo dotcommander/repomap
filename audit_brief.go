@@ -16,6 +16,7 @@ type AuditBriefReport struct {
 	Surface        AuditSurfaceReport `json:"surface"`
 	Effects        AuditEffectReport  `json:"effects"`
 	FirstReadQueue []AuditReadGroup   `json:"first_read_queue"`
+	ReviewPlan     []AuditReviewLane  `json:"review_plan"`
 }
 
 // AuditReadGroup is a compact first-read queue grouped by the kind of risk a
@@ -25,6 +26,18 @@ type AuditReadGroup struct {
 	Lane    string   `json:"lane"`
 	Reasons []string `json:"reasons"`
 	Files   []string `json:"files"`
+}
+
+// AuditReviewLane is a deterministic per-lane review obligation derived from the
+// first-read queue: which files to cover, what gates to discharge, and how to
+// verify. It carries no findings — only obligations implied by the static packets.
+type AuditReviewLane struct {
+	Lane   string   `json:"lane"`
+	Group  string   `json:"group"`
+	Files  []string `json:"files"`
+	Gates  []string `json:"gates"`
+	Verify []string `json:"verify"`
+	Why    []string `json:"why"`
 }
 
 // AuditBrief computes risks, surface, effects, and a grouped first-read queue
@@ -40,6 +53,13 @@ func (m *Map) AuditBrief(ctx context.Context, limit int) (AuditBriefReport, erro
 		return AuditBriefReport{}, err
 	}
 	queue := BuildAuditReadQueue(risks, surface, effects)
+	goDetected := false
+	for _, file := range risks.Files {
+		if file.Language == "go" {
+			goDetected = true
+			break
+		}
+	}
 	return AuditBriefReport{
 		SchemaVersion:  1,
 		Root:           risks.Root,
@@ -47,6 +67,7 @@ func (m *Map) AuditBrief(ctx context.Context, limit int) (AuditBriefReport, erro
 		Surface:        compactBriefSurface(surface),
 		Effects:        compactBriefEffects(effects),
 		FirstReadQueue: queue,
+		ReviewPlan:     BuildAuditReviewPlan(queue, goDetected),
 	}, nil
 }
 
@@ -164,6 +185,114 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 			return ap - bp
 		}
 		return strings.Compare(a.Group, b.Group)
+	})
+	return out
+}
+
+// auditLanePlan is the static gates/verify obligation attached to a review lane.
+// verify holds Go-specific commands emitted only when the target has Go sources.
+type auditLanePlan struct {
+	gates  []string
+	verify []string
+}
+
+// auditReviewLaneTable maps each first-read-queue lane to its deterministic
+// review obligations. Lanes absent here emit no gates/verify (never panic).
+var auditReviewLaneTable = map[string]auditLanePlan{
+	"lifecycle-concurrency": {gates: []string{"context propagation", "goroutine ownership", "shutdown cleanup", "channel-close ownership"}, verify: []string{"go test -race ./..."}},
+	"cli-ux":                {gates: []string{"flag parsing", "help-text accuracy", "exit codes", "output formatting"}, verify: []string{"go build ./..."}},
+	"api-contracts":         {gates: []string{"JSON schema stability", "encoder/decoder round-trip", "backward compatibility"}, verify: []string{"go test ./..."}},
+	"data-integrity":        {gates: []string{"write atomicity", "read-after-write", "rollback on error"}, verify: []string{"go test ./..."}},
+	"error-handling":        {gates: []string{"subprocess timeout", "stderr capture", "exit-code propagation", "error wrapping"}, verify: []string{"go vet ./...", "go test ./..."}},
+	"security":              {gates: []string{"secret handling", "crypto correctness", "randomness source"}},
+	"dependency-policy":     {gates: []string{"dependency necessity", "version pinning", "banned imports"}, verify: []string{"go list -m all"}},
+	"performance":           {gates: []string{"bounded reads", "resource limits"}, verify: []string{"go test ./..."}},
+	"config":                {gates: []string{"config defaults", "env-var precedence"}},
+	"test-risk":             {gates: []string{"untested-export coverage"}, verify: []string{"go test ./..."}},
+	"coupling":              {gates: []string{"fan-out justification", "interface boundaries"}},
+	"dead-code":             {gates: []string{"confirm truly unused before removal"}},
+	"parse-fidelity":        {gates: []string{"low-fidelity parse may miss symbols"}},
+	"architecture":          {gates: []string{"central-dependency blast radius"}, verify: []string{"go build ./..."}},
+}
+
+// auditReviewLanePriority gives review lanes a deterministic, audit-meaningful order.
+var auditReviewLanePriority = map[string]int{
+	"cli-ux":                0,
+	"api-contracts":         1,
+	"data-integrity":        2,
+	"error-handling":        3,
+	"dependency-policy":     4,
+	"config":                5,
+	"security":              6,
+	"lifecycle-concurrency": 7,
+	"performance":           8,
+	"test-risk":             9,
+	"coupling":              10,
+	"dead-code":             11,
+	"parse-fidelity":        12,
+	"architecture":          13,
+}
+
+// BuildAuditReviewPlan projects the first-read queue into per-lane review
+// obligations: it merges read groups sharing a lane, attaches deterministic
+// gates/verify from the static table, and suppresses Go-specific verify commands
+// when the target has no Go sources. It invents no findings.
+func BuildAuditReviewPlan(queue []AuditReadGroup, goDetected bool) []AuditReviewLane {
+	type laneAcc struct {
+		files []string
+		why   []string
+	}
+	lanes := map[string]*laneAcc{}
+	for _, group := range queue {
+		acc := lanes[group.Lane]
+		if acc == nil {
+			acc = &laneAcc{}
+			lanes[group.Lane] = acc
+		}
+		acc.files = append(acc.files, group.Files...)
+		for _, reason := range group.Reasons {
+			acc.why = appendUnique(acc.why, reason)
+		}
+	}
+
+	out := make([]AuditReviewLane, 0, len(lanes))
+	for lane, acc := range lanes {
+		files := dedupeStrings(acc.files)
+		if len(files) > 12 {
+			files = files[:12]
+		}
+		why := acc.why
+		slices.Sort(why)
+		if len(why) > 4 {
+			why = why[:4]
+		}
+		if why == nil {
+			why = []string{}
+		}
+		plan := auditReviewLaneTable[lane]
+		gates := plan.gates
+		if gates == nil {
+			gates = []string{}
+		}
+		verify := []string{}
+		if goDetected && plan.verify != nil {
+			verify = plan.verify
+		}
+		out = append(out, AuditReviewLane{
+			Lane:   lane,
+			Group:  lane,
+			Files:  files,
+			Gates:  gates,
+			Verify: verify,
+			Why:    why,
+		})
+	}
+	slices.SortFunc(out, func(a, b AuditReviewLane) int {
+		ap, bp := auditReviewLanePriority[a.Lane], auditReviewLanePriority[b.Lane]
+		if ap != bp {
+			return ap - bp
+		}
+		return strings.Compare(a.Lane, b.Lane)
 	})
 	return out
 }

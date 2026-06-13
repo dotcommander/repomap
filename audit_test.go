@@ -206,3 +206,74 @@ func runGitForAuditTest(t *testing.T, root string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, out)
 }
+
+func TestAuditBriefReviewPlan(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := `package main
+
+import (
+	"context"
+	"os"
+)
+
+func main() {
+	_ = context.Background()
+	go func() {}()
+	_ = os.WriteFile("out.json", []byte("{}"), 0o644)
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/audit\n\ngo 1.22\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644))
+
+	m := New(root, DefaultConfig())
+	m.ranked = []RankedFile{
+		{FileSymbols: &FileSymbols{Path: "main.go", Language: "go", Package: "main"}, Score: 100},
+	}
+
+	brief, err := m.AuditBrief(context.Background(), 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, brief.ReviewPlan)
+
+	lane := findReviewLane(t, brief.ReviewPlan, "lifecycle-concurrency")
+	assert.Equal(t, lane.Lane, lane.Group, "group mirrors lane for shape stability")
+	assert.NotEmpty(t, lane.Files)
+	assert.NotEmpty(t, lane.Gates)
+	assert.Contains(t, lane.Gates, "goroutine ownership")
+	assert.Contains(t, lane.Verify, "go test -race ./...")
+	assert.NotEmpty(t, lane.Why)
+}
+
+func TestBuildAuditReviewPlanSuppressesGoVerifyWhenNotGo(t *testing.T) {
+	t.Parallel()
+
+	queue := []AuditReadGroup{
+		{Group: "lifecycle-concurrency", Lane: "lifecycle-concurrency", Reasons: []string{"goroutine launch"}, Files: []string{"a.py"}},
+		{Group: "secret-and-crypto", Lane: "security", Reasons: []string{"crypto use"}, Files: []string{"b.py"}},
+	}
+
+	withGo := BuildAuditReviewPlan(queue, true)
+	lifecycle := findReviewLane(t, withGo, "lifecycle-concurrency")
+	assert.Equal(t, []string{"go test -race ./..."}, lifecycle.Verify)
+
+	noGo := BuildAuditReviewPlan(queue, false)
+	lifecycleNoGo := findReviewLane(t, noGo, "lifecycle-concurrency")
+	assert.Empty(t, lifecycleNoGo.Verify, "Go-specific verify suppressed for non-Go targets")
+	assert.NotEmpty(t, lifecycleNoGo.Gates, "gates still emitted regardless of language")
+
+	security := findReviewLane(t, noGo, "security")
+	assert.Empty(t, security.Verify, "review-only lane has no verify command")
+	assert.NotEmpty(t, security.Gates)
+}
+
+func findReviewLane(t *testing.T, lanes []AuditReviewLane, name string) AuditReviewLane {
+	t.Helper()
+	for _, lane := range lanes {
+		if lane.Lane == name {
+			return lane
+		}
+	}
+	t.Fatalf("expected review lane %q in %#v", name, lanes)
+	return AuditReviewLane{}
+}

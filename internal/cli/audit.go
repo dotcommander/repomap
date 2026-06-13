@@ -243,8 +243,8 @@ func printAuditBrief(w io.Writer, report repomap.AuditBriefReport) error {
 	if _, err := fmt.Fprintf(w, "audit brief: %s\n", report.Root); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "  risks=%d surface_files=%d effect_files=%d first_read_groups=%d\n",
-		len(report.Risks.Files), len(report.Surface.Files), len(report.Effects.Files), len(report.FirstReadQueue)); err != nil {
+	if _, err := fmt.Fprintf(w, "  risks=%d surface_files=%d effect_files=%d first_read_groups=%d review_plan_lanes=%d\n",
+		len(report.Risks.Files), len(report.Surface.Files), len(report.Effects.Files), len(report.FirstReadQueue), len(report.ReviewPlan)); err != nil {
 		return err
 	}
 	if len(report.FirstReadQueue) > 0 {

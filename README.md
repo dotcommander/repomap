@@ -206,9 +206,13 @@ repomap audit surface --json --limit 20
 repomap audit effects --json --limit 20
 ```
 
-`audit brief` builds the map once and emits risks, surface, effects, and a
-grouped first-read queue for workflow tools. Use the narrower commands when you
-only need one packet.
+`audit brief` builds the map once and emits risks, surface, effects, a
+grouped first-read queue, and a `review_plan` for workflow tools. The
+`review_plan` projects the first-read queue into per-lane review obligations —
+each lane lists the files to cover, the gates to discharge, suggested verify
+commands (Go-specific commands appear only when Go sources are detected), and
+why the lane matters — so deep-audit tools get coverage targets without
+inventing findings. Use the narrower commands when you only need one packet.
 `audit hygiene` reports tracked, untracked, and ignored source-file leads so
 release audits can catch local-only code. `audit risks` converts rank, boundary,
 and symbol-size facts into lane packets for tools such as repo-audit-deep.
