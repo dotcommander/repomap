@@ -4,10 +4,11 @@ All notable changes to repomap are documented here.
 
 ---
 
-## Unreleased
+## v0.13.0 — 2026-06-13
 
 ### Features
 
+- audit: `audit brief --json` now emits a bounded `review_plan` projecting the first-read queue into per-lane review obligations (files, gates, suggested verify commands, why). Go-specific verify commands appear only when Go sources are detected. Derived deterministically from existing packets; additive and backward-compatible.
 - serve: stdio JSON-RPC 2.0 server for warm map queries (NDJSON; map/render, map/status, symbol/find, file/explain, file/context)
 
 ---
