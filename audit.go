@@ -46,33 +46,42 @@ type AuditCounts struct {
 // AuditRiskReport is a compact packet for selecting deep-audit lanes before
 // spending model context on full source reads.
 type AuditRiskReport struct {
-	SchemaVersion int             `json:"schema_version"`
-	Root          string          `json:"root"`
-	Files         []AuditFileRisk `json:"files"`
-	Lanes         []AuditLane     `json:"lanes"`
+	SchemaVersion      int             `json:"schema_version"`
+	Root               string          `json:"root"`
+	Files              []AuditFileRisk `json:"files"`
+	FilesOmittedReason string          `json:"files_omitted_reason,omitempty"`
+	Lanes              []AuditLane     `json:"lanes"`
 }
 
 // AuditFileRisk summarizes why one file deserves audit attention.
 type AuditFileRisk struct {
-	Path       string   `json:"path"`
-	Language   string   `json:"language,omitempty"`
-	Package    string   `json:"package,omitempty"`
-	Score      int      `json:"score"`
-	AuditScore int      `json:"audit_score"`
-	Lanes      []string `json:"lanes,omitempty"`
-	Reasons    []string `json:"reasons,omitempty"`
-	Boundaries []string `json:"boundaries,omitempty"`
-	ImportedBy int      `json:"imported_by,omitempty"`
-	DependsOn  int      `json:"depends_on,omitempty"`
-	Symbols    []string `json:"symbols,omitempty"`
+	ID            string   `json:"id"`
+	Path          string   `json:"path"`
+	Language      string   `json:"language,omitempty"`
+	Package       string   `json:"package,omitempty"`
+	Score         int      `json:"score"`
+	AuditScore    int      `json:"audit_score"`
+	EvidenceClass string   `json:"evidence_class,omitempty"`
+	Confidence    string   `json:"confidence,omitempty"`
+	Lanes         []string `json:"lanes,omitempty"`
+	Reasons       []string `json:"reasons,omitempty"`
+	Caveat        string   `json:"caveat,omitempty"`
+	VerifyCmd     string   `json:"verify_cmd,omitempty"`
+	Boundaries    []string `json:"boundaries,omitempty"`
+	ImportedBy    int      `json:"imported_by,omitempty"`
+	DependsOn     int      `json:"depends_on,omitempty"`
+	Symbols       []string `json:"symbols,omitempty"`
 }
 
 // AuditLane groups the files that triggered one repo-audit lane.
 type AuditLane struct {
-	Name    string   `json:"name"`
-	Reason  string   `json:"reason"`
-	Files   []string `json:"files"`
-	Command string   `json:"command,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Reason        string   `json:"reason"`
+	Files         []string `json:"files"`
+	Caveat        string   `json:"caveat,omitempty"`
+	Command       string   `json:"command,omitempty"`
+	OmittedReason string   `json:"omitted_reason,omitempty"`
 }
 
 // AuditHygiene inspects tracked, untracked, and ignored source files. It uses
@@ -164,17 +173,24 @@ func (m *Map) AuditRisks(limit int) AuditRiskReport {
 		}
 		return strings.Compare(a.Path, b.Path)
 	})
+	totalScored := len(files)
 	if limit > 0 && len(files) > limit {
 		files = files[:limit]
 	}
 
 	lanes := buildAuditLanes(laneFiles)
-	return AuditRiskReport{
-		SchemaVersion: 1,
+	report := AuditRiskReport{
+		SchemaVersion: 2,
 		Root:          root,
 		Files:         files,
 		Lanes:         lanes,
 	}
+	if len(files) == 0 {
+		report.FilesOmittedReason = "no files scored above the audit threshold"
+	} else if len(files) < totalScored {
+		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d scored files; truncated by --limit", len(files), totalScored)
+	}
+	return report
 }
 
 func auditRiskForFile(f RankedFile) AuditFileRisk {
@@ -238,6 +254,12 @@ func auditRiskForFile(f RankedFile) AuditFileRisk {
 		add(6, "parse-fidelity", "low-fidelity parser: "+f.ParseMethod)
 	}
 
+	risk.ID = "repomap:risk:" + auditSlug(path)
+	risk.Caveat = auditExternalCaveat(risk.Lanes)
+	risk.EvidenceClass = auditEvidenceForLanes(risk.Lanes)
+	risk.Confidence = auditConfidence(risk.EvidenceClass, risk.Caveat != "")
+	risk.VerifyCmd = auditVerifyCmd(path, f.Language)
+
 	return risk
 }
 
@@ -252,9 +274,11 @@ func buildAuditLanes(laneFiles map[string][]string) []AuditLane {
 	for _, name := range names {
 		files := dedupeAndSort(laneFiles[name])
 		lanes = append(lanes, AuditLane{
+			ID:      "repomap:lane:" + auditSlug(name),
 			Name:    name,
 			Reason:  auditLaneReason(name),
 			Files:   files,
+			Caveat:  auditExternalCaveat([]string{name}),
 			Command: auditLaneCommand(name),
 		})
 	}
@@ -403,4 +427,124 @@ func dedupeAndSort(paths []string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// Evidence classes for audit packets. gopls_caller is reserved for a future
+// caller-graph signal; the deterministic audit producers do not emit it today.
+const (
+	auditEvidenceImportGraph = "import_graph"
+	auditEvidenceAST         = "ast"
+	auditEvidenceGitHistory  = "git_history"
+	auditEvidenceHeuristic   = "heuristic"
+)
+
+// auditLaneEvidence maps an audit lane to the class of signal that produced it.
+// Lanes absent here fall back to heuristic.
+var auditLaneEvidence = map[string]string{
+	"architecture":          auditEvidenceImportGraph,
+	"coupling":              auditEvidenceImportGraph,
+	"dead-code":             auditEvidenceImportGraph,
+	"test-risk":             auditEvidenceAST,
+	"large-functions":       auditEvidenceAST,
+	"cleanup/release":       auditEvidenceGitHistory,
+	"cli-ux":                auditEvidenceHeuristic,
+	"api-contracts":         auditEvidenceHeuristic,
+	"data-integrity":        auditEvidenceHeuristic,
+	"security":              auditEvidenceHeuristic,
+	"error-handling":        auditEvidenceHeuristic,
+	"best-practices":        auditEvidenceHeuristic,
+	"parse-fidelity":        auditEvidenceHeuristic,
+	"lifecycle-concurrency": auditEvidenceHeuristic,
+	"performance":           auditEvidenceHeuristic,
+	"config":                auditEvidenceHeuristic,
+	"dependency-policy":     auditEvidenceHeuristic,
+}
+
+// auditEvidencePrecedence ranks classes when a packet mixes signals; the
+// strongest evidence wins.
+var auditEvidencePrecedence = map[string]int{
+	auditEvidenceImportGraph: 3,
+	auditEvidenceAST:         2,
+	auditEvidenceGitHistory:  1,
+	auditEvidenceHeuristic:   0,
+}
+
+// auditSlug renders a path or name into a stable, readable id fragment:
+// lowercased, with every run of non-alphanumeric characters collapsed to a
+// single dash and surrounding dashes trimmed.
+func auditSlug(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+// auditEvidenceForLanes picks the strongest evidence class across a file's lanes.
+func auditEvidenceForLanes(lanes []string) string {
+	best := auditEvidenceHeuristic
+	bestRank := -1
+	for _, lane := range lanes {
+		class, ok := auditLaneEvidence[lane]
+		if !ok {
+			class = auditEvidenceHeuristic
+		}
+		if r := auditEvidencePrecedence[class]; r > bestRank {
+			bestRank = r
+			best = class
+		}
+	}
+	return best
+}
+
+// auditConfidence derives a confidence tier from an evidence class. Packets
+// carrying an external-consumer caveat are capped at low: they cannot see
+// callers outside this repo.
+func auditConfidence(class string, hasCaveat bool) string {
+	if hasCaveat {
+		return "low"
+	}
+	switch class {
+	case auditEvidenceImportGraph, auditEvidenceAST, auditEvidenceGitHistory:
+		return "high"
+	default:
+		return "medium"
+	}
+}
+
+// auditExternalCaveat returns a caveat for lanes whose signal cannot see
+// out-of-repo callers (dead-code/orphan, untested exports). Empty otherwise.
+func auditExternalCaveat(lanes []string) string {
+	for _, lane := range lanes {
+		switch lane {
+		case "dead-code":
+			return "may be referenced by external consumers; repomap sees only in-repo importers"
+		case "test-risk":
+			return "may be exercised by external or integration tests outside this repo"
+		}
+	}
+	return ""
+}
+
+// auditVerifyCmd suggests the next command to run for a file. Go files get a
+// package-scoped test command; other languages get none.
+func auditVerifyCmd(path, language string) string {
+	if language != "go" {
+		return ""
+	}
+	i := strings.LastIndex(path, "/")
+	if i < 0 {
+		return "go test ./..."
+	}
+	return "go test ./" + path[:i] + "/..."
 }
