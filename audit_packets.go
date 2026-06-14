@@ -19,6 +19,7 @@ type AuditSurfaceReport struct {
 	SchemaVersion       int                `json:"schema_version"`
 	Root                string             `json:"root"`
 	Files               []AuditSurfaceFile `json:"files"`
+	FilesOmittedReason  string             `json:"files_omitted_reason,omitempty"`
 	Commands            []AuditSurfaceHit  `json:"commands,omitempty"`
 	Flags               []AuditSurfaceHit  `json:"flags,omitempty"`
 	EnvVars             []AuditSurfaceHit  `json:"env_vars,omitempty"`
@@ -31,10 +32,14 @@ type AuditSurfaceReport struct {
 
 // AuditSurfaceFile groups user-facing contract hits by source file.
 type AuditSurfaceFile struct {
-	Path  string            `json:"path"`
-	Score int               `json:"score"`
-	Kinds []string          `json:"kinds"`
-	Hits  []AuditSurfaceHit `json:"hits"`
+	ID            string            `json:"id"`
+	Path          string            `json:"path"`
+	Score         int               `json:"score"`
+	EvidenceClass string            `json:"evidence_class,omitempty"`
+	Confidence    string            `json:"confidence,omitempty"`
+	Kinds         []string          `json:"kinds"`
+	Hits          []AuditSurfaceHit `json:"hits"`
+	OmittedReason string            `json:"omitted_reason,omitempty"`
 }
 
 // AuditSurfaceHit is one static surface lead.
@@ -49,18 +54,22 @@ type AuditSurfaceHit struct {
 
 // AuditEffectReport captures files with side effects and trust boundaries.
 type AuditEffectReport struct {
-	SchemaVersion int               `json:"schema_version"`
-	Root          string            `json:"root"`
-	Files         []AuditEffectFile `json:"files"`
-	Kinds         []AuditEffectKind `json:"kinds"`
+	SchemaVersion      int               `json:"schema_version"`
+	Root               string            `json:"root"`
+	Files              []AuditEffectFile `json:"files"`
+	FilesOmittedReason string            `json:"files_omitted_reason,omitempty"`
+	Kinds              []AuditEffectKind `json:"kinds"`
 }
 
 // AuditEffectFile groups side-effect leads by source file.
 type AuditEffectFile struct {
-	Path    string        `json:"path"`
-	Score   int           `json:"score"`
-	Lanes   []string      `json:"lanes"`
-	Effects []AuditEffect `json:"effects"`
+	ID            string        `json:"id"`
+	Path          string        `json:"path"`
+	Score         int           `json:"score"`
+	EvidenceClass string        `json:"evidence_class,omitempty"`
+	Confidence    string        `json:"confidence,omitempty"`
+	Lanes         []string      `json:"lanes"`
+	Effects       []AuditEffect `json:"effects"`
 }
 
 // AuditEffect is one static side-effect lead.
@@ -75,11 +84,14 @@ type AuditEffect struct {
 
 // AuditEffectKind groups files that share a side-effect kind.
 type AuditEffectKind struct {
-	Name    string   `json:"name"`
-	Reason  string   `json:"reason"`
-	Lane    string   `json:"lane"`
-	Files   []string `json:"files"`
-	Command string   `json:"command,omitempty"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Reason        string   `json:"reason"`
+	Lane          string   `json:"lane"`
+	Files         []string `json:"files"`
+	Caveat        string   `json:"caveat,omitempty"`
+	Command       string   `json:"command,omitempty"`
+	OmittedReason string   `json:"omitted_reason,omitempty"`
 }
 
 type auditStaticFile struct {
@@ -141,7 +153,7 @@ var dependencyManifestNames = []string{
 // AuditSurface extracts command, flag, env, config, route, and output surfaces.
 func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, error) {
 	files := m.auditStaticFiles()
-	report := AuditSurfaceReport{SchemaVersion: 1, Root: m.root}
+	report := AuditSurfaceReport{SchemaVersion: 2, Root: m.root, Files: []AuditSurfaceFile{}}
 	for _, file := range files {
 		lines, err := readAuditLines(ctx, filepath.Join(m.root, filepath.FromSlash(file.path)))
 		if err != nil {
@@ -152,12 +164,19 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 		if len(hits) == 0 {
 			continue
 		}
-		report.Files = append(report.Files, AuditSurfaceFile{
-			Path:  file.path,
-			Score: score,
-			Kinds: hitKinds(hits),
-			Hits:  capSurfaceHits(hits, 12),
-		})
+		sf := AuditSurfaceFile{
+			ID:            "repomap:surface:" + auditSlug(file.path),
+			Path:          file.path,
+			Score:         score,
+			EvidenceClass: auditEvidenceHeuristic,
+			Confidence:    auditConfidence(auditEvidenceHeuristic, false),
+			Kinds:         hitKinds(hits),
+			Hits:          capSurfaceHits(hits, 12),
+		}
+		if len(hits) > 12 {
+			sf.OmittedReason = fmt.Sprintf("showing 12 of %d hits; truncated by surface cap", len(hits))
+		}
+		report.Files = append(report.Files, sf)
 		for _, hit := range hits {
 			switch hit.Kind {
 			case "command":
@@ -179,8 +198,14 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 	}
 	m.addDependencyManifestSurface(&report)
 	sortSurfaceFiles(report.Files)
+	totalFiles := len(report.Files)
 	if limit > 0 && len(report.Files) > limit {
 		report.Files = report.Files[:limit]
+	}
+	if len(report.Files) == 0 {
+		report.FilesOmittedReason = "no surface data extracted from scanned files"
+	} else if len(report.Files) < totalFiles {
+		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d files; truncated by --limit", len(report.Files), totalFiles)
 	}
 	return report, nil
 }
@@ -188,7 +213,7 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 // AuditEffects extracts side-effect and trust-boundary packets from source.
 func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, error) {
 	files := m.auditStaticFiles()
-	report := AuditEffectReport{SchemaVersion: 1, Root: m.root}
+	report := AuditEffectReport{SchemaVersion: 2, Root: m.root, Files: []AuditEffectFile{}}
 	kindFiles := map[string][]string{}
 	for _, file := range files {
 		lines, err := readAuditLines(ctx, filepath.Join(m.root, filepath.FromSlash(file.path)))
@@ -201,21 +226,31 @@ func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, e
 			continue
 		}
 		lanes := effectLanes(effects)
+		ec := auditEvidenceForLanes(lanes)
 		report.Files = append(report.Files, AuditEffectFile{
-			Path:    file.path,
-			Score:   score,
-			Lanes:   lanes,
-			Effects: capEffectHits(effects, 12),
+			ID:            "repomap:effect:" + auditSlug(file.path),
+			Path:          file.path,
+			Score:         score,
+			EvidenceClass: ec,
+			Confidence:    auditConfidence(ec, false),
+			Lanes:         lanes,
+			Effects:       capEffectHits(effects, 12),
 		})
 		for _, effect := range effects {
 			kindFiles[effect.Kind] = append(kindFiles[effect.Kind], effect.Path)
 		}
 	}
 	sortEffectFiles(report.Files)
+	totalFiles := len(report.Files)
 	if limit > 0 && len(report.Files) > limit {
 		report.Files = report.Files[:limit]
 	}
 	report.Kinds = buildEffectKinds(kindFiles)
+	if len(report.Files) == 0 {
+		report.FilesOmittedReason = "no side-effect data extracted from scanned files"
+	} else if len(report.Files) < totalFiles {
+		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d files; truncated by --limit", len(report.Files), totalFiles)
+	}
 	return report, nil
 }
 
@@ -328,10 +363,13 @@ func (m *Map) addDependencyManifestSurface(report *AuditSurfaceReport) {
 		}
 		report.DependencyManifests = append(report.DependencyManifests, hit)
 		report.Files = append(report.Files, AuditSurfaceFile{
-			Path:  name,
-			Score: 15,
-			Kinds: []string{"dependency-manifest"},
-			Hits:  []AuditSurfaceHit{hit},
+			ID:            "repomap:surface:" + auditSlug(name),
+			Path:          name,
+			Score:         15,
+			EvidenceClass: auditEvidenceHeuristic,
+			Confidence:    auditConfidence(auditEvidenceHeuristic, false),
+			Kinds:         []string{"dependency-manifest"},
+			Hits:          []AuditSurfaceHit{hit},
 		})
 	}
 }
@@ -454,10 +492,12 @@ func buildEffectKinds(kindFiles map[string][]string) []AuditEffectKind {
 	out := make([]AuditEffectKind, 0, len(names))
 	for _, name := range names {
 		out = append(out, AuditEffectKind{
+			ID:      "repomap:effect-kind:" + auditSlug(name),
 			Name:    name,
 			Reason:  effectKindReason(name),
 			Lane:    effectKindLane(name),
 			Files:   dedupeAndSort(kindFiles[name]),
+			Caveat:  auditExternalCaveat([]string{effectKindLane(name)}),
 			Command: "repomap audit effects --json",
 		})
 	}
