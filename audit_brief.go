@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -22,22 +23,32 @@ type AuditBriefReport struct {
 // AuditReadGroup is a compact first-read queue grouped by the kind of risk a
 // local static packet found.
 type AuditReadGroup struct {
-	Group   string   `json:"group"`
-	Lane    string   `json:"lane"`
-	Reasons []string `json:"reasons"`
-	Files   []string `json:"files"`
+	ID            string   `json:"id"`
+	Group         string   `json:"group"`
+	Lane          string   `json:"lane"`
+	EvidenceClass string   `json:"evidence_class,omitempty"`
+	Confidence    string   `json:"confidence,omitempty"`
+	Reasons       []string `json:"reasons"`
+	Caveat        string   `json:"caveat,omitempty"`
+	Files         []string `json:"files"`
+	OmittedReason string   `json:"omitted_reason,omitempty"`
 }
 
 // AuditReviewLane is a deterministic per-lane review obligation derived from the
 // first-read queue: which files to cover, what gates to discharge, and how to
 // verify. It carries no findings — only obligations implied by the static packets.
 type AuditReviewLane struct {
-	Lane   string   `json:"lane"`
-	Group  string   `json:"group"`
-	Files  []string `json:"files"`
-	Gates  []string `json:"gates"`
-	Verify []string `json:"verify"`
-	Why    []string `json:"why"`
+	ID            string   `json:"id"`
+	Lane          string   `json:"lane"`
+	Group         string   `json:"group"`
+	EvidenceClass string   `json:"evidence_class,omitempty"`
+	Confidence    string   `json:"confidence,omitempty"`
+	Files         []string `json:"files"`
+	Caveat        string   `json:"caveat,omitempty"`
+	Gates         []string `json:"gates"`
+	Verify        []string `json:"verify"`
+	Why           []string `json:"why"`
+	OmittedReason string   `json:"omitted_reason,omitempty"`
 }
 
 // AuditBrief computes risks, surface, effects, and a grouped first-read queue
@@ -61,7 +72,7 @@ func (m *Map) AuditBrief(ctx context.Context, limit int) (AuditBriefReport, erro
 		}
 	}
 	return AuditBriefReport{
-		SchemaVersion:  1,
+		SchemaVersion:  2,
 		Root:           risks.Root,
 		Risks:          compactBriefRisks(risks),
 		Surface:        compactBriefSurface(surface),
@@ -170,13 +181,18 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 	out := make([]AuditReadGroup, 0, len(groups))
 	for _, group := range groups {
 		group.Files = dedupeStrings(group.Files)
-		if len(group.Files) > 12 {
+		if total := len(group.Files); total > 12 {
 			group.Files = group.Files[:12]
+			group.OmittedReason = fmt.Sprintf("showing 12 of %d files; truncated by brief cap", total)
 		}
 		slices.Sort(group.Reasons)
 		if len(group.Reasons) > 4 {
 			group.Reasons = group.Reasons[:4]
 		}
+		group.ID = "repomap:queue:" + auditSlug(group.Group)
+		group.EvidenceClass = auditEvidenceForLanes([]string{group.Lane})
+		group.Caveat = auditExternalCaveat([]string{group.Lane})
+		group.Confidence = auditConfidence(group.EvidenceClass, group.Caveat != "")
 		out = append(out, *group)
 	}
 	slices.SortFunc(out, func(a, b AuditReadGroup) int {
@@ -258,8 +274,10 @@ func BuildAuditReviewPlan(queue []AuditReadGroup, goDetected bool) []AuditReview
 	out := make([]AuditReviewLane, 0, len(lanes))
 	for lane, acc := range lanes {
 		files := dedupeStrings(acc.files)
-		if len(files) > 12 {
+		omitted := ""
+		if total := len(files); total > 12 {
 			files = files[:12]
+			omitted = fmt.Sprintf("showing 12 of %d files; truncated by brief cap", total)
 		}
 		why := acc.why
 		slices.Sort(why)
@@ -278,13 +296,20 @@ func BuildAuditReviewPlan(queue []AuditReadGroup, goDetected bool) []AuditReview
 		if goDetected && plan.verify != nil {
 			verify = plan.verify
 		}
+		caveat := auditExternalCaveat([]string{lane})
+		evidence := auditEvidenceForLanes([]string{lane})
 		out = append(out, AuditReviewLane{
-			Lane:   lane,
-			Group:  lane,
-			Files:  files,
-			Gates:  gates,
-			Verify: verify,
-			Why:    why,
+			ID:            "repomap:review:" + auditSlug(lane),
+			Lane:          lane,
+			Group:         lane,
+			EvidenceClass: evidence,
+			Confidence:    auditConfidence(evidence, caveat != ""),
+			Files:         files,
+			Caveat:        caveat,
+			Gates:         gates,
+			Verify:        verify,
+			Why:           why,
+			OmittedReason: omitted,
 		})
 	}
 	slices.SortFunc(out, func(a, b AuditReviewLane) int {
@@ -312,8 +337,9 @@ func dedupeStrings(items []string) []string {
 
 func compactBriefRisks(report AuditRiskReport) AuditRiskReport {
 	for i := range report.Lanes {
-		if len(report.Lanes[i].Files) > 12 {
+		if total := len(report.Lanes[i].Files); total > 12 {
 			report.Lanes[i].Files = report.Lanes[i].Files[:12]
+			report.Lanes[i].OmittedReason = fmt.Sprintf("showing 12 of %d files; truncated by brief cap", total)
 		}
 	}
 	return report
@@ -333,8 +359,9 @@ func compactBriefSurface(report AuditSurfaceReport) AuditSurfaceReport {
 
 func compactBriefEffects(report AuditEffectReport) AuditEffectReport {
 	for i := range report.Kinds {
-		if len(report.Kinds[i].Files) > 12 {
+		if total := len(report.Kinds[i].Files); total > 12 {
 			report.Kinds[i].Files = report.Kinds[i].Files[:12]
+			report.Kinds[i].OmittedReason = fmt.Sprintf("showing 12 of %d files; truncated by brief cap", total)
 		}
 	}
 	return report
