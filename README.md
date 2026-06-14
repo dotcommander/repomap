@@ -222,6 +222,14 @@ boundaries such as filesystem writes, subprocesses, HTTP, DB calls,
 serialization, secrets, crypto, time, and randomness. These are deterministic
 leads, not final findings.
 
+Every audit packet is self-describing (`schema_version` 2): each carries a stable
+`id` (e.g. `repomap:risk:internal-cli-audit-go`) for citation, an `evidence_class`
+(`import_graph`, `ast`, `git_history`, or `heuristic`) with a derived `confidence`
+tier, and a per-file `verify_cmd` for Go targets. Signals blind to out-of-repo
+callers — dead code, untested exports — carry a `caveat` and are capped at `low`
+confidence. Empty file lists serialize as `[]` (never `null`) with a
+`files_omitted_reason`, and truncated packets report an `omitted_reason`.
+
 ## Commands
 
 ```bash
