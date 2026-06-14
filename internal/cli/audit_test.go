@@ -126,3 +126,30 @@ func runGitForCLIAuditTest(t *testing.T, root string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, out)
 }
+
+func TestAuditCommandSurfaceFilesNeverNull(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	// A source file with no user-facing surface: the scan finds the file but
+	// extracts zero surface hits, so Files ends empty. That empty slice used to
+	// serialize as null; it must now serialize as []. The command still
+	// succeeds because a source file exists.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "noop.go"),
+		[]byte("package noop\n\nfunc helper() int { return 1 }\n"), 0o644))
+
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"audit", "surface", "--json", root})
+	require.NoError(t, cmd.Execute())
+
+	raw := out.String()
+	assert.Contains(t, raw, `"files": []`, "empty surface must emit [] not null")
+	assert.NotContains(t, raw, `"files": null`)
+
+	var surface repomap.AuditSurfaceReport
+	require.NoError(t, json.Unmarshal(out.Bytes(), &surface))
+	assert.Equal(t, 2, surface.SchemaVersion)
+	assert.NotEmpty(t, surface.FilesOmittedReason)
+}

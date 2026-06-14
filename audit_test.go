@@ -2,6 +2,8 @@ package repomap
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -276,4 +278,119 @@ func findReviewLane(t *testing.T, lanes []AuditReviewLane, name string) AuditRev
 	}
 	t.Fatalf("expected review lane %q in %#v", name, lanes)
 	return AuditReviewLane{}
+}
+
+func TestAuditRiskPacketsCarryIDsEvidenceAndCaveat(t *testing.T) {
+	t.Parallel()
+
+	m := New("/repo", DefaultConfig())
+	m.ranked = []RankedFile{
+		{
+			FileSymbols: &FileSymbols{
+				Path: "internal/domain/models.go", Language: "go", Package: "domain", ParseMethod: "go_ast",
+				Symbols: []Symbol{{Name: "Request", Kind: "struct", Exported: true}},
+			},
+			Score: 90, ImportedBy: 8,
+		},
+		{
+			FileSymbols: &FileSymbols{
+				Path: "internal/orphan/thing.go", Language: "go", Package: "orphan", ParseMethod: "go_ast",
+				Symbols: []Symbol{{Name: "Thing", Kind: "function", Exported: true, Dead: true}},
+			},
+			Score: 70, Untested: true,
+		},
+	}
+
+	report := m.AuditRisks(0)
+	assert.Equal(t, 2, report.SchemaVersion)
+
+	models := findRiskFile(t, report.Files, "internal/domain/models.go")
+	assert.Equal(t, "repomap:risk:internal-domain-models-go", models.ID)
+	assert.Equal(t, "import_graph", models.EvidenceClass)
+	assert.Equal(t, "high", models.Confidence)
+	assert.Empty(t, models.Caveat)
+	assert.Equal(t, "go test ./internal/domain/...", models.VerifyCmd)
+
+	orphan := findRiskFile(t, report.Files, "internal/orphan/thing.go")
+	require.Contains(t, orphan.Lanes, "dead-code")
+	assert.NotEmpty(t, orphan.Caveat, "dead-code packet must carry external-consumer caveat")
+	assert.Equal(t, "low", orphan.Confidence, "external-consumer caveat caps confidence at low")
+
+	deadLane := findRiskLane(t, report.Lanes, "dead-code")
+	assert.Equal(t, "repomap:lane:dead-code", deadLane.ID)
+	assert.NotEmpty(t, deadLane.Caveat)
+
+	queue := BuildAuditReadQueue(report, AuditSurfaceReport{}, AuditEffectReport{})
+	g := findReadGroup(t, queue, "dead-export-surface")
+	assert.Equal(t, "repomap:queue:dead-export-surface", g.ID)
+	assert.NotEmpty(t, g.Caveat)
+	assert.Equal(t, "low", g.Confidence)
+}
+
+func TestAuditSurfaceEmptyFilesSerializeAsArray(t *testing.T) {
+	t.Parallel()
+
+	m := New(t.TempDir(), DefaultConfig())
+	m.ranked = nil
+
+	surface, err := m.AuditSurface(context.Background(), 0)
+	require.NoError(t, err)
+	assert.NotNil(t, surface.Files)
+	assert.Empty(t, surface.Files)
+	assert.Equal(t, 2, surface.SchemaVersion)
+	assert.NotEmpty(t, surface.FilesOmittedReason)
+
+	data, err := json.Marshal(surface)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"files":[]`)
+	assert.NotContains(t, string(data), `"files":null`)
+}
+
+func TestAuditReviewPlanRecordsTruncation(t *testing.T) {
+	t.Parallel()
+
+	files := make([]string, 0, 20)
+	for i := 0; i < 20; i++ {
+		files = append(files, fmt.Sprintf("pkg/file%02d.go", i))
+	}
+	queue := []AuditReadGroup{{Group: "cli-ux", Lane: "cli-ux", Reasons: []string{"flags"}, Files: files}}
+
+	plan := BuildAuditReviewPlan(queue, true)
+	lane := findReviewLane(t, plan, "cli-ux")
+	assert.Equal(t, "repomap:review:cli-ux", lane.ID)
+	assert.Len(t, lane.Files, 12)
+	assert.Contains(t, lane.OmittedReason, "20")
+}
+
+func findRiskFile(t *testing.T, files []AuditFileRisk, path string) AuditFileRisk {
+	t.Helper()
+	for _, f := range files {
+		if f.Path == path {
+			return f
+		}
+	}
+	t.Fatalf("expected risk file %q in %#v", path, files)
+	return AuditFileRisk{}
+}
+
+func findRiskLane(t *testing.T, lanes []AuditLane, name string) AuditLane {
+	t.Helper()
+	for _, l := range lanes {
+		if l.Name == name {
+			return l
+		}
+	}
+	t.Fatalf("expected risk lane %q in %#v", name, lanes)
+	return AuditLane{}
+}
+
+func findReadGroup(t *testing.T, groups []AuditReadGroup, name string) AuditReadGroup {
+	t.Helper()
+	for _, g := range groups {
+		if g.Group == name {
+			return g
+		}
+	}
+	t.Fatalf("expected read group %q in %#v", name, groups)
+	return AuditReadGroup{}
 }
