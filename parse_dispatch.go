@@ -36,9 +36,10 @@ func (m *Map) absPath(rel string) string {
 }
 
 // parseFiles parses all discovered files in parallel and returns the symbols,
-// a path→mtime map, and a path→sha256-hex map for stale checking.
+// a path→mtime map, a path→sha256-hex map for stale checking, and parser
+// coverage counters.
 // Non-Go files use tree-sitter when available, then ctags, then regex.
-func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols, map[string]time.Time, map[string]string, error) {
+func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols, map[string]time.Time, map[string]string, ParseCoverage, error) {
 	mtimes := make(map[string]time.Time, len(files))
 	hashes := make(map[string]string, len(files))
 	for _, fi := range files {
@@ -83,7 +84,7 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, ParseCoverage{}, err
 	}
 
 	parsed := make([]*FileSymbols, 0, len(goParsed)+len(nonGoParsed))
@@ -97,7 +98,61 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 
 	DetectImplementations(parsed)
 
-	return parsed, mtimes, hashes, nil
+	return parsed, mtimes, hashes, buildParseCoverage(files, parsed, m.tsAvailable, m.ctagsAvailable), nil
+}
+
+func buildParseCoverage(files []FileInfo, parsed []*FileSymbols, tsEnabled, ctagsEnabled bool) ParseCoverage {
+	coverage := ParseCoverage{
+		FilesScanned:      len(files),
+		FilesParsed:       len(parsed),
+		ByLanguage:        make(map[string]int),
+		ByParseMethod:     make(map[string]int),
+		FailuresByLang:    make(map[string]int),
+		TreeSitterEnabled: tsEnabled,
+		CtagsEnabled:      ctagsEnabled,
+	}
+	for _, fi := range files {
+		coverage.ByLanguage[fi.Language]++
+	}
+	parsedByLang := make(map[string]int)
+	for _, fs := range parsed {
+		if fs == nil {
+			continue
+		}
+		parsedByLang[fs.Language]++
+		if fs.ParseMethod != "" {
+			coverage.ByParseMethod[fs.ParseMethod]++
+		}
+	}
+	for lang, scanned := range coverage.ByLanguage {
+		if failed := scanned - parsedByLang[lang]; failed > 0 {
+			coverage.FailuresByLang[lang] = failed
+			coverage.ParseFailures += failed
+		}
+	}
+	if len(coverage.ByLanguage) == 0 {
+		coverage.ByLanguage = nil
+	}
+	if len(coverage.ByParseMethod) == 0 {
+		coverage.ByParseMethod = nil
+	}
+	if len(coverage.FailuresByLang) == 0 {
+		coverage.FailuresByLang = nil
+	}
+	return coverage
+}
+
+func parseCoverageFromRanked(ranked []RankedFile, tsEnabled, ctagsEnabled bool) ParseCoverage {
+	files := make([]FileInfo, 0, len(ranked))
+	parsed := make([]*FileSymbols, 0, len(ranked))
+	for _, rf := range ranked {
+		if rf.FileSymbols == nil {
+			continue
+		}
+		files = append(files, FileInfo{Path: rf.Path, Language: rf.Language})
+		parsed = append(parsed, rf.FileSymbols)
+	}
+	return buildParseCoverage(files, parsed, tsEnabled, ctagsEnabled)
 }
 
 // parseNonGoFiles parses non-Go files using the tiered fallback:

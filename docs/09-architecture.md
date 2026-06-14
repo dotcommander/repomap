@@ -19,7 +19,7 @@ No parsing here. No I/O beyond `stat`. This stage is always fast.
 
 ## Stage 2: Parse
 
-`parse_dispatch.go` → `parseFiles(ctx, files) ([]*FileSymbols, map[string]time.Time, error)`
+`parse_dispatch.go` → `parseFiles(ctx, files) ([]*FileSymbols, map[string]time.Time, map[string]string, ParseCoverage, error)`
 
 Two parallel groups via `errgroup.WithContext`:
 

@@ -11,6 +11,7 @@ type StructuredOutput struct {
 	Root          string           `json:"root"`
 	Totals        StructuredTotals `json:"totals"`
 	Config        StructuredConfig `json:"config"`
+	Coverage      ParseCoverage    `json:"coverage"`
 	Warnings      []string         `json:"warnings,omitempty"`
 	Files         []StructuredFile `json:"files"`
 }
@@ -32,21 +33,32 @@ type StructuredConfig struct {
 
 // StructuredFile is a machine-readable file block.
 type StructuredFile struct {
-	Path            string             `json:"path"`
-	Language        string             `json:"language,omitempty"`
-	Package         string             `json:"package,omitempty"`
-	ImportPath      string             `json:"import_path,omitempty"`
-	ParseMethod     string             `json:"parse_method,omitempty"`
-	Score           int                `json:"score"`
-	ScoreComponents map[string]int     `json:"score_components,omitempty"`
-	DetailLevel     int                `json:"detail_level"`
-	ImportedBy      int                `json:"imported_by,omitempty"`
-	DependsOn       int                `json:"depends_on,omitempty"`
-	Untested        bool               `json:"untested,omitempty"`
-	Boundaries      []string           `json:"boundaries,omitempty"`
-	Imports         []string           `json:"imports,omitempty"`
-	Symbols         []StructuredSymbol `json:"symbols,omitempty"`
-	OmittedReason   string             `json:"omitted_reason,omitempty"`
+	Path             string               `json:"path"`
+	Language         string               `json:"language,omitempty"`
+	Package          string               `json:"package,omitempty"`
+	ImportPath       string               `json:"import_path,omitempty"`
+	ParseMethod      string               `json:"parse_method,omitempty"`
+	Score            int                  `json:"score"`
+	ScoreComponents  map[string]int       `json:"score_components,omitempty"`
+	DetailLevel      int                  `json:"detail_level"`
+	ImportedBy       int                  `json:"imported_by,omitempty"`
+	DependsOn        int                  `json:"depends_on,omitempty"`
+	Untested         bool                 `json:"untested,omitempty"`
+	Boundaries       []string             `json:"boundaries,omitempty"`
+	Imports          []string             `json:"imports,omitempty"`
+	RelationEvidence []StructuredEvidence `json:"relation_evidence,omitempty"`
+	Symbols          []StructuredSymbol   `json:"symbols,omitempty"`
+	OmittedReason    string               `json:"omitted_reason,omitempty"`
+}
+
+// StructuredEvidence explains a relationship signal that was used by ranking
+// or emitted for structured consumers.
+type StructuredEvidence struct {
+	Kind          string `json:"kind"`
+	EvidenceClass string `json:"evidence_class"`
+	Confidence    string `json:"confidence"`
+	Detail        string `json:"detail"`
+	Caveat        string `json:"caveat,omitempty"`
 }
 
 // StructuredSymbol is the machine-readable symbol shape with stable JSON keys.
@@ -79,9 +91,10 @@ func (m *Map) StructuredOutput() StructuredOutput {
 	tsAvailable := m.tsAvailable
 	ctagsAvailable := m.ctagsAvailable
 	blocklist := m.blocklist
+	coverage := m.coverage
 	m.mu.RUnlock()
 
-	return BuildStructuredOutput(root, cfg, ranked, tsAvailable, ctagsAvailable, blocklist)
+	return BuildStructuredOutput(root, cfg, ranked, tsAvailable, ctagsAvailable, blocklist, coverage)
 }
 
 // StructuredOutputForRanked returns structured output for an adjusted ranked
@@ -93,16 +106,20 @@ func (m *Map) StructuredOutputForRanked(ranked []RankedFile) StructuredOutput {
 	tsAvailable := m.tsAvailable
 	ctagsAvailable := m.ctagsAvailable
 	blocklist := m.blocklist
+	coverage := m.coverage
 	m.mu.RUnlock()
 
-	return BuildStructuredOutput(root, cfg, cloneRanked(ranked), tsAvailable, ctagsAvailable, blocklist)
+	return BuildStructuredOutput(root, cfg, cloneRanked(ranked), tsAvailable, ctagsAvailable, blocklist, coverage)
 }
 
 // BuildStructuredOutput builds the machine-readable output for an already-ranked
 // file list. Callers that apply extra score passes, such as --calls, can pass
 // that adjusted ranked slice without mutating Map state.
-func BuildStructuredOutput(root string, cfg Config, ranked []RankedFile, tsAvailable, ctagsAvailable bool, blocklist *BlocklistConfig) StructuredOutput {
+func BuildStructuredOutput(root string, cfg Config, ranked []RankedFile, tsAvailable, ctagsAvailable bool, blocklist *BlocklistConfig, coverage ParseCoverage) StructuredOutput {
 	totalFiles, totalSymbols := countTotals(ranked)
+	if coverage.FilesScanned == 0 && len(ranked) > 0 {
+		coverage = parseCoverageFromRanked(ranked, tsAvailable, ctagsAvailable)
+	}
 	if cfg.MaxTokens > 0 {
 		ranked = BudgetFiles(cloneRanked(ranked), cfg.MaxTokens, blocklist)
 	}
@@ -118,6 +135,7 @@ func BuildStructuredOutput(root string, cfg Config, ranked []RankedFile, tsAvail
 			ConsumedPaths:  append([]string(nil), cfg.ConsumedPaths...),
 			SymbolRefs:     cfg.SymbolRefs,
 		},
+		Coverage: coverage,
 		Warnings: structuredWarnings(tsAvailable, ctagsAvailable),
 		Files:    make([]StructuredFile, 0, len(ranked)),
 	}
@@ -141,22 +159,55 @@ func structuredWarnings(tsAvailable, ctagsAvailable bool) []string {
 
 func structuredFile(f RankedFile, omitted string) StructuredFile {
 	return StructuredFile{
-		Path:            filepath.ToSlash(f.Path),
-		Language:        f.Language,
-		Package:         f.Package,
-		ImportPath:      f.ImportPath,
-		ParseMethod:     f.ParseMethod,
-		Score:           f.Score,
-		ScoreComponents: cloneScoreComponents(f.ScoreComponents),
-		DetailLevel:     f.DetailLevel,
-		ImportedBy:      f.ImportedBy,
-		DependsOn:       f.DependsOn,
-		Untested:        f.Untested,
-		Boundaries:      append([]string(nil), f.Boundaries...),
-		Imports:         append([]string(nil), f.Imports...),
-		Symbols:         structuredSymbols(f.Symbols),
-		OmittedReason:   omitted,
+		Path:             filepath.ToSlash(f.Path),
+		Language:         f.Language,
+		Package:          f.Package,
+		ImportPath:       f.ImportPath,
+		ParseMethod:      f.ParseMethod,
+		Score:            f.Score,
+		ScoreComponents:  cloneScoreComponents(f.ScoreComponents),
+		DetailLevel:      f.DetailLevel,
+		ImportedBy:       f.ImportedBy,
+		DependsOn:        f.DependsOn,
+		Untested:         f.Untested,
+		Boundaries:       append([]string(nil), f.Boundaries...),
+		Imports:          append([]string(nil), f.Imports...),
+		RelationEvidence: structuredRelationEvidence(f),
+		Symbols:          structuredSymbols(f.Symbols),
+		OmittedReason:    omitted,
 	}
+}
+
+func structuredRelationEvidence(f RankedFile) []StructuredEvidence {
+	var out []StructuredEvidence
+	if f.ImportedBy > 0 {
+		if f.Language == "go" {
+			out = append(out, StructuredEvidence{
+				Kind:          "import_reference",
+				EvidenceClass: "import_graph",
+				Confidence:    "high",
+				Detail:        "Go import path matched scanned package import path",
+			})
+		} else {
+			out = append(out, StructuredEvidence{
+				Kind:          "import_reference",
+				EvidenceClass: "heuristic",
+				Confidence:    "medium",
+				Detail:        "Non-Go import string matched scanned file basename",
+				Caveat:        "Basename matching can miss aliases and re-exports or collide on common names",
+			})
+		}
+	}
+	if f.ScoreComponents[scoreComponentSymbolRefs] > 0 {
+		out = append(out, StructuredEvidence{
+			Kind:          "symbol_reference",
+			EvidenceClass: "heuristic",
+			Confidence:    "low",
+			Detail:        "Other files mentioned exported symbol names lexically",
+			Caveat:        "Lexical references are capped and approximate; use exact callers where available",
+		})
+	}
+	return out
 }
 
 func omittedReason(f RankedFile, maxTokens int, cfg *BlocklistConfig) string {

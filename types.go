@@ -40,3 +40,15 @@ type FileSymbols struct {
 	Imports     []string // import paths (Go) or module names (other)
 	ParseMethod string   // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
 }
+
+// ParseCoverage records observed parser fidelity for a build.
+type ParseCoverage struct {
+	FilesScanned      int            `json:"files_scanned"`
+	FilesParsed       int            `json:"files_parsed"`
+	ParseFailures     int            `json:"parse_failures,omitempty"`
+	ByLanguage        map[string]int `json:"by_language,omitempty"`
+	ByParseMethod     map[string]int `json:"by_parse_method,omitempty"`
+	FailuresByLang    map[string]int `json:"failures_by_language,omitempty"`
+	TreeSitterEnabled bool           `json:"tree_sitter_enabled"`
+	CtagsEnabled      bool           `json:"ctags_enabled"`
+}

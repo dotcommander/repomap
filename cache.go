@@ -44,6 +44,7 @@ type diskCache struct {
 	BuiltAt       time.Time            `json:"built_at"`
 	Mtimes        map[string]time.Time `json:"mtimes"`
 	ContentHashes map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
+	Coverage      ParseCoverage        `json:"coverage,omitempty"`
 	Output        string               `json:"output"`
 	OutputLines   string               `json:"output_lines"`
 	Ranked        []RankedFile         `json:"ranked"`
@@ -52,7 +53,7 @@ type diskCache struct {
 	Explain       bool                 `json:"explain,omitempty"`  // whether --explain was active at write time
 }
 
-const cacheVersion = 7
+const cacheVersion = 8
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -80,6 +81,7 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		BuiltAt:       m.builtAt,
 		Mtimes:        m.mtimes,
 		ContentHashes: m.contentHashes,
+		Coverage:      m.coverage,
 		Output:        compact,
 		OutputLines:   lines,
 		Ranked:        m.ranked,
@@ -129,6 +131,7 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
 	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
+	m.coverage = entry.Coverage
 	m.mu.Unlock()
 
 	return true

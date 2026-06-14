@@ -4,12 +4,13 @@ All notable changes to repomap are documented here.
 
 ---
 
-## v0.14.0 — 2026-06-13
+## v0.14.0 — 2026-06-14
 
 ### Features
 
 - audit: every audit packet (`risks`, `surface`, `effects`, `brief`) is self-describing at `schema_version` 2 — a stable `id` for citation (e.g. `repomap:risk:<path>`), an `evidence_class` (`import_graph`/`ast`/`git_history`/`heuristic`) with a derived `confidence` tier, a per-file `verify_cmd` for Go targets, and an external-consumer `caveat` (capped to `low` confidence) on signals blind to out-of-repo callers such as dead code and untested exports.
 - audit: empty file lists serialize as `[]` instead of `null` and carry a `files_omitted_reason`; truncated packets report an `omitted_reason`. Additive and backward-compatible apart from the `null`→`[]` fix.
+- structured JSON: add top-level parser coverage metrics and per-file relation evidence so consumers can distinguish exact Go import graph signals from heuristic non-Go basename and symbol-reference signals.
 
 ---
 

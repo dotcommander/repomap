@@ -108,6 +108,8 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 	m.outputs.lines = &entry.OutputLines
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
+	m.contentHashes = entry.ContentHashes
+	m.coverage = entry.Coverage
 	m.outputs.verbose = nil
 	m.outputs.detail = nil
 	m.outputs.xml = nil
@@ -160,7 +162,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	var newHashes map[string]string
 	if len(infos) > 0 {
 		var err error
-		parsed, newMtimes, newHashes, err = m.parseFiles(ctx, infos)
+		parsed, newMtimes, newHashes, _, err = m.parseFiles(ctx, infos)
 		if err != nil {
 			return err
 		}
@@ -216,6 +218,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	m.mu.Lock()
 	m.ranked = ranked
 	m.builtAt = time.Now()
+	m.coverage = parseCoverageFromRanked(ranked, m.tsAvailable, m.ctagsAvailable)
 	m.outputs.reset()
 	m.mu.Unlock()
 

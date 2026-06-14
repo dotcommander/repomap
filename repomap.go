@@ -54,6 +54,7 @@ type Map struct {
 	builtAt       time.Time
 	mtimes        map[string]time.Time // path → mtime at last build
 	contentHashes map[string]string    // path → sha256 hex at last build; nil on old cache loads
+	coverage      ParseCoverage
 	outputs       outputCache
 
 	tsAvailable    bool // tree-sitter parsing available
@@ -114,7 +115,7 @@ func (m *Map) Build(ctx context.Context) error {
 		return ErrNotCodeProject
 	}
 
-	parsed, mtimes, hashes, err := m.parseFiles(ctx, files)
+	parsed, mtimes, hashes, coverage, err := m.parseFiles(ctx, files)
 	if err != nil {
 		return err
 	}
@@ -147,6 +148,7 @@ func (m *Map) Build(ctx context.Context) error {
 	m.builtAt = time.Now()
 	m.mtimes = mtimes
 	m.contentHashes = hashes
+	m.coverage = coverage
 	m.outputs.reset()
 	m.mu.Unlock()
 
