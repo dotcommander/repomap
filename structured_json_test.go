@@ -54,10 +54,14 @@ func TestStructuredOutputIncludesMachineReadableFields(t *testing.T) {
 	assert.Equal(t, 1, out.Coverage.ByLanguage["go"])
 	assert.Equal(t, 1, out.Coverage.ByParseMethod["go_ast"])
 	assert.Equal(t, "auth/token.go", out.Files[0].Path)
+	assert.Equal(t, "file:auth/token.go", out.Files[0].Handle)
+	assert.Equal(t, "full", out.Files[0].CapabilityTier)
 	assert.Equal(t, "go_ast", out.Files[0].ParseMethod)
 	assert.Equal(t, 42, out.Files[0].Score)
 	assert.Equal(t, 41, out.Files[0].ScoreComponents[scoreComponentIntent])
 	assert.Equal(t, "RefreshToken", out.Files[0].Symbols[0].Name)
+	assert.Equal(t, "symbol:auth/token.go::RefreshToken#function@12", out.Files[0].Symbols[0].Handle)
+	assert.Equal(t, "file:auth/token.go", out.Files[0].Symbols[0].FileHandle)
 
 	data, err := m.StructuredJSON()
 	require.NoError(t, err)
@@ -65,6 +69,23 @@ func TestStructuredOutputIncludesMachineReadableFields(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &decoded))
 	assert.Equal(t, out.Files[0].Path, decoded.Files[0].Path)
 	assert.Equal(t, 1, decoded.Coverage.FilesParsed)
+}
+
+func TestStructuredOutputIncludesLanguageCapabilityTier(t *testing.T) {
+	t.Parallel()
+
+	m := New("/repo", Config{MaxTokens: 0})
+	m.ranked = []RankedFile{
+		{FileSymbols: &FileSymbols{Path: "cmd/app.go", Language: "go"}},
+		{FileSymbols: &FileSymbols{Path: "scripts/tool.lua", Language: "lua"}},
+		{FileSymbols: &FileSymbols{Path: "notes.custom", Language: "madeup"}},
+	}
+
+	out := m.StructuredOutput()
+	require.Len(t, out.Files, 3)
+	assert.Equal(t, "full", out.Files[0].CapabilityTier)
+	assert.Equal(t, "extension-only", out.Files[1].CapabilityTier)
+	assert.Equal(t, "unknown", out.Files[2].CapabilityTier)
 }
 
 func TestIntentTokenizeDropsWorkflowStopwords(t *testing.T) {

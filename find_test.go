@@ -186,5 +186,31 @@ func TestFindSymbol(t *testing.T) {
 		// Higher-scored file must come first when symbol score ties.
 		assert.Equal(t, "a_high_score.go", hits[0].File)
 		assert.Equal(t, "z_low_score.go", hits[1].File)
+		assert.Empty(t, hits[0].Handle)
+		assert.Equal(t, "file:a_high_score.go", hits[0].FileHandle)
 	})
+}
+
+func TestFindSymbolHandle(t *testing.T) {
+	t.Parallel()
+
+	tm := &Map{}
+	tm.ranked = []RankedFile{{
+		FileSymbols: &FileSymbols{
+			Path: "service.go",
+			Symbols: []Symbol{{
+				Name: "Run",
+				Kind: "function",
+				Line: 12,
+			}},
+		},
+		Score:       100,
+		DetailLevel: 2,
+	}}
+
+	hits := tm.FindSymbol("symbol:service.go::Run#function@12", "", "")
+	require.Len(t, hits, 1)
+	assert.Equal(t, "service.go", hits[0].File)
+	assert.Equal(t, "Run", hits[0].Symbol.Name)
+	assert.Equal(t, "symbol:service.go::Run#function@12", hits[0].Handle)
 }

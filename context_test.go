@@ -37,10 +37,33 @@ func Run(cfg Config) error {
 
 	assert.Equal(t, "Run", got.Match.Symbol.Name)
 	assert.Equal(t, "service.go", got.Match.File)
+	assert.Equal(t, "symbol:service.go::Run#function@9", got.Match.Handle)
 	assert.Equal(t, "service.go", got.Impact.File.Path)
 	require.NotEmpty(t, got.Source)
 	assert.Equal(t, 9, got.Source[0].Number)
 	assert.Contains(t, got.Source[0].Text, "func Run")
+}
+
+func TestContextAcceptsSymbolHandle(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/context\n\ngo 1.22\n"), 0o644))
+	src := `package contextdemo
+
+func Run() error {
+	return nil
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "service.go"), []byte(src), 0o644))
+
+	m := New(dir, Config{MaxTokens: 4096, MaxTokensNoCtx: 4096})
+	require.NoError(t, m.Build(context.Background()))
+
+	got, err := m.Context("symbol:service.go::Run#function@3", ContextOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "Run", got.Match.Symbol.Name)
+	assert.Equal(t, "symbol:service.go::Run#function@3", got.Match.Handle)
 }
 
 func TestContext_TruncatesLongSourceSpan(t *testing.T) {
