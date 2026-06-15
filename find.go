@@ -10,6 +10,8 @@ import (
 type SymbolMatch struct {
 	File        string  // path relative to root
 	Symbol      Symbol  // the matching symbol
+	Handle      string  // stable symbol handle; accepted by Context
+	FileHandle  string  // stable file handle for the owning file
 	Score       float64 // relevance score: 100=exact, 75=exact-CI, 50=prefix, 25=contains
 	DetailLevel int     // copied from the owning RankedFile (for budget-aware callers)
 }
@@ -50,7 +52,10 @@ func ParseFindQuery(q string) (name, kind, file string) {
 
 // FindSymbol searches the ranked symbol set for matches.
 //
-//	name:  required (empty → empty result). Matched in priority order:
+//	name:  required (empty → empty result). A name with the "symbol:" prefix is
+//	       treated as a stable handle produced by SymbolHandle and resolved to the
+//	       single exact match (score 100), bypassing the fuzzy ranking below.
+//	       Otherwise the plain name is matched in priority order:
 //	       exact (100) > case-insensitive exact (75) > prefix (50) > contains (25).
 //	kind:  optional filter; "" matches any. Matched case-insensitively against Symbol.Kind.
 //	file:  optional substring filter against RankedFile.Path; "" matches any.
@@ -58,6 +63,9 @@ func ParseFindQuery(q string) (name, kind, file string) {
 // Results are sorted by Score desc, then the owning RankedFile.Score desc
 // (tiebreaker), then File asc (stable tiebreaker). Safe for concurrent use.
 func (m *Map) FindSymbol(name, kind, file string) []SymbolMatch {
+	if handleFile, handleName, handleKind, handleLine, ok := ParseSymbolHandle(name); ok {
+		return m.FindSymbolHandle(handleFile, handleName, handleKind, handleLine)
+	}
 	out := []SymbolMatch{}
 	if name == "" {
 		return out
@@ -95,6 +103,8 @@ func (m *Map) FindSymbol(name, kind, file string) []SymbolMatch {
 				match: SymbolMatch{
 					File:        rf.Path,
 					Symbol:      sym,
+					Handle:      SymbolHandle(rf.Path, sym),
+					FileHandle:  FileHandle(rf.Path),
 					Score:       score,
 					DetailLevel: rf.DetailLevel,
 				},
@@ -116,6 +126,37 @@ func (m *Map) FindSymbol(name, kind, file string) []SymbolMatch {
 	out = make([]SymbolMatch, len(hits))
 	for i, h := range hits {
 		out[i] = h.match
+	}
+	return out
+}
+
+// FindSymbolHandle resolves an exact symbol handle emitted by SymbolHandle.
+func (m *Map) FindSymbolHandle(file, name, kind string, line int) []SymbolMatch {
+	out := []SymbolMatch{}
+	if file == "" || name == "" || kind == "" || line <= 0 {
+		return out
+	}
+	m.mu.RLock()
+	ranked := m.ranked
+	m.mu.RUnlock()
+
+	for i := range ranked {
+		rf := &ranked[i]
+		if rf.FileSymbols == nil || rf.Path != file {
+			continue
+		}
+		for _, sym := range rf.Symbols {
+			if sym.Name == name && sym.Kind == kind && sym.Line == line {
+				return []SymbolMatch{{
+					File:        rf.Path,
+					Symbol:      sym,
+					Handle:      SymbolHandle(rf.Path, sym),
+					FileHandle:  FileHandle(rf.Path),
+					Score:       100,
+					DetailLevel: rf.DetailLevel,
+				}}
+			}
+		}
 	}
 	return out
 }

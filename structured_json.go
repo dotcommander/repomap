@@ -34,7 +34,9 @@ type StructuredConfig struct {
 // StructuredFile is a machine-readable file block.
 type StructuredFile struct {
 	Path             string               `json:"path"`
+	Handle           string               `json:"handle,omitempty"`
 	Language         string               `json:"language,omitempty"`
+	CapabilityTier   string               `json:"capability_tier,omitempty"`
 	Package          string               `json:"package,omitempty"`
 	ImportPath       string               `json:"import_path,omitempty"`
 	ParseMethod      string               `json:"parse_method,omitempty"`
@@ -64,6 +66,8 @@ type StructuredEvidence struct {
 // StructuredSymbol is the machine-readable symbol shape with stable JSON keys.
 type StructuredSymbol struct {
 	Name        string   `json:"name"`
+	Handle      string   `json:"handle,omitempty"`
+	FileHandle  string   `json:"file_handle,omitempty"`
 	Kind        string   `json:"kind"`
 	Signature   string   `json:"signature,omitempty"`
 	Receiver    string   `json:"receiver,omitempty"`
@@ -160,7 +164,9 @@ func structuredWarnings(tsAvailable, ctagsAvailable bool) []string {
 func structuredFile(f RankedFile, omitted string) StructuredFile {
 	return StructuredFile{
 		Path:             filepath.ToSlash(f.Path),
+		Handle:           FileHandle(filepath.ToSlash(f.Path)),
 		Language:         f.Language,
+		CapabilityTier:   LanguageCapabilityTier(f.Language),
 		Package:          f.Package,
 		ImportPath:       f.ImportPath,
 		ParseMethod:      f.ParseMethod,
@@ -173,7 +179,7 @@ func structuredFile(f RankedFile, omitted string) StructuredFile {
 		Boundaries:       append([]string(nil), f.Boundaries...),
 		Imports:          append([]string(nil), f.Imports...),
 		RelationEvidence: structuredRelationEvidence(f),
-		Symbols:          structuredSymbols(f.Symbols),
+		Symbols:          structuredSymbolsForFile(filepath.ToSlash(f.Path), f.Symbols),
 		OmittedReason:    omitted,
 	}
 }
@@ -225,7 +231,7 @@ func omittedReason(f RankedFile, maxTokens int, cfg *BlocklistConfig) string {
 	return "omitted"
 }
 
-func structuredSymbols(symbols []Symbol) []StructuredSymbol {
+func structuredSymbolsForFile(file string, symbols []Symbol) []StructuredSymbol {
 	if len(symbols) == 0 {
 		return nil
 	}
@@ -233,6 +239,8 @@ func structuredSymbols(symbols []Symbol) []StructuredSymbol {
 	for _, s := range symbols {
 		out = append(out, StructuredSymbol{
 			Name:        s.Name,
+			Handle:      SymbolHandle(file, s),
+			FileHandle:  FileHandle(file),
 			Kind:        s.Kind,
 			Signature:   s.Signature,
 			Receiver:    s.Receiver,
