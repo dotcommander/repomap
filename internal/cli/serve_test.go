@@ -129,6 +129,8 @@ func TestServeSymbolFind(t *testing.T) {
 	symbol := first["Symbol"].(map[string]any)
 	require.Equal(t, "Map", symbol["Name"])
 	require.Equal(t, "struct", symbol["Kind"])
+	require.NotEmpty(t, first["Handle"])
+	require.NotEmpty(t, first["FileHandle"])
 }
 
 func TestServeFileExplain(t *testing.T) {
@@ -165,6 +167,7 @@ func TestServeFileContext(t *testing.T) {
 	match := result["match"].(map[string]any)
 	symbol := match["Symbol"].(map[string]any)
 	require.Equal(t, "Build", symbol["Name"])
+	require.NotEmpty(t, match["Handle"])
 }
 
 func TestServeMapStatus(t *testing.T) {
