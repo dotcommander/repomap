@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/go/bin/repomap\" brief \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}
