@@ -100,14 +100,7 @@ func (m *Map) FindSymbol(name, kind, file string) []SymbolMatch {
 				continue
 			}
 			hits = append(hits, scored{
-				match: SymbolMatch{
-					File:        rf.Path,
-					Symbol:      sym,
-					Handle:      SymbolHandle(rf.Path, sym),
-					FileHandle:  FileHandle(rf.Path),
-					Score:       score,
-					DetailLevel: rf.DetailLevel,
-				},
+				match:     makeSymbolMatch(rf, sym, score),
 				fileScore: rf.Score,
 			})
 		}
@@ -147,18 +140,24 @@ func (m *Map) FindSymbolHandle(file, name, kind string, line int) []SymbolMatch 
 		}
 		for _, sym := range rf.Symbols {
 			if sym.Name == name && sym.Kind == kind && sym.Line == line {
-				return []SymbolMatch{{
-					File:        rf.Path,
-					Symbol:      sym,
-					Handle:      SymbolHandle(rf.Path, sym),
-					FileHandle:  FileHandle(rf.Path),
-					Score:       100,
-					DetailLevel: rf.DetailLevel,
-				}}
+				return []SymbolMatch{makeSymbolMatch(rf, sym, 100)}
 			}
 		}
 	}
 	return out
+}
+
+// makeSymbolMatch builds a SymbolMatch, deriving the stable file/symbol handles
+// in one place so FindSymbol and FindSymbolHandle cannot drift on the format.
+func makeSymbolMatch(rf *RankedFile, sym Symbol, score float64) SymbolMatch {
+	return SymbolMatch{
+		File:        rf.Path,
+		Symbol:      sym,
+		Handle:      SymbolHandle(rf.Path, sym),
+		FileHandle:  FileHandle(rf.Path),
+		Score:       score,
+		DetailLevel: rf.DetailLevel,
+	}
 }
 
 // scoreSymbolMatch returns the relevance score, or 0 for no match.
