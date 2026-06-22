@@ -4,6 +4,18 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.15.0 — 2026-06-22
+
+### Features
+
+- **`repomap brief`** — new top-level agent boot digest command. Prints a time-aware greeting, a project-specific Verify chain (`build`/`test`/`vet`, plus `lint` only when a golangci config is present), a State section (branch, dirty-file count with the changed paths, recent commit subjects), a Rules section flagging agent-convention docs such as `CLAUDE.md`, and a warning when an active `.repomap.yaml` is filtering the map — followed by the enriched repository map. Makefile/justfile targets are verified to exist before being advertised.
+- **`[dead]` annotation** — exported symbols with no detected references are marked `[dead]` in the default output.
+- **Richer level-1 summaries** — summary-level file blocks now list their top exported symbol names instead of bare counts.
+- **Per-symbol content hashing** — `--json-structured` emits a per-symbol content hash so consumers can detect which individual symbols changed; cache version bumped to 9.
+- **audit** — extract job, model, and policy framework-role surfaces.
+
+---
+
 ## v0.14.0 — 2026-06-14
 
 ### Features
