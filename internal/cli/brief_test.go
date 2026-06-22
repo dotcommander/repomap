@@ -60,7 +60,8 @@ func TestDetectVerify(t *testing.T) {
 	}{
 		{"go", map[string]string{"go.mod": "module x\n"}, "go build ./...", "go test ./..."},
 		{"npm", map[string]string{"package.json": `{"scripts":{"build":"tsc","test":"vitest"}}`}, "npm run build", "npm test"},
-		{"makefile", map[string]string{"Makefile": "build:\n\techo hi\n"}, "make build", "make test"},
+		{"makefile-both", map[string]string{"Makefile": "build:\n\techo hi\ntest:\n\techo t\n"}, "make build", "make test"},
+		{"makefile-no-test", map[string]string{"Makefile": "build:\n\techo hi\n"}, "make build", "(unknown)"},
 		{"empty", map[string]string{}, "(unknown)", "(unknown)"},
 	}
 	for _, tc := range tests {

@@ -146,9 +146,9 @@ func detectVerify(dir string) verifyCmds {
 		b, t := pkgScripts(dir)
 		return verifyCmds{orDefault(b, "npm run build"), orDefault(t, "npm test")}
 	case fileExists(dir, "justfile") || fileExists(dir, "Justfile"):
-		return verifyCmds{justRecipe(dir, "build"), justRecipe(dir, "test")}
+		return verifyCmds{recipeCmd(dir, "just", "build", "justfile", "Justfile"), recipeCmd(dir, "just", "test", "justfile", "Justfile")}
 	case fileExists(dir, "Makefile"):
-		return verifyCmds{"make build", "make test"}
+		return verifyCmds{recipeCmd(dir, "make", "build", "Makefile"), recipeCmd(dir, "make", "test", "Makefile")}
 	default:
 		return verifyCmds{"(unknown)", "(unknown)"}
 	}
@@ -176,10 +176,12 @@ func pkgScripts(dir string) (build, test string) {
 	return build, test
 }
 
-// justRecipe returns "just <name>" when a recipe with that name is defined in a
-// justfile, else "(unknown)".
-func justRecipe(dir, name string) string {
-	for _, fn := range []string{"justfile", "Justfile"} {
+// recipeCmd returns "<tool> <name>" when a target or recipe named <name> is
+// defined in one of files (checked in order), else "(unknown)". Headers sit at
+// column 0 as "<name>:" or "<name> <args>:"; we match either. Best-effort: it
+// avoids advertising a verify command the build tool does not actually define.
+func recipeCmd(dir, tool, name string, files ...string) string {
+	for _, fn := range files {
 		data, err := os.ReadFile(filepath.Join(dir, fn))
 		if err != nil {
 			continue
@@ -187,7 +189,7 @@ func justRecipe(dir, name string) string {
 		for _, line := range strings.Split(string(data), "\n") {
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, name+":") || strings.HasPrefix(trimmed, name+" ") {
-				return "just " + name
+				return tool + " " + name
 			}
 		}
 	}
