@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,4 +85,35 @@ func TestReadModulePath(t *testing.T) {
 	assert.Equal(t, "", readModulePath(dir))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/foo\n\ngo 1.26\n"), 0o644))
 	assert.Equal(t, "example.com/foo", readModulePath(dir))
+}
+
+// TestBriefCmd_DigestFormat pins the exact header block (everything before the
+// appended map) so accidental wording/spacing drift in this agent-facing output
+// is caught. The temp repo is fully controlled: branch main, a committed go.mod
+// fixing module+identity+verify lines, and exactly one untracked file → dirty 1.
+func TestBriefCmd_DigestFormat(t *testing.T) {
+	t.Parallel()
+	root := initAutoTestRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n\ngo 1.26\n"), 0o644))
+	runGitAuto(t, root, "add", "go.mod")
+	runGitAuto(t, root, "commit", "-q", "-m", "add go.mod")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "foo.go"), []byte("package main\n\nfunc Foo() {}\n"), 0o644))
+
+	out, err := runBriefCmd(t, root)
+	require.NoError(t, err)
+
+	const marker = "## Map\n"
+	idx := strings.Index(out, marker)
+	require.GreaterOrEqual(t, idx, 0, "output missing %q:\n%s", marker, out)
+	header := out[:idx+len(marker)]
+
+	want := "# demo — Go module\n" +
+		"  module example.com/demo\n" +
+		"\n## Verify\n" +
+		"  build: go build ./...\n" +
+		"  test:  go test ./...\n" +
+		"\n## State\n" +
+		"  branch: main   dirty: 1 file(s)\n" +
+		"\n## Map\n"
+	assert.Equal(t, want, header)
 }
