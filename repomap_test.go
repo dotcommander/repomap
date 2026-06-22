@@ -1004,6 +1004,24 @@ func TestAnnotationTag(t *testing.T) {
 		s := Symbol{Kind: "method", Receiver: "*Agent", ParamCount: 6, ResultCount: 1}
 		assert.Equal(t, " [6p]", annotationTag(s))
 	})
+
+	t.Run("dead_symbol", func(t *testing.T) {
+		t.Parallel()
+		s := Symbol{Kind: "function", Exported: true, Dead: true}
+		assert.Equal(t, " [dead]", annotationTag(s))
+	})
+
+	t.Run("dead_with_size", func(t *testing.T) {
+		t.Parallel()
+		s := Symbol{Kind: "function", Exported: true, Dead: true, Line: 1, EndLine: 100}
+		assert.Equal(t, " [dead, 100L]", annotationTag(s))
+	})
+
+	t.Run("not_dead_no_marker", func(t *testing.T) {
+		t.Parallel()
+		s := Symbol{Kind: "function", Exported: true, Dead: false, Line: 1, EndLine: 100}
+		assert.Equal(t, " [100L]", annotationTag(s))
+	})
 }
 
 // TestFuncSignatureCountsFromAST verifies ParamCount/ResultCount populate from Go AST.

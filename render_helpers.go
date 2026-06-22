@@ -174,6 +174,9 @@ func sizeTag(s Symbol) string {
 // Empty string if no signal crosses its threshold.
 func annotationTag(s Symbol) string {
 	var parts []string
+	if s.Dead {
+		parts = append(parts, "dead")
+	}
 	if span := s.LineSpan(); span >= sizeThreshold {
 		parts = append(parts, fmt.Sprintf("%dL", span))
 	}
