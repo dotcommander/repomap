@@ -75,8 +75,9 @@ func newBriefCmd() *cobra.Command {
 			if branch == "" {
 				branch = "(none)"
 			}
-			dirty := len(runLines(ctx, "git", "-C", absDir, "status", "--short"))
-			if _, err := fmt.Fprintf(out, "\n## State\n  branch: %s   dirty: %d file(s)\n", branch, dirty); err != nil {
+			dirtyLines := runLines(ctx, "git", "-C", absDir, "status", "--short")
+			recent := runLines(ctx, "git", "-C", absDir, "log", "-3", "--format=%s")
+			if _, err := fmt.Fprint(out, briefState(branch, dirtyLines, recent)); err != nil {
 				return err
 			}
 
@@ -86,6 +87,30 @@ func newBriefCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// briefState renders the "## State" section: branch, dirty file count plus up
+// to 8 changed paths (with their git status codes), then up to 3 recent commit
+// subjects. The path and recent blocks are skipped when empty so a clean tree
+// or a commit-less repo still render cleanly.
+func briefState(branch string, dirty, recent []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n## State\n  branch: %s   dirty: %d file(s)\n", branch, len(dirty))
+	const maxPaths = 8
+	for i, line := range dirty {
+		if i == maxPaths {
+			fmt.Fprintf(&b, "    +%d more\n", len(dirty)-maxPaths)
+			break
+		}
+		fmt.Fprintf(&b, "    %s\n", line)
+	}
+	if len(recent) > 0 {
+		b.WriteString("  recent:\n")
+		for _, subj := range recent {
+			fmt.Fprintf(&b, "    %s\n", subj)
+		}
+	}
+	return b.String()
 }
 
 // readModulePath returns the module path from <dir>/go.mod, or "" when absent.

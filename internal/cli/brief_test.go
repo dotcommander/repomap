@@ -118,6 +118,10 @@ func TestBriefCmd_DigestFormat(t *testing.T) {
 		"  test:  go test ./...\n" +
 		"\n## State\n" +
 		"  branch: main   dirty: 1 file(s)\n" +
+		"    ?? foo.go\n" +
+		"  recent:\n" +
+		"    add go.mod\n" +
+		"    initial\n" +
 		"\n## Map\n"
 	assert.Equal(t, want, header)
 }
