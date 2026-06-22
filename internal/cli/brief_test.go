@@ -140,6 +140,14 @@ func TestBriefRules(t *testing.T) {
 	assert.Equal(t, "\n## Rules\n  conventions: CLAUDE.md — read before editing\n", briefRules(dir))
 }
 
+func TestBriefConfigNote(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	assert.Equal(t, "", briefConfigNote(dir))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".repomap.yaml"), []byte("method_blocklist: [Test*]\n"), 0o644))
+	assert.Contains(t, briefConfigNote(dir), ".repomap.yaml active")
+}
+
 func TestGreeting(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "Good morning", greeting(0))

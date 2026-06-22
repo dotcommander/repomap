@@ -99,6 +99,11 @@ func newBriefCmd() *cobra.Command {
 				}
 			}
 
+			if note := briefConfigNote(absDir); note != "" {
+				if _, err := fmt.Fprint(out, note); err != nil {
+					return err
+				}
+			}
 			if _, err := fmt.Fprintf(out, "\n## Map\n%s", m.String()); err != nil {
 				return err
 			}
@@ -147,6 +152,16 @@ func briefRules(dir string) string {
 		return ""
 	}
 	return fmt.Sprintf("\n## Rules\n  conventions: %s — read before editing\n", strings.Join(found, ", "))
+}
+
+// briefConfigNote warns that repomap's own config is active so a reader does
+// not mistake a filtered Map for the complete symbol set. Returns "" when no
+// .repomap.yaml/.yml is present.
+func briefConfigNote(dir string) string {
+	if fileExists(dir, ".repomap.yaml") || fileExists(dir, ".repomap.yml") {
+		return "\n## Config\n  .repomap.yaml active — Map may omit filtered symbols\n"
+	}
+	return ""
 }
 
 // readModulePath returns the module path from <dir>/go.mod, or "" when absent.
