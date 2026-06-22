@@ -21,6 +21,10 @@ type verifyCmds struct {
 	lint  string
 }
 
+// briefMapFiles caps how many top-ranked files the brief embeds. A boot digest
+// wants the spine, not every file — the full map is one `repomap` call away.
+const briefMapFiles = 20
+
 // newBriefCmd builds the `repomap brief` subcommand: an agent boot digest that
 // answers identity + how-to-verify + current git state in one call, then
 // appends the standard enriched repo map. Task surfacing is intentionally
@@ -104,8 +108,14 @@ func newBriefCmd() *cobra.Command {
 					return err
 				}
 			}
-			if _, err := fmt.Fprintf(out, "\n## Map\n%s", m.String()); err != nil {
+			mapBody, total := m.StringBriefMap(briefMapFiles)
+			if _, err := fmt.Fprintf(out, "\n## Map\n%s", mapBody); err != nil {
 				return err
+			}
+			if total > briefMapFiles {
+				if _, err := fmt.Fprintf(out, "  +%d more files — run `repomap` for the full map\n", total-briefMapFiles); err != nil {
+					return err
+				}
 			}
 			return nil
 		},

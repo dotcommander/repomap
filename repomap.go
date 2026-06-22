@@ -169,6 +169,50 @@ func (m *Map) String() string {
 	})
 }
 
+// StringBriefMap returns the enriched map for the top maxFiles ranked files
+// (the highest-scoring, since m.ranked is sorted descending) and the total
+// ranked-file count so the caller can report how many were dropped. Single-
+// package repos report a uniform ImportedBy — every file "imported by N" where
+// N is the package's importer count, a constant with no per-file signal — which
+// is zeroed out here so the digest map drops that noise. maxFiles <= 0 means no
+// cap.
+func (m *Map) StringBriefMap(maxFiles int) (body string, total int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ranked := cloneRanked(m.ranked)
+	total = len(ranked)
+	if uniformImportedBy(ranked) {
+		for i := range ranked {
+			ranked[i].ImportedBy = 0
+		}
+	}
+	if maxFiles > 0 && len(ranked) > maxFiles {
+		ranked = ranked[:maxFiles]
+	}
+	return FormatMap(ranked, m.config.MaxTokens, false, false, m.blocklist, m.config.Explain), total
+}
+
+// uniformImportedBy reports whether every file carrying a positive ImportedBy
+// shares the same count — the single-package degenerate case where the metric
+// is a package-wide constant rather than a per-file signal. Returns false when
+// no file has a positive count.
+func uniformImportedBy(ranked []RankedFile) bool {
+	first, seen := 0, false
+	for _, f := range ranked {
+		if f.ImportedBy <= 0 {
+			continue
+		}
+		if !seen {
+			first, seen = f.ImportedBy, true
+			continue
+		}
+		if f.ImportedBy != first {
+			return false
+		}
+	}
+	return seen
+}
+
 // StringCompact returns the lean orientation output: path + exported symbol names only.
 // No signatures, no godoc, no struct fields. Budget is applied using compactCost so
 // more files fit vs. the enriched default (m.String()).
