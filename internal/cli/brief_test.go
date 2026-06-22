@@ -126,6 +126,14 @@ func TestBriefCmd_DigestFormat(t *testing.T) {
 	assert.Equal(t, want, header)
 }
 
+func TestBriefRules(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	assert.Equal(t, "", briefRules(dir))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# rules\n"), 0o644))
+	assert.Equal(t, "\n## Rules\n  conventions: CLAUDE.md — read before editing\n", briefRules(dir))
+}
+
 func TestGreeting(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, "Good morning", greeting(0))

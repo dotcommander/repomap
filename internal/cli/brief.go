@@ -81,6 +81,12 @@ func newBriefCmd() *cobra.Command {
 				return err
 			}
 
+			if rules := briefRules(absDir); rules != "" {
+				if _, err := fmt.Fprint(out, rules); err != nil {
+					return err
+				}
+			}
+
 			if _, err := fmt.Fprintf(out, "\n## Map\n%s", m.String()); err != nil {
 				return err
 			}
@@ -111,6 +117,24 @@ func briefState(branch string, dirty, recent []string) string {
 		}
 	}
 	return b.String()
+}
+
+// briefRules renders a "## Rules" section pointing at any agent-convention docs
+// present at the repo root (banned libs, "don't touch X" — constraints not
+// inferrable from reading code). Returns "" when none exist so the section is
+// omitted entirely.
+func briefRules(dir string) string {
+	candidates := []string{"CLAUDE.md", "AGENTS.md", ".cursorrules", ".github/copilot-instructions.md"}
+	var found []string
+	for _, name := range candidates {
+		if fileExists(dir, name) {
+			found = append(found, name)
+		}
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n## Rules\n  conventions: %s — read before editing\n", strings.Join(found, ", "))
 }
 
 // readModulePath returns the module path from <dir>/go.mod, or "" when absent.
