@@ -26,6 +26,9 @@ type AuditSurfaceReport struct {
 	ConfigKeys          []AuditSurfaceHit  `json:"config_keys,omitempty"`
 	SchemaFields        []AuditSurfaceHit  `json:"schema_fields,omitempty"`
 	Routes              []AuditSurfaceHit  `json:"routes,omitempty"`
+	Jobs                []AuditSurfaceHit  `json:"jobs,omitempty"`
+	ModelFields         []AuditSurfaceHit  `json:"model_fields,omitempty"`
+	Policies            []AuditSurfaceHit  `json:"policies,omitempty"`
 	Outputs             []AuditSurfaceHit  `json:"outputs,omitempty"`
 	DependencyManifests []AuditSurfaceHit  `json:"dependency_manifests,omitempty"`
 }
@@ -121,6 +124,9 @@ var surfacePatterns = []auditPattern{
 	{kind: "config-key", lane: "config", weight: 5, re: regexp.MustCompile("`[^`]*(?:yaml|toml):\"([^\" ,]+)[^\"`]*\"[^`]*`"), name: groupName(1)},
 	{kind: "schema-field", lane: "api-contracts", weight: 3, re: regexp.MustCompile("`[^`]*json:\"([^\" ,]+)[^\"`]*\"[^`]*`"), name: groupName(1)},
 	{kind: "route", lane: "api-contracts", weight: 8, re: regexp.MustCompile(`\b(?:http\.)?(?:Handle|HandleFunc)\(\s*"([^"]+)"`), name: groupName(1)},
+	{kind: "job", lane: "lifecycle-concurrency", weight: 7, re: regexp.MustCompile(`\b(?:RegisterHandler|RegisterTask|HandleTask|NewTask|NewPeriodicTask|RegisterJob|AddJob)\(\s*"([^"]+)"`), name: groupName(1)},
+	{kind: "model-field", lane: "data-integrity", weight: 4, re: regexp.MustCompile("`[^`]*(?:gorm|db|bun):\"([^\" ,]+)[^\"`]*\"[^`]*`"), name: groupName(1)},
+	{kind: "policy", lane: "security", weight: 7, re: regexp.MustCompile(`\b(?:RegisterPolicy|RegisterMiddleware|AddPolicy|RequirePermission|RequireRole)\(\s*"([^"]+)"`), name: groupName(1)},
 	{kind: "output", lane: "cli-ux", weight: 5, re: regexp.MustCompile(`\b(?:OutOrStdout|OutOrStderr|os\.Stdout|os\.Stderr|fmt\.Fprint|fmt\.Fprintf|json\.NewEncoder|Encoder\()`)},
 }
 
@@ -191,6 +197,12 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 				report.SchemaFields = appendCapped(report.SchemaFields, hit, 120)
 			case "route":
 				report.Routes = appendCapped(report.Routes, hit, 120)
+			case "job":
+				report.Jobs = appendCapped(report.Jobs, hit, 120)
+			case "model-field":
+				report.ModelFields = appendCapped(report.ModelFields, hit, 120)
+			case "policy":
+				report.Policies = appendCapped(report.Policies, hit, 120)
 			case "output":
 				report.Outputs = appendCapped(report.Outputs, hit, 120)
 			}

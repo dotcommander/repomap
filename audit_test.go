@@ -191,6 +191,69 @@ func main() {
 	assertAuditReadGroup(t, brief.FirstReadQueue, "resource-bounds")
 }
 
+func TestAuditSurfaceExtractsFrameworkRoles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := `package main
+
+type User struct {
+	ID   int    ` + "`gorm:\"primaryKey\"`" + `
+	Name string ` + "`db:\"name\"`" + `
+}
+
+func register(q *queue, r *router) {
+	q.RegisterJob("send-email", nil)
+	q.NewTask("reindex", nil)
+	r.RegisterPolicy("admin-only", nil)
+	r.RequireRole("editor")
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/roles\n\ngo 1.22\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "app.go"), []byte(source), 0o644))
+
+	m := New(root, DefaultConfig())
+	m.ranked = []RankedFile{
+		{FileSymbols: &FileSymbols{Path: "app.go", Language: "go", Package: "main"}, Score: 100},
+	}
+
+	surface, err := m.AuditSurface(context.Background(), 0)
+	require.NoError(t, err)
+
+	jobNames := surfaceHitNames(surface.Jobs)
+	assert.Contains(t, jobNames, "send-email")
+	assert.Contains(t, jobNames, "reindex")
+
+	modelNames := surfaceHitNames(surface.ModelFields)
+	assert.Contains(t, modelNames, "primaryKey")
+	assert.Contains(t, modelNames, "name")
+
+	policyNames := surfaceHitNames(surface.Policies)
+	assert.Contains(t, policyNames, "admin-only")
+	assert.Contains(t, policyNames, "editor")
+
+	var appFile *AuditSurfaceFile
+	for i := range surface.Files {
+		if surface.Files[i].Path == "app.go" {
+			appFile = &surface.Files[i]
+			break
+		}
+	}
+	require.NotNil(t, appFile, "app.go should appear as a surface file")
+	assert.Equal(t, "repomap:surface:app-go", appFile.ID)
+	assert.Contains(t, appFile.Kinds, "job")
+	assert.Contains(t, appFile.Kinds, "model-field")
+	assert.Contains(t, appFile.Kinds, "policy")
+}
+
+func surfaceHitNames(hits []AuditSurfaceHit) []string {
+	out := make([]string, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, h.Name)
+	}
+	return out
+}
+
 func assertAuditReadGroup(t *testing.T, groups []AuditReadGroup, name string) {
 	t.Helper()
 	for _, group := range groups {
