@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dotcommander/repomap"
 	"github.com/spf13/cobra"
@@ -52,6 +53,9 @@ func newBriefCmd() *cobra.Command {
 			title := path.Base(absDir)
 			if modulePath != "" {
 				title = path.Base(modulePath)
+			}
+			if _, err := fmt.Fprintf(out, "%s, agent — here's your briefing.\n\n", greeting(time.Now().Hour())); err != nil {
+				return err
 			}
 			if _, err := fmt.Fprintf(out, "# %s — %s %s\n", title, lang, kind); err != nil {
 				return err
@@ -202,5 +206,17 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// greeting returns a time-of-day salutation for the given 24-hour clock hour.
+func greeting(hour int) string {
+	switch {
+	case hour < 12:
+		return "Good morning"
+	case hour < 18:
+		return "Good afternoon"
+	default:
+		return "Good evening"
+	}
 }
 

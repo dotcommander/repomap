@@ -105,7 +105,11 @@ func TestBriefCmd_DigestFormat(t *testing.T) {
 	const marker = "## Map\n"
 	idx := strings.Index(out, marker)
 	require.GreaterOrEqual(t, idx, 0, "output missing %q:\n%s", marker, out)
-	header := out[:idx+len(marker)]
+	start := strings.Index(out, "# demo")
+	require.GreaterOrEqual(t, start, 0, "output missing title:\n%s", out)
+	header := out[start : idx+len(marker)]
+
+	assert.Contains(t, out, ", agent — here's your briefing.")
 
 	want := "# demo — Go module\n" +
 		"  module example.com/demo\n" +
@@ -116,4 +120,14 @@ func TestBriefCmd_DigestFormat(t *testing.T) {
 		"  branch: main   dirty: 1 file(s)\n" +
 		"\n## Map\n"
 	assert.Equal(t, want, header)
+}
+
+func TestGreeting(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "Good morning", greeting(0))
+	assert.Equal(t, "Good morning", greeting(11))
+	assert.Equal(t, "Good afternoon", greeting(12))
+	assert.Equal(t, "Good afternoon", greeting(17))
+	assert.Equal(t, "Good evening", greeting(18))
+	assert.Equal(t, "Good evening", greeting(23))
 }
