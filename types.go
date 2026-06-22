@@ -14,6 +14,7 @@ type Symbol struct {
 	ResultCount int      // return value count (funcs/methods only); 0 otherwise
 	Implements  []string // interface names this type implements (structs only; Go-module-local)
 	Doc         string   `json:"doc,omitempty"` // first-sentence of the Go doc comment (empty if none)
+	Hash        string   `json:"hash,omitempty"` // sha256 hex of the symbol's raw source bytes over Line..EndLine; empty when span unavailable
 }
 
 // HasFields reports whether the symbol is a struct or interface with

@@ -30,6 +30,54 @@ func sha256OfFile(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// populateSymbolHashes sets each symbol's Hash to the sha256 hex of its raw
+// source bytes over the Line..EndLine span (1-based, inclusive). Symbols whose
+// span is unavailable (EndLine == 0, EndLine < Line, or Line == 0) are left
+// with an empty Hash. Raw bytes — no normalization. Read failures leave all
+// hashes empty (best-effort; consumers treat empty Hash as "unknown").
+func populateSymbolHashes(fs *FileSymbols, abs string) {
+	if fs == nil || len(fs.Symbols) == 0 {
+		return
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return
+	}
+	lines := splitLines(string(data))
+	for i := range fs.Symbols {
+		s := &fs.Symbols[i]
+		if s.Line <= 0 || s.EndLine < s.Line {
+			continue
+		}
+		// 1-based inclusive span → 0-based slice bounds.
+		start := s.Line - 1
+		end := s.EndLine
+		if start >= len(lines) {
+			continue
+		}
+		if end > len(lines) {
+			end = len(lines)
+		}
+		span := joinLines(lines[start:end])
+		sum := sha256.Sum256([]byte(span))
+		s.Hash = hex.EncodeToString(sum[:])
+	}
+}
+
+// joinLines rejoins lines with "\n" for hashing. Deterministic and independent
+// of the file's original line-ending bytes (splitLines already stripped them),
+// so the hash is stable across CRLF/LF differences.
+func joinLines(lines []string) string {
+	out := ""
+	for i, l := range lines {
+		if i > 0 {
+			out += "\n"
+		}
+		out += l
+	}
+	return out
+}
+
 // absPath returns the absolute path for a file relative to the project root.
 func (m *Map) absPath(rel string) string {
 	return filepath.Join(m.root, rel)
@@ -94,6 +142,16 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 	// Apply blocklist filter once for all parse methods (go_ast/tree_sitter/ctags/regex).
 	for _, fs := range parsed {
 		m.blocklist.filterSymbols(fs)
+	}
+
+	// Populate per-symbol content hashes once, centrally, after all parse methods
+	// complete — keyed off Line/EndLine against the file's source bytes. Single
+	// source of truth: avoids editing every parser inline (which would drift).
+	for _, fs := range parsed {
+		if fs == nil {
+			continue
+		}
+		populateSymbolHashes(fs, m.absPath(fs.Path))
 	}
 
 	DetectImplementations(parsed)
