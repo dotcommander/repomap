@@ -79,6 +79,7 @@ type StructuredSymbol struct {
 	ResultCount int      `json:"result_count,omitempty"`
 	Implements  []string `json:"implements,omitempty"`
 	Doc         string   `json:"doc,omitempty"`
+	Hash        string   `json:"hash,omitempty"`
 }
 
 // StructuredJSON returns the structured map encoded as indented JSON.
@@ -252,6 +253,7 @@ func structuredSymbolsForFile(file string, symbols []Symbol) []StructuredSymbol 
 			ResultCount: s.ResultCount,
 			Implements:  append([]string(nil), s.Implements...),
 			Doc:         s.Doc,
+			Hash:        s.Hash,
 		})
 	}
 	return out
