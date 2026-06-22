@@ -62,6 +62,55 @@ func formatFileBlockLean(f RankedFile, explain bool) string {
 	return b.String()
 }
 
+// summaryTopSymbols returns up to summaryTailCap exported symbol names ordered by
+// renderKindWeight (descending), then name (ascending) — the same ordering the
+// enriched default block uses. Names only, no signatures. Used to enrich the level-1 summary line so it names a file's most important symbols, not just counts.
+func summaryTopSymbols(f RankedFile) []string {
+	exported := make([]Symbol, 0, len(f.Symbols))
+	for _, s := range f.Symbols {
+		if s.Exported {
+			exported = append(exported, s)
+		}
+	}
+	slices.SortStableFunc(exported, func(a, b Symbol) int {
+		wa, wb := renderKindWeight(a.Kind, a.Exported), renderKindWeight(b.Kind, b.Exported)
+		if wa != wb {
+			return wb - wa // descending by weight
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	n := summaryTailCap
+	if len(exported) < n {
+		n = len(exported)
+	}
+	names := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		names = append(names, exported[i].Name)
+	}
+	return names
+}
+
+// summaryTailCap bounds how many top symbols the level-1 summary names. Fixed at 2
+// to keep the summary one compact line: a primary type plus a key function/constructor.
+const summaryTailCap = 2
+
+// summaryTail returns the " · Name, Name" tail appended to the level-1 counts line,
+// or "" when the file has no exported symbols (counts-only fallback).
+func summaryTail(f RankedFile) string {
+	names := summaryTopSymbols(f)
+	if len(names) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(names, ", ")
+}
+
+// summaryTailCost returns the byte length summaryTail adds to the level-1 line.
+// The budgeter (budget_breadth.go, budget_overrides.go) adds this to the level-1
+// cost estimate so the rendered summary never exceeds what the budget reserved.
+func summaryTailCost(f RankedFile) int {
+	return len(summaryTail(f))
+}
+
 // formatFileBlockSummary returns a summary block showing category counts only.
 func formatFileBlockSummary(f RankedFile, explain bool) string {
 	var b strings.Builder
@@ -73,7 +122,7 @@ func formatFileBlockSummary(f RankedFile, explain bool) string {
 		counts = append(counts, fmt.Sprintf("%d %s", g.count, g.label))
 	}
 	if len(counts) > 0 {
-		fmt.Fprintf(&b, "  %s\n", strings.Join(counts, ", "))
+		fmt.Fprintf(&b, "  %s%s\n", strings.Join(counts, ", "), summaryTail(f))
 	}
 	fmt.Fprint(&b, "\n")
 	return b.String()

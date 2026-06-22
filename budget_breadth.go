@@ -62,7 +62,7 @@ func budgetFilesBreadthFirst(ranked []RankedFile, maxTokens int, costFn func([]S
 		}
 
 		groups := countGroups(ranked[i].Path, ranked[i].Symbols)
-		summaryCost := groups * 30
+		summaryCost := groups*30 + summaryTailCost(ranked[i])
 		if full := costFn(ranked[i].Symbols); full < summaryCost {
 			summaryCost = full
 		}

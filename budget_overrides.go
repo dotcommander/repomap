@@ -28,9 +28,9 @@ func applyFileOverrides(ranked []RankedFile, _ int, _ int, used *int, costFn fun
 			if old == 2 {
 				*used -= costFn(ranked[i].Symbols)
 			} else if old == 1 {
-				groups := countGroups(ranked[i].Path, ranked[i].Symbols)
-				*used -= groups * 30
-			}
+			groups := countGroups(ranked[i].Path, ranked[i].Symbols)
+			*used -= groups*30 + summaryTailCost(ranked[i])
+		}
 		case level == 2 && old != 2:
 			// Deduct full cost; override is authoritative even when budget is tight.
 			*used += costFn(ranked[i].Symbols)
