@@ -174,20 +174,23 @@ func (m *Map) String() string {
 // ranked-file count so the caller can report how many were dropped. Single-
 // package repos report a uniform ImportedBy — every file "imported by N" where
 // N is the package's importer count, a constant with no per-file signal — which
-// is zeroed out here so the digest map drops that noise. maxFiles <= 0 means no
-// cap.
+// is zeroed out (when uniform across the shown files) so the digest map drops
+// that noise. maxFiles <= 0 means no cap.
 func (m *Map) StringBriefMap(maxFiles int) (body string, total int) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	ranked := cloneRanked(m.ranked)
 	total = len(ranked)
+	if maxFiles > 0 && len(ranked) > maxFiles {
+		ranked = ranked[:maxFiles]
+	}
+	// Judge uniformity over what is actually shown: when every displayed file
+	// shares one ImportedBy (e.g. a digest of same-package files), the column is
+	// a constant carrying no per-file signal, so zero it to drop the noise.
 	if uniformImportedBy(ranked) {
 		for i := range ranked {
 			ranked[i].ImportedBy = 0
 		}
-	}
-	if maxFiles > 0 && len(ranked) > maxFiles {
-		ranked = ranked[:maxFiles]
 	}
 	return FormatMap(ranked, m.config.MaxTokens, false, false, m.blocklist, m.config.Explain), total
 }
