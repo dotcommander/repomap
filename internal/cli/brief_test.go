@@ -58,12 +58,15 @@ func TestDetectVerify(t *testing.T) {
 		files     map[string]string
 		wantBuild string
 		wantTest  string
+		wantVet   string
+		wantLint  string
 	}{
-		{"go", map[string]string{"go.mod": "module x\n"}, "go build ./...", "go test ./..."},
-		{"npm", map[string]string{"package.json": `{"scripts":{"build":"tsc","test":"vitest"}}`}, "npm run build", "npm test"},
-		{"makefile-both", map[string]string{"Makefile": "build:\n\techo hi\ntest:\n\techo t\n"}, "make build", "make test"},
-		{"makefile-no-test", map[string]string{"Makefile": "build:\n\techo hi\n"}, "make build", "(unknown)"},
-		{"empty", map[string]string{}, "(unknown)", "(unknown)"},
+		{"go", map[string]string{"go.mod": "module x\n"}, "go build ./...", "go test ./...", "go vet ./...", ""},
+		{"go-lint", map[string]string{"go.mod": "module x\n", ".golangci.yml": "version: \"2\"\n"}, "go build ./...", "go test ./...", "go vet ./...", "golangci-lint run ./..."},
+		{"npm", map[string]string{"package.json": `{"scripts":{"build":"tsc","test":"vitest"}}`}, "npm run build", "npm test", "", ""},
+		{"makefile-both", map[string]string{"Makefile": "build:\n\techo hi\ntest:\n\techo t\n"}, "make build", "make test", "", ""},
+		{"makefile-no-test", map[string]string{"Makefile": "build:\n\techo hi\n"}, "make build", "(unknown)", "", ""},
+		{"empty", map[string]string{}, "(unknown)", "(unknown)", "", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,6 +78,8 @@ func TestDetectVerify(t *testing.T) {
 			vc := detectVerify(dir)
 			assert.Equal(t, tc.wantBuild, vc.build)
 			assert.Equal(t, tc.wantTest, vc.test)
+			assert.Equal(t, tc.wantVet, vc.vet)
+			assert.Equal(t, tc.wantLint, vc.lint)
 		})
 	}
 }
@@ -116,6 +121,7 @@ func TestBriefCmd_DigestFormat(t *testing.T) {
 		"\n## Verify\n" +
 		"  build: go build ./...\n" +
 		"  test:  go test ./...\n" +
+		"  vet:   go vet ./...\n" +
 		"\n## State\n" +
 		"  branch: main   dirty: 1 file(s)\n" +
 		"    ?? foo.go\n" +

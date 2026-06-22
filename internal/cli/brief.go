@@ -17,6 +17,8 @@ import (
 type verifyCmds struct {
 	build string
 	test  string
+	vet   string
+	lint  string
 }
 
 // newBriefCmd builds the `repomap brief` subcommand: an agent boot digest that
@@ -69,6 +71,16 @@ func newBriefCmd() *cobra.Command {
 			vc := detectVerify(absDir)
 			if _, err := fmt.Fprintf(out, "\n## Verify\n  build: %s\n  test:  %s\n", vc.build, vc.test); err != nil {
 				return err
+			}
+			if vc.vet != "" {
+				if _, err := fmt.Fprintf(out, "  vet:   %s\n", vc.vet); err != nil {
+					return err
+				}
+			}
+			if vc.lint != "" {
+				if _, err := fmt.Fprintf(out, "  lint:  %s\n", vc.lint); err != nil {
+					return err
+				}
 			}
 
 			branch := runTrimmed(ctx, "git", "-C", absDir, "branch", "--show-current")
@@ -189,21 +201,30 @@ func dominantLanguage(ranked []repomap.RankedFile) string {
 	return best
 }
 
+// golangciCmd returns the golangci-lint command when a config file is present,
+// else "" so no lint line is advertised for a repo with no linter configured.
+func golangciCmd(dir string) string {
+	if fileExists(dir, ".golangci.yml") || fileExists(dir, ".golangci.yaml") {
+		return "golangci-lint run ./..."
+	}
+	return ""
+}
+
 // detectVerify infers build/test commands from project manifests in priority
 // order; first match wins, graceful "(unknown)" default.
 func detectVerify(dir string) verifyCmds {
 	switch {
 	case fileExists(dir, "go.mod"):
-		return verifyCmds{"go build ./...", "go test ./..."}
+		return verifyCmds{build: "go build ./...", test: "go test ./...", vet: "go vet ./...", lint: golangciCmd(dir)}
 	case fileExists(dir, "package.json"):
 		b, t := pkgScripts(dir)
-		return verifyCmds{orDefault(b, "npm run build"), orDefault(t, "npm test")}
+		return verifyCmds{build: orDefault(b, "npm run build"), test: orDefault(t, "npm test")}
 	case fileExists(dir, "justfile") || fileExists(dir, "Justfile"):
-		return verifyCmds{recipeCmd(dir, "just", "build", "justfile", "Justfile"), recipeCmd(dir, "just", "test", "justfile", "Justfile")}
+		return verifyCmds{build: recipeCmd(dir, "just", "build", "justfile", "Justfile"), test: recipeCmd(dir, "just", "test", "justfile", "Justfile")}
 	case fileExists(dir, "Makefile"):
-		return verifyCmds{recipeCmd(dir, "make", "build", "Makefile"), recipeCmd(dir, "make", "test", "Makefile")}
+		return verifyCmds{build: recipeCmd(dir, "make", "build", "Makefile"), test: recipeCmd(dir, "make", "test", "Makefile")}
 	default:
-		return verifyCmds{"(unknown)", "(unknown)"}
+		return verifyCmds{build: "(unknown)", test: "(unknown)"}
 	}
 }
 
