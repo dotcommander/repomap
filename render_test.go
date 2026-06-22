@@ -639,3 +639,48 @@ func TestFormatMapCompact_BudgetHonored(t *testing.T) {
 	assert.LessOrEqual(t, len(out), budget*4*2,
 		"compact output must not grossly exceed token budget")
 }
+
+func TestFormatFileBlockSummary_TopSymbolTail(t *testing.T) {
+	t.Parallel()
+
+	t.Run("names top 2 exported symbols by weight then name", func(t *testing.T) {
+		t.Parallel()
+		// Weights: struct=10 (Config), func=6 (NewConfig, Apply), method=5 (Run).
+		// Top-2 by weight desc, name asc → "Config" (10), then "Apply" (6, before NewConfig).
+		syms := []Symbol{
+			{Name: "Run", Kind: "method", Receiver: "*Config", Exported: true, Line: 30},
+			{Name: "NewConfig", Kind: "function", Exported: true, Line: 20},
+			{Name: "Apply", Kind: "function", Exported: true, Line: 25},
+			{Name: "Config", Kind: "struct", Exported: true, Line: 5},
+		}
+		f := makeRankedFile("core/config.go", 1, syms)
+		out := formatFileBlockSummary(f, false)
+		// Counts line carries the top-2 tail, capped at 2 names.
+		assert.Contains(t, out, " · Config, Apply")
+		// Tail is capped — third/fourth symbols never appear in the tail.
+		assert.NotContains(t, out, "NewConfig,")
+		assert.NotContains(t, out, ", Run")
+	})
+
+	t.Run("no exported symbols renders counts only (no tail)", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			{Name: "helper", Kind: "function", Exported: false, Line: 5},
+			{Name: "internal", Kind: "function", Exported: false, Line: 9},
+		}
+		f := makeRankedFile("core/util.go", 1, syms)
+		out := formatFileBlockSummary(f, false)
+		assert.NotContains(t, out, " · ")
+	})
+
+	t.Run("single exported symbol renders single-name tail", func(t *testing.T) {
+		t.Parallel()
+		syms := []Symbol{
+			{Name: "Solo", Kind: "function", Exported: true, Line: 5},
+		}
+		f := makeRankedFile("core/solo.go", 1, syms)
+		out := formatFileBlockSummary(f, false)
+		assert.Contains(t, out, " · Solo")
+		assert.NotContains(t, out, "Solo,")
+	})
+}
