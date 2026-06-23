@@ -845,9 +845,14 @@ func TestKindWeighting(t *testing.T) {
 			byPath[r.Path] = r
 		}
 
-		// Interface (weight 3) should score higher than function (weight 1).
-		assert.Greater(t, byPath["a.go"].Score, byPath["b.go"].Score,
-			"interface should rank higher than function with kind weighting")
+		// Interface (weight 3) should contribute more symbol-bonus than function
+		// (weight 1). Assert on the symbols component, not total Score: the
+		// DTO penalty on pure data-only files intentionally drops a lone-type
+		// file's net score below a lone-function file.
+		assert.Greater(t,
+			byPath["a.go"].ScoreComponents[scoreComponentSymbols],
+			byPath["b.go"].ScoreComponents[scoreComponentSymbols],
+			"interface should contribute more symbol weight than function")
 	})
 
 	t.Run("struct_weights_more_than_constant", func(t *testing.T) {
@@ -871,9 +876,13 @@ func TestKindWeighting(t *testing.T) {
 			byPath[r.Path] = r
 		}
 
-		// Struct (weight 2) should score higher than constant (weight 0).
-		assert.Greater(t, byPath["s.go"].Score, byPath["c.go"].Score,
-			"struct should rank higher than constant with kind weighting")
+		// Struct (weight 2) should contribute more symbol-bonus than constant
+		// (weight 0). Assert on the symbols component, not total Score (see the
+		// interface subtest for why).
+		assert.Greater(t,
+			byPath["s.go"].ScoreComponents[scoreComponentSymbols],
+			byPath["c.go"].ScoreComponents[scoreComponentSymbols],
+			"struct should contribute more symbol weight than constant")
 	})
 }
 

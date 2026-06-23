@@ -185,6 +185,22 @@ func applyReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
 	applyNonGoReferenceCounts(ranked, files)
 }
 
+// importScoreKnee is the importer count below which each importer adds full
+// weight (x10). Beyond the knee, each additional importer adds only +1 — a
+// diminishing-returns curve so a heavily-imported hub stays high without
+// monopolising the ranking, letting symbol/behaviour bonuses break ties among
+// hubs. Mirrors the +50 cap on transitive import scores.
+const importScoreKnee = 8
+
+// importScore converts an importer count into a score contribution with
+// diminishing returns past importScoreKnee. A count of 1 yields 10 (unchanged).
+func importScore(count int) int {
+	if count <= importScoreKnee {
+		return count * 10
+	}
+	return importScoreKnee*10 + (count - importScoreKnee)
+}
+
 // distributeImportScores builds a key→indices map, counts unique importers per key,
 // then distributes score and ImportedBy to matching files.
 //
@@ -223,7 +239,7 @@ func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
 	// Distribute score and ImportedBy to all files matching each key.
 	for key, count := range importerCount {
 		for _, idx := range index[key] {
-			addScoreComponent(&ranked[idx], scoreComponentImports, count*10)
+			addScoreComponent(&ranked[idx], scoreComponentImports, importScore(count))
 			ranked[idx].ImportedBy = count
 		}
 	}

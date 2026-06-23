@@ -285,3 +285,21 @@ func TestScoreComponentsTrackPostRankBoosts(t *testing.T) {
 		assert.Equal(t, rf.Score, ScoreComponentTotal(rf), "score components should sum to score for %s", rf.Path)
 	}
 }
+
+func TestImportScore_DiminishingReturns(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		count int
+		want  int
+	}{
+		{0, 0},
+		{1, 10},   // unchanged: 1 importer == +10
+		{8, 80},   // at the knee, still full weight
+		{9, 81},   // first importer past the knee adds +1
+		{31, 103}, // 80 + 23
+		{41, 113}, // 80 + 33
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, importScore(tc.count), "importScore(%d)", tc.count)
+	}
+}

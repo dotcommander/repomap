@@ -132,9 +132,10 @@ var dtoExportedKinds = map[string]struct{}{
 	"class":     {},
 }
 
-// dtoMinDataCluster is the minimum number of exported data-kind symbols a file
-// must have before the DTO penalty applies. A lone type/struct/interface is a
-// definition, not a DTO file — only penalize clusters of data-only symbols.
+// dtoMinDataCluster is the minimum number of exported data-kind symbols a
+// MIXED file (data + behaviour) must have before the DTO penalty applies.
+// Pure data-only files (zero exported funcs/methods) are penalised regardless
+// of count — see applyDTOPenalty.
 const dtoMinDataCluster = 4
 
 // applyDTOPenalty down-weights files whose exported surface is data-only.
@@ -163,10 +164,15 @@ func applyDTOPenalty(ranked []RankedFile) {
 		if exported == 0 || hasFunc {
 			continue
 		}
-		if dtoKinds < dtoMinDataCluster {
+		// A file that is 100% data-kind with zero exported funcs/methods defines
+		// no behaviour — penalise it regardless of count (catches lone-type
+		// barrels). Otherwise require a data-only cluster (>=dtoMinDataCluster,
+		// >=80% data) before penalising.
+		pureData := dtoKinds == exported
+		if !pureData && dtoKinds < dtoMinDataCluster {
 			continue
 		}
-		if float64(dtoKinds) >= 0.80*float64(exported) {
+		if pureData || float64(dtoKinds) >= 0.80*float64(exported) {
 			addScoreComponent(&ranked[i], scoreComponentDTO, -12)
 		}
 	}

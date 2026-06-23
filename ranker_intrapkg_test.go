@@ -107,6 +107,37 @@ func TestApplyDTOPenalty_DataOnlyFile(t *testing.T) {
 	assert.Less(t, ranked[0].ScoreComponents[scoreComponentDTO], 0, "DTO-only file gets a penalty")
 }
 
+// TestApplyDTOPenalty_PureSingleType verifies a pure single exported type gets
+// the same DTO penalty despite the count floor.
+func TestApplyDTOPenalty_PureSingleType(t *testing.T) {
+	t.Parallel()
+	ranked := []RankedFile{
+		{
+			FileSymbols: &FileSymbols{
+				Path: "pure.go", Language: "go", Package: "pkg",
+				Symbols: []Symbol{{Name: "Req", Kind: "type", Exported: true}},
+			},
+			ScoreComponents: map[string]int{},
+		},
+		{
+			FileSymbols: &FileSymbols{
+				Path: "mixed.go", Language: "go", Package: "pkg",
+				Symbols: []Symbol{
+					{Name: "Req", Kind: "type", Exported: true},
+					{Name: "Run", Kind: "function", Exported: true},
+				},
+			},
+			ScoreComponents: map[string]int{},
+		},
+	}
+
+	applyDTOPenalty(ranked)
+	byPath := rankedByPath(ranked)
+
+	assert.Equal(t, -12, byPath["pure.go"].ScoreComponents[scoreComponentDTO])
+	assert.Equal(t, 0, byPath["mixed.go"].ScoreComponents[scoreComponentDTO])
+}
+
 // TestApplyTestDemotion verifies a _test.go file rich in exported symbols ranks
 // below a small impl file when includeTests=false, and above it when true.
 func TestApplyTestDemotion(t *testing.T) {
