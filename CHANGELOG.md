@@ -4,6 +4,18 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.16.0 — 2026-06-22
+
+### Changes
+
+- **`repomap brief` map is leaner** — the embedded repository map is now capped to the top-ranked files (top 20) with an honest `+N more files — run `repomap` for the full map` footer, instead of dumping every file. The uniform `imported by N` annotation is suppressed when every shown file shares the same importer count (the single-package degenerate case where that metric carries no per-file signal), roughly halving the digest length while preserving the high-signal header (Verify / State / Rules / Flow / Dependencies).
+
+### API
+
+- **`Map.StringBriefMap(maxFiles int) (body string, total int)`** — renders the enriched map for the top `maxFiles` ranked files and reports the total ranked-file count, for callers building bounded digests.
+
+---
+
 ## v0.15.0 — 2026-06-22
 
 ### Features
