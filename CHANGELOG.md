@@ -4,6 +4,14 @@ All notable changes to repomap are documented here.
 
 ---
 
+## Unreleased
+
+### Changes
+
+- **Ranking rebalances toward behavior over type-only barrels** — the imported-by score now uses diminishing returns past a knee of 8 importers (full weight below, +1 each beyond) instead of an uncapped linear `count × 10`, so a heavily-imported hub no longer monopolises the ranking and symbol/behavior bonuses break ties among hubs. The DTO penalty additionally now applies to pure data-only files (100% type/struct/interface/enum kinds, zero exported funcs/methods) regardless of the prior ≥4-symbol cluster floor, demoting lone-`type` barrel files that previously topped the map. In a large multi-file TypeScript project this moves entry points and behavior-rich files above single-type `types.ts` barrels in the brief. A file imported by exactly one other file still contributes the same +10 as before.
+
+---
+
 ## v0.16.0 — 2026-06-22
 
 ### Changes
