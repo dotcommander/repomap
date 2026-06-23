@@ -76,6 +76,20 @@ Downrank files you already read and uprank files that import them.
 
 ## Workflow Examples
 
+### Boot an Agent with `brief`
+
+```bash
+repomap brief
+```
+
+One call answers everything an agent needs at session start: a time-aware greeting, module identity, the project's verify chain (`build`/`test`/`vet`, plus `lint` only when a golangci config exists), current git state (branch, changed files, recent commits), any agent-convention rules it should read first (`CLAUDE.md`, `AGENTS.md`, `.cursorrules`), and the enriched repo map capped to the top-ranked files.
+
+For multi-package repos the digest ends with a **Likely ownership** routing section that clusters the top files by owning directory (e.g. `internal/cli/ — cli (38 files: Execute, Run, Write)`), so the agent knows which packages own the surface before opening anything. It is omitted entirely for flat or single-area repos so it never adds noise.
+
+```bash
+repomap brief ./other-repo     # defaults to the current directory
+```
+
 ### Orient a Coding Agent
 
 ```bash
@@ -243,6 +257,7 @@ repomap -f xml                      # structured XML
 repomap --json                      # JSON envelope with rendered lines
 repomap --json --json-legacy        # legacy bare []string JSON
 repomap --json-structured           # schema-versioned map data
+repomap brief [directory]           # agent boot digest: identity + verify + state + map
 repomap find RankFiles              # locate symbols
 repomap context RankFiles           # source + impact context for one symbol
 repomap impact ranker.go            # blast-radius facts for a file
