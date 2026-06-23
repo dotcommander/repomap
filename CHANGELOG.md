@@ -4,7 +4,11 @@ All notable changes to repomap are documented here.
 
 ---
 
-## Unreleased
+## v0.17.0 — 2026-06-23
+
+### Features
+
+- **`repomap brief` adds a Likely ownership routing section** — derived from the already-ranked files, the brief now clusters the top files by owning parent directory, labels each cluster by its deepest meaningful path segment (skipping generic segments such as `lib`/`src`/`internal`/`pkg`), and shows the per-cluster file count plus a few top exported symbols (e.g. `internal/cli/ — cli (38 files: Execute, Run, Write)`). Capped at five clusters, requires ≥2 files per cluster, and omitted entirely for flat or single-area repos so it adds no noise — giving an agent an immediate sense of which packages own the surface before opening files.
 
 ### Changes
 
