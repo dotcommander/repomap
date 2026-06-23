@@ -28,22 +28,29 @@ func ApplyConsumedBonus(ranked []RankedFile, consumedPaths map[string]bool) {
 	}
 
 	var keyOf func(rf *RankedFile) string
-	var matchKey func(imp string) string
+	var matchKeys func(importerPath, imp string, keys map[string]struct{}) []string
 
 	if isGo {
 		keyOf = func(rf *RankedFile) string { return rf.ImportPath }
-		matchKey = func(imp string) string { return imp }
+		matchKeys = func(_ string, imp string, keys map[string]struct{}) []string {
+			if _, ok := keys[imp]; ok {
+				return []string{imp}
+			}
+			return nil
+		}
 	} else {
-		keyOf = func(rf *RankedFile) string { return basenameWithoutExt(rf.Path) }
-		matchKey = basenameWithoutExt
+		keyOf = func(rf *RankedFile) string { return pathKey(rf.Path) }
+		matchKeys = nonGoImportKeys
 	}
 
-	// Build a path→key index for all ranked files so we can match consumed
-	// paths to their key representation.
+	// Build a path→key index plus a key-set for all ranked files so we can
+	// match consumed paths to their key representation and resolve imports.
 	pathToKey := make(map[string]string, len(ranked))
+	keySet := make(map[string]struct{}, len(ranked))
 	for i := range ranked {
 		if k := keyOf(&ranked[i]); k != "" {
 			pathToKey[ranked[i].Path] = k
+			keySet[k] = struct{}{}
 		}
 	}
 
@@ -69,10 +76,13 @@ func ApplyConsumedBonus(ranked []RankedFile, consumedPaths map[string]bool) {
 
 	for i := range ranked {
 		bonus := 0
+		seen := make(map[string]bool)
 		for _, imp := range ranked[i].Imports {
-			k := matchKey(imp)
-			if activeConsumedKeys[k] {
-				bonus += bonusPerDep
+			for _, k := range matchKeys(ranked[i].Path, imp, keySet) {
+				if activeConsumedKeys[k] && !seen[k] {
+					seen[k] = true
+					bonus += bonusPerDep
+				}
 			}
 		}
 		if bonus > maxBonus {

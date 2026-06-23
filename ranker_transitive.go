@@ -34,21 +34,31 @@ func applyTransitiveImportScores(ranked []RankedFile) {
 	}
 
 	var keyOf func(rf *RankedFile) string
-	var matchKey func(imp string) string
+	// matchKeys maps (importerPath, import string, existing key-set) to the
+	// internal keys that import targets — path-aware for non-Go relative
+	// imports, exact for Go.
+	var matchKeys func(importerPath, imp string, keys map[string]struct{}) []string
 
 	if isGo {
 		keyOf = func(rf *RankedFile) string { return rf.ImportPath }
-		matchKey = func(imp string) string { return imp }
+		matchKeys = func(_ string, imp string, keys map[string]struct{}) []string {
+			if _, ok := keys[imp]; ok {
+				return []string{imp}
+			}
+			return nil
+		}
 	} else {
-		keyOf = func(rf *RankedFile) string { return basenameWithoutExt(rf.Path) }
-		matchKey = basenameWithoutExt
+		keyOf = func(rf *RankedFile) string { return pathKey(rf.Path) }
+		matchKeys = nonGoImportKeys
 	}
 
-	// Build index: key → ranked-file index.
+	// Build index: key → ranked-file index, plus a key-set for resolver lookups.
 	keyIndex := make(map[string]int, len(ranked))
+	keySet := make(map[string]struct{}, len(ranked))
 	for i := range ranked {
 		if k := keyOf(&ranked[i]); k != "" {
 			keyIndex[k] = i
+			keySet[k] = struct{}{}
 		}
 	}
 
@@ -61,14 +71,15 @@ func applyTransitiveImportScores(ranked []RankedFile) {
 			continue
 		}
 		for _, imp := range ranked[i].Imports {
-			destKey := matchKey(imp)
-			if _, ok := keyIndex[destKey]; !ok {
-				continue // not an internal package
+			for _, destKey := range matchKeys(ranked[i].Path, imp, keySet) {
+				if _, ok := keyIndex[destKey]; !ok {
+					continue // not an internal package
+				}
+				if reverseDeps[destKey] == nil {
+					reverseDeps[destKey] = make(map[string]bool)
+				}
+				reverseDeps[destKey][srcKey] = true
 			}
-			if reverseDeps[destKey] == nil {
-				reverseDeps[destKey] = make(map[string]bool)
-			}
-			reverseDeps[destKey][srcKey] = true
 		}
 	}
 

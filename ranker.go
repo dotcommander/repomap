@@ -182,20 +182,27 @@ func applyReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
 			return
 		}
 	}
-	applyBasenameReferenceCounts(ranked, files)
+	applyNonGoReferenceCounts(ranked, files)
 }
 
 // distributeImportScores builds a key→indices map, counts unique importers per key,
 // then distributes score and ImportedBy to matching files.
+//
+// matchFunc receives the importing file's path AND a single import string and
+// returns the keys that import resolves to (path-aware for non-Go relative
+// imports; basename for bare imports; exact for Go). Returning multiple keys is
+// allowed but each unique key is counted at most once per importer.
 func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
 	keyFunc func(*FileSymbols) string,
-	matchFunc func(string) string,
+	matchFunc func(importerPath, imp string, keys map[string]struct{}) []string,
 ) {
-	// Build index: key → file indices.
+	// Build index: key → file indices, and a key-set for resolver lookups.
 	index := make(map[string][]int, len(files))
+	keySet := make(map[string]struct{}, len(files))
 	for i, f := range files {
 		if k := keyFunc(f); k != "" {
 			index[k] = append(index[k], i)
+			keySet[k] = struct{}{}
 		}
 	}
 
@@ -204,10 +211,11 @@ func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
 	for _, f := range files {
 		seen := make(map[string]bool)
 		for _, imp := range f.Imports {
-			k := matchFunc(imp)
-			if _, ok := index[k]; ok && !seen[k] {
-				seen[k] = true
-				importerCount[k]++
+			for _, k := range matchFunc(f.Path, imp, keySet) {
+				if _, ok := index[k]; ok && !seen[k] {
+					seen[k] = true
+					importerCount[k]++
+				}
 			}
 		}
 	}
@@ -225,15 +233,23 @@ func distributeImportScores(ranked []RankedFile, files []*FileSymbols,
 func applyGoReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
 	distributeImportScores(ranked, files,
 		func(f *FileSymbols) string { return f.ImportPath },
-		func(imp string) string { return imp },
+		func(_ string, imp string, keys map[string]struct{}) []string {
+			if _, ok := keys[imp]; ok {
+				return []string{imp}
+			}
+			return nil
+		},
 	)
 }
 
-// applyBasenameReferenceCounts scores non-Go files by basename matching in imports.
-func applyBasenameReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
+// applyNonGoReferenceCounts scores non-Go files by path-aware import matching:
+// relative imports ("./x") resolve against the importer's directory so an
+// `import "./types"` credits ONLY the sibling target, not every same-named
+// file in the tree. Bare/package imports fall back to basename matching.
+func applyNonGoReferenceCounts(ranked []RankedFile, files []*FileSymbols) {
 	distributeImportScores(ranked, files,
-		func(f *FileSymbols) string { return basenameWithoutExt(f.Path) },
-		basenameWithoutExt,
+		func(f *FileSymbols) string { return pathKey(f.Path) },
+		nonGoImportKeys,
 	)
 }
 

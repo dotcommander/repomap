@@ -51,7 +51,7 @@ func (m *Map) Impact(relPath string) (ImpactResult, error) {
 }
 
 func impactImporters(target RankedFile, ranked []RankedFile) []string {
-	targetKey, matchKey := impactKeys(target, ranked)
+	targetKey, matches := impactKeys(target, ranked)
 	if targetKey == "" {
 		return nil
 	}
@@ -61,7 +61,7 @@ func impactImporters(target RankedFile, ranked []RankedFile) []string {
 			continue
 		}
 		for _, imp := range f.Imports {
-			if matchKey(imp) == targetKey {
+			if matches(f.Path, imp) {
 				importers = append(importers, f.Path)
 				break
 			}
@@ -71,7 +71,7 @@ func impactImporters(target RankedFile, ranked []RankedFile) []string {
 	return importers
 }
 
-func impactKeys(target RankedFile, ranked []RankedFile) (targetKey string, matchKey func(string) string) {
+func impactKeys(target RankedFile, ranked []RankedFile) (targetKey string, matches func(importerPath, imp string) bool) {
 	isGo := false
 	for _, f := range ranked {
 		if f.ImportPath != "" {
@@ -80,9 +80,24 @@ func impactKeys(target RankedFile, ranked []RankedFile) (targetKey string, match
 		}
 	}
 	if isGo {
-		return target.ImportPath, func(imp string) string { return imp }
+		tk := target.ImportPath
+		return tk, func(_ string, imp string) bool { return imp == tk }
 	}
-	return basenameWithoutExt(target.Path), basenameWithoutExt
+	tk := pathKey(target.Path)
+	keySet := make(map[string]struct{}, len(ranked))
+	for _, f := range ranked {
+		if k := pathKey(f.Path); k != "" {
+			keySet[k] = struct{}{}
+		}
+	}
+	return tk, func(importerPath, imp string) bool {
+		for _, k := range nonGoImportKeys(importerPath, imp, keySet) {
+			if k == tk {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 func impactTests(target RankedFile, ranked []RankedFile) []string {

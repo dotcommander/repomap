@@ -195,30 +195,32 @@ func TestApplyConsumedBonus(t *testing.T) {
 			wantOrder: []string{"importer.go", "present.go"},
 		},
 		{
-			name: "non-Go project: basename matching for imports",
+			name: "non-Go project: path-aware relative import for imports",
 			ranked: []RankedFile{
-				// No ImportPath → non-Go mode, uses basenameWithoutExt
+				// No ImportPath → non-Go mode, path-aware matching.
 				{
 					FileSymbols: &FileSymbols{
-						Path:    "src/utils.py",
+						Path:    "src/utils.ts",
 						Imports: nil,
 					},
 					Score: 40,
 				},
 				{
 					FileSymbols: &FileSymbols{
-						Path:    "src/main.py",
-						Imports: []string{"utils"}, // basename match
+						Path: "src/main.ts",
+						// Stored WITH quotes, mirroring tree-sitter; resolves
+						// against "src/" → "src/utils".
+						Imports: []string{"./utils"},
 					},
 					Score: 10,
 				},
 			},
-			consumedPaths: map[string]bool{"src/utils.py": true},
+			consumedPaths: map[string]bool{"src/utils.ts": true},
 			wantScores: map[string]int{
-				"src/utils.py": 20, // 40/2
-				"src/main.py": 25, // 10 + 15 (basename "utils" matches)
+				"src/utils.ts": 20, // 40/2
+				"src/main.ts": 25, // 10 + 15 ("./utils" resolves to src/utils)
 			},
-			wantOrder: []string{"src/main.py", "src/utils.py"},
+			wantOrder: []string{"src/main.ts", "src/utils.ts"},
 		},
 	}
 
