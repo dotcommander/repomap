@@ -117,6 +117,11 @@ func newBriefCmd() *cobra.Command {
 					return err
 				}
 			}
+			if own := briefOwnership(m.Ranked()); own != "" {
+				if _, err := fmt.Fprint(out, own); err != nil {
+					return err
+				}
+			}
 			return nil
 		},
 	}
