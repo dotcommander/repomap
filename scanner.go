@@ -38,29 +38,31 @@ func isInsideGitRepo(dir string) bool {
 // Falls back to directory walk if not inside a git repo or if git ls-files fails.
 // cfg may be nil — nil means no path filtering.
 func ScanFiles(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
+	return scanFilesLimited(ctx, root, cfg, defaultMaxFileSize)
+}
+
+func scanFilesLimited(ctx context.Context, root string, cfg *BlocklistConfig, maxSize int) ([]FileInfo, error) {
 	var files []FileInfo
 	var err error
 	if !isInsideGitRepo(root) {
 		fmt.Fprintf(os.Stderr, "warning: %s is not inside a git repo, using directory walk\n", root)
-		files, err = scanWalk(ctx, root, cfg)
+		files, err = scanWalk(ctx, root, cfg, maxSize)
 	} else {
-		files, err = scanGit(ctx, root, cfg)
+		files, err = scanGit(ctx, root, cfg, maxSize)
 		if err != nil {
-			files, err = scanWalk(ctx, root, cfg)
+			files, err = scanWalk(ctx, root, cfg, maxSize)
 		}
 	}
 	if err != nil {
 		return nil, err
 	}
-
 	slices.SortFunc(files, func(a, b FileInfo) int {
 		return strings.Compare(a.Path, b.Path)
 	})
-
 	return files, nil
 }
 
-func scanGit(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
+func scanGit(ctx context.Context, root string, cfg *BlocklistConfig, maxSize int) ([]FileInfo, error) {
 	cmd := exec.CommandContext(ctx, "git", "ls-files", "--cached", "--others", "--exclude-standard")
 	cmd.Dir = root
 
@@ -98,7 +100,7 @@ func scanGit(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo
 		}
 
 		absPath := filepath.Join(root, line)
-		if tooBig(absPath) || isBuildArtifact(line) {
+		if tooBig(absPath, maxSize) || isBuildArtifact(line) {
 			continue
 		}
 
@@ -108,7 +110,7 @@ func scanGit(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo
 	return files, nil
 }
 
-func scanWalk(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInfo, error) {
+func scanWalk(ctx context.Context, root string, cfg *BlocklistConfig, maxSize int) ([]FileInfo, error) {
 	var files []FileInfo
 
 	err := filepath.WalkDir(root, func(fpath string, d fs.DirEntry, err error) error {
@@ -138,7 +140,7 @@ func scanWalk(ctx context.Context, root string, cfg *BlocklistConfig) ([]FileInf
 			return nil
 		}
 
-		if tooBig(fpath) || isBuildArtifact(fpath) {
+		if tooBig(fpath, maxSize) || isBuildArtifact(fpath) {
 			return nil
 		}
 

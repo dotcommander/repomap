@@ -33,6 +33,7 @@ type Config struct {
 	SymbolRefs     bool     // optional approximate cross-language symbol reference scoring
 	Explain        bool     // append per-file confidence-tier score breakdown to text output
 	IncludeTests   bool     // rank test files at full weight (default: demoted)
+	MaxFileSize    int      // max file size in bytes to scan (default: 50_000; negative disables the cap)
 }
 
 // DefaultConfig returns the default configuration.
@@ -68,6 +69,9 @@ func New(root string, cfg Config) *Map {
 	}
 	if cfg.MaxTokensNoCtx == 0 {
 		cfg.MaxTokensNoCtx = defaultMaxTokensNoCtx
+	}
+	if cfg.MaxFileSize == 0 {
+		cfg.MaxFileSize = defaultMaxFileSize
 	}
 	bl, _ := LoadBlocklistConfig(root)
 	if bl == nil {
@@ -107,7 +111,7 @@ func (m *Map) Build(ctx context.Context) error {
 		}
 	}
 
-	files, err := ScanFiles(ctx, m.root, m.blocklist)
+	files, err := scanFilesLimited(ctx, m.root, m.blocklist, m.config.MaxFileSize)
 	if err != nil {
 		return err
 	}

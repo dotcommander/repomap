@@ -99,7 +99,7 @@ func AuditHygiene(ctx context.Context, root string) (AuditHygieneReport, error) 
 
 	tracked, err := gitList(ctx, root, "ls-files", "--cached", "-z")
 	if err != nil {
-		files, walkErr := scanWalk(ctx, root, nil)
+		files, walkErr := scanWalk(ctx, root, nil, defaultMaxFileSize)
 		if walkErr != nil {
 			return AuditHygieneReport{}, walkErr
 		}

@@ -147,7 +147,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 		if info.IsDir() {
 			continue
 		}
-		if tooBig(abs) || isBuildArtifact(rel) || inSkipDir(rel) {
+		if tooBig(abs, m.config.MaxFileSize) || isBuildArtifact(rel) || inSkipDir(rel) {
 			continue
 		}
 		lang := LanguageFor(filepath.Ext(rel))

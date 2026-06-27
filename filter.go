@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const maxFileSize = 50_000
+const defaultMaxFileSize = 50_000
 
 // bundleHashRe matches a hex hash segment (8+ chars) separated by dots or hyphens,
 // as produced by webpack and other bundlers (e.g. main.a1b2c3d4.js, 4044.62596fd0.chunk.js).
@@ -110,10 +110,13 @@ func isBuildArtifact(path string) bool {
 }
 
 // tooBig reports whether the file exceeds the maxFileSize limit.
-func tooBig(path string) bool {
+func tooBig(path string, maxSize int) bool {
 	info, err := os.Stat(path)
 	if err != nil {
 		return true
 	}
-	return info.Size() > maxFileSize
+	if maxSize < 0 {
+		return false
+	}
+	return info.Size() > int64(maxSize)
 }
