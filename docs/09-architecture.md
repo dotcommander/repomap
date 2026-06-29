@@ -25,11 +25,11 @@ Two parallel groups via `errgroup.WithContext`:
 
 1. **Go group** — every Go file runs through `ParseGoFile` (`parser_go.go`), which uses the standard library's `go/ast` parser.
 2. **Non-Go group** — tiered fallback in `parseNonGoFiles`:
-   - Tree-sitter if `tsAvailable`
+   - Tree-sitter if `tsAvailable`; a build-scoped runtime caches language objects and reuses parser instances safely across the parallel parse pool.
    - ctags if the binary is on `$PATH`
    - Regex (`parser_generic.go`, `parser_cfamily.go`, `parser_web.go`)
 
-Each parser returns a `*FileSymbols` with the file's symbols, imports, and parse method.
+Each parser returns a `*FileSymbols` with the file's symbols, imports, structural call sites when available, and parse method.
 
 After parsing, `DetectImplementations` walks Go structs and interfaces to link `impl: Writer` tags.
 
@@ -43,6 +43,7 @@ See [Ranking](06-ranking.md) for the weights. The output is files sorted by scor
 - `Score` — the numeric rank
 - `ImportedBy` — count of files that import it
 - `DependsOn` — count of imports this file has
+- `CallSites` — parser-backed non-Go call expressions used for structural relation evidence
 - `Tag` — e.g. `entry`
 - `Untested` — true if it has no sibling `_test` file
 

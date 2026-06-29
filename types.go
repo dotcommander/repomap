@@ -13,8 +13,15 @@ type Symbol struct {
 	ParamCount  int      // parameter count (funcs/methods); method count (interfaces); 0 otherwise
 	ResultCount int      // return value count (funcs/methods only); 0 otherwise
 	Implements  []string // interface names this type implements (structs only; Go-module-local)
-	Doc         string   `json:"doc,omitempty"` // first-sentence of the Go doc comment (empty if none)
+	Doc         string   `json:"doc,omitempty"`  // first-sentence of the Go doc comment (empty if none)
 	Hash        string   `json:"hash,omitempty"` // sha256 hex of the symbol's raw source bytes over Line..EndLine; empty when span unavailable
+}
+
+// CallSite is one parser-backed call expression observed in a source file.
+// Name is the captured callee expression, normalized for stable matching.
+type CallSite struct {
+	Name string `json:"name"`
+	Line int    `json:"line"`
 }
 
 // HasFields reports whether the symbol is a struct or interface with
@@ -39,7 +46,8 @@ type FileSymbols struct {
 	ImportPath  string // Go import path from module (empty for non-Go)
 	Symbols     []Symbol
 	Imports     []string // import paths (Go) or module names (other)
-	ParseMethod string   // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
+	CallSites   []CallSite
+	ParseMethod string // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
 }
 
 // ParseCoverage records observed parser fidelity for a build.

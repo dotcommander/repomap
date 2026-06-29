@@ -56,7 +56,7 @@ If the output says `no source files found`, the directory isn't a git repo and d
 
 ## Optional: ctags
 
-Tree-sitter covers Go, Python, Rust, TypeScript, JavaScript, Java, C, and C++. For other languages (Ruby, PHP, Lua, etc.) repomap falls back to ctags when the binary is present, then regex when it isn't.
+High-fidelity parsing covers Go through `go/ast`, plus TypeScript, TSX, JavaScript, JSX, Python, Rust, C, C++, Java, Ruby, and PHP through bundled tree-sitter grammars. Extension-only languages such as Lua, Zig, Swift, and Kotlin fall back to ctags when the binary is present, then regex when it is not.
 
 ```bash
 brew install universal-ctags   # macOS

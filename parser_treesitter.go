@@ -4,6 +4,7 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 
@@ -51,6 +52,20 @@ var tsImportQueries map[string]string
 // owns the entire FileSymbols construction. Register via registerTSCustom.
 var tsCustomParsers map[string]func(content []byte, relPath string) *FileSymbols
 
+type treeSitterRuntime struct {
+	mu        sync.Mutex
+	languages map[string]*tree_sitter.Language
+	pending   map[string]*tsLanguageInit
+	parsers   map[string][]*tree_sitter.Parser
+	disposed  bool
+}
+
+type tsLanguageInit struct {
+	done chan struct{}
+	lang *tree_sitter.Language
+	err  error
+}
+
 // registerTS adds a language to all tree-sitter registries.
 func registerTS(lang string, provider tsLangProvider, symQ, impQ string) {
 	tsRegistry[lang] = provider
@@ -82,31 +97,138 @@ func init() {
 	registerTSWeb()
 }
 
+func newTreeSitterRuntime() *treeSitterRuntime {
+	return &treeSitterRuntime{
+		languages: make(map[string]*tree_sitter.Language),
+		pending:   make(map[string]*tsLanguageInit),
+		parsers:   make(map[string][]*tree_sitter.Parser),
+	}
+}
+
+func (rt *treeSitterRuntime) language(langID string) (*tree_sitter.Language, error) {
+	rt.mu.Lock()
+	if rt.disposed {
+		rt.mu.Unlock()
+		return nil, fmt.Errorf("tree-sitter runtime disposed")
+	}
+	if lang := rt.languages[langID]; lang != nil {
+		rt.mu.Unlock()
+		return lang, nil
+	}
+	if init := rt.pending[langID]; init != nil {
+		rt.mu.Unlock()
+		<-init.done
+		return init.lang, init.err
+	}
+	provider, ok := tsRegistry[langID]
+	if !ok {
+		rt.mu.Unlock()
+		return nil, fmt.Errorf("tree-sitter language %q not registered", langID)
+	}
+	init := &tsLanguageInit{done: make(chan struct{})}
+	rt.pending[langID] = init
+	rt.mu.Unlock()
+
+	lang := provider()
+	if lang == nil {
+		init.err = fmt.Errorf("tree-sitter language %q provider returned nil", langID)
+	} else {
+		init.lang = lang
+	}
+
+	rt.mu.Lock()
+	delete(rt.pending, langID)
+	if init.err == nil && !rt.disposed {
+		rt.languages[langID] = init.lang
+	}
+	rt.mu.Unlock()
+	close(init.done)
+	return init.lang, init.err
+}
+
+func (rt *treeSitterRuntime) acquireParser(langID string) (*tree_sitter.Parser, *tree_sitter.Language, error) {
+	lang, err := rt.language(langID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rt.mu.Lock()
+	if rt.disposed {
+		rt.mu.Unlock()
+		return nil, nil, fmt.Errorf("tree-sitter runtime disposed")
+	}
+	var parser *tree_sitter.Parser
+	pool := rt.parsers[langID]
+	if len(pool) > 0 {
+		parser = pool[len(pool)-1]
+		rt.parsers[langID] = pool[:len(pool)-1]
+	}
+	rt.mu.Unlock()
+
+	if parser == nil {
+		parser = tree_sitter.NewParser()
+	}
+	parser.Reset()
+	if err := parser.SetLanguage(lang); err != nil {
+		parser.Close()
+		rt.invalidateLanguage(langID)
+		return nil, nil, err
+	}
+	return parser, lang, nil
+}
+
+func (rt *treeSitterRuntime) releaseParser(langID string, parser *tree_sitter.Parser) {
+	if parser == nil {
+		return
+	}
+	parser.Reset()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.disposed {
+		parser.Close()
+		return
+	}
+	rt.parsers[langID] = append(rt.parsers[langID], parser)
+}
+
+func (rt *treeSitterRuntime) invalidateLanguage(langID string) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	delete(rt.languages, langID)
+}
+
+func (rt *treeSitterRuntime) close() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.disposed = true
+	for langID, parsers := range rt.parsers {
+		for _, parser := range parsers {
+			parser.Close()
+		}
+		delete(rt.parsers, langID)
+	}
+	rt.languages = nil
+}
+
 // parseWithTreeSitter parses a single file using tree-sitter.
 // Custom parsers (registered via registerTSCustom) take precedence over the
 // generic extractSymbols/extractImports path.
 // Returns nil if the language has no tree-sitter grammar registered.
 func parseWithTreeSitter(content []byte, lang string, relPath string) *FileSymbols {
+	rt := newTreeSitterRuntime()
+	defer rt.close()
+	return rt.parse(content, lang, relPath)
+}
+
+func (rt *treeSitterRuntime) parse(content []byte, lang string, relPath string) *FileSymbols {
 	if custom, ok := tsCustomParsers[lang]; ok {
 		return custom(content, relPath)
 	}
-
-	provider, ok := tsRegistry[lang]
-	if !ok {
+	parser, tsLang, err := rt.acquireParser(lang)
+	if err != nil {
 		return nil
 	}
-
-	tsLang := provider()
-	if tsLang == nil {
-		return nil
-	}
-
-	parser := tree_sitter.NewParser()
-	defer parser.Close()
-
-	if err := parser.SetLanguage(tsLang); err != nil {
-		return nil
-	}
+	defer rt.releaseParser(lang, parser)
 
 	tree := parser.Parse(content, nil)
 	if tree == nil {
@@ -127,6 +249,7 @@ func parseWithTreeSitter(content []byte, lang string, relPath string) *FileSymbo
 
 	extractSymbols(content, root, tsLang, fs)
 	extractImports(content, root, tsLang, lang, fs)
+	extractCallSites(content, root, tsLang, lang, fs)
 
 	return fs
 }
@@ -304,12 +427,18 @@ func tsKindToSymbolKind(tsKind string) string {
 
 // parseTreeSitterFile reads and parses a single file with tree-sitter.
 func (m *Map) parseTreeSitterFile(fi FileInfo) *FileSymbols {
+	rt := newTreeSitterRuntime()
+	defer rt.close()
+	return m.parseTreeSitterFileWithRuntime(rt, fi)
+}
+
+func (m *Map) parseTreeSitterFileWithRuntime(rt *treeSitterRuntime, fi FileInfo) *FileSymbols {
 	absPath := m.absPath(fi.Path)
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil
 	}
-	return parseWithTreeSitter(content, fi.Language, fi.Path)
+	return rt.parse(content, fi.Language, fi.Path)
 }
 
 // parseTreeSitterFiles parses all non-Go files with tree-sitter.
@@ -331,6 +460,10 @@ func (m *Map) parseTreeSitterFiles(ctx context.Context, files []FileInfo) ([]*Fi
 		return nil, fallbackFiles
 	}
 
-	parsed := parallelParse(tsFiles, m.parseTreeSitterFile)
+	rt := newTreeSitterRuntime()
+	defer rt.close()
+	parsed := parallelParse(tsFiles, func(fi FileInfo) *FileSymbols {
+		return m.parseTreeSitterFileWithRuntime(rt, fi)
+	})
 	return parsed, fallbackFiles
 }

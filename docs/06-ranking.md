@@ -13,6 +13,7 @@ Each file gets a score. Higher scores show up first and keep more detail.
 | Each exported symbol | +1 |
 | Each file that directly imports this one | +10 |
 | Transitive fan-in bonus (deeply depended-on files) | additional score |
+| Parser-backed non-Go call sites | +4 per caller file, capped |
 | Path depth (per level) | -1 |
 
 A file imported by five others, with twelve exported symbols, three levels deep scores roughly `5×10 + 12×1 − 3 = 59`.
@@ -78,6 +79,10 @@ Per-language boundary scoring identifies natural module or package boundaries an
 ## Caller-count bonus (`--calls` mode)
 
 In `--calls` mode, files with many callers receive an additional score bonus. The more places that call into a file, the higher it ranks — useful for surfacing heavily-used utilities that might otherwise score low due to few importers.
+
+## Structural call-site bonus
+
+For tree-sitter-backed non-Go files, repomap extracts call-site expressions during parsing and boosts files whose exported symbols are called by other scanned files. This is stronger than lexical symbol references because it only counts parser-backed call expressions, but it is still not type-resolved: aliases, dynamic dispatch, and common method names can be missed or ambiguous. The score is capped so it cannot dominate import, intent, or exact Go LSP caller signals.
 
 ## Symbol-reference bonus (`--symbol-refs`)
 

@@ -302,7 +302,7 @@ repomap hover ranker.go 48 RankFiles
 | `lines` | Actual declaration lines | yes |
 | `xml` | Structured XML | yes |
 | `--json` | Rendered verbose lines in JSON | no |
-| `--json-structured` | Files, symbols, ranks, parser data, budget data | yes |
+| `--json-structured` | Files, symbols, call sites, ranks, parser data, budget data | yes |
 
 Budgeting is all-or-lower-detail: repomap does not cut a file halfway through a symbol. A file renders at its assigned detail level, drops to a summary/header, or is marked omitted.
 
@@ -316,6 +316,7 @@ repomap ranks files before budgeting. Main signals:
 | Exported symbols | contracts and public API rise |
 | Direct importers | heavily depended-on files rise |
 | Transitive fan-in | deep core files rise |
+| Structural call sites | non-Go files called by other scanned files rise |
 | Boundary imports | HTTP, database, shell, and similar edges rise |
 | Deep paths | mild penalty |
 | Tests (`_test.go`) | demoted by default; `--include-tests` ranks them at full weight |
@@ -338,7 +339,8 @@ Supported file types:
 | --- | --- |
 | Go | `go/ast` |
 | PHP | tree-sitter with signatures, visibility, constructor promotion, PHPDoc |
-| Python, Rust, TypeScript, JavaScript, Java, C, C++, Ruby, HTML, CSS | tree-sitter when available, ctags/regex fallback |
+| TypeScript, TSX, JavaScript, JSX, Python, Rust, C, C++, Java, Ruby | tree-sitter when available, ctags/regex fallback |
+| Lua, Zig, Swift, Kotlin | extension-only: ctags/regex fallback |
 
 Structured output includes `parse_method`: `go_ast`, `tree_sitter`, `ctags`, or `regex`.
 

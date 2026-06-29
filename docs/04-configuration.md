@@ -10,7 +10,7 @@ This page covers root map flags and the main subcommand flags.
 | `--format` | `-f` | `enriched` | One of `enriched`, `compact`, `verbose`, `detail`, `lines`, `xml` |
 | `--json` | — | `false` | Emit verbose output as a JSON envelope of lines |
 | `--json-legacy` | — | `false` | Emit the legacy bare `[]string` JSON shape |
-| `--json-structured` | — | `false` | Emit schema-versioned file/symbol/ranking data |
+| `--json-structured` | — | `false` | Emit schema-versioned file/symbol/call-site/ranking data |
 | `--calls` | — | `false` | Expand exported symbols with caller information via `gopls` |
 | `--calls-threshold` | — | `2` | Only expand symbols in files with at least this many importers |
 | `--calls-limit` | — | `10` | Max callers shown per symbol |

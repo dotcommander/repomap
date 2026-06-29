@@ -41,8 +41,8 @@ repomap -f verbose    # ignore the budget entirely
 
 Depends on which parser ran:
 
-- **Go files** (`parsed="ast"`) — report a bug. The standard library parser is authoritative.
-- **Tree-sitter** — report the file and the grammar version.
+- **Go files** (`parsed="go_ast"`) — report a bug. The standard library parser is authoritative.
+- **Tree-sitter** (`parsed="tree_sitter"`) — report the file and grammar package version.
 - **ctags** — try without ctags (install `universal-ctags` if you haven't; it's more accurate than the legacy variant).
 - **regex** — expect false positives and missing symbols. That's the regex tier's tradeoff.
 
@@ -89,10 +89,11 @@ For authoritative freshness, just rebuild. It's usually fast.
 repomap.TreeSitterAvailable()   // returns false
 ```
 
-Tree-sitter is gated behind a build tag. If you're consuming the library, make sure your build includes the tree-sitter-enabled variant. Check your build flags:
+Tree-sitter is enabled by default. If you're consuming the library and it returns false, check that you did not build with the disabling tag:
 
 ```bash
-go build -tags treesitter ./...
+go env GOFLAGS
+go test -tags notreesitter ./...   # intentionally disables tree-sitter
 ```
 
 The prebuilt CLI (`go install ...@latest`) includes tree-sitter.

@@ -30,6 +30,7 @@ const (
 	scoreComponentIntent      = "intent"
 	scoreComponentConsumed    = "consumed"
 	scoreComponentCallers     = "callers"
+	scoreComponentCallSites   = "call_sites"
 	scoreComponentSymbolRefs  = "symbol_refs"
 	scoreComponentIntraRefs   = "intra_refs"
 	scoreComponentOrient      = "orientation"

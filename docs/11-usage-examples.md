@@ -24,7 +24,7 @@ Every command assumes you're at the root of a git repository.
 | detail | `-f detail` | all files, full signatures + struct fields | the most verbose text mode |
 | lines | `-f lines` | actual source lines read from disk, budget-trimmed | reading code, not summaries |
 | xml | `-f xml` | structured XML: dependency graph + `<file>`/`<symbols>`/`<sym>` (name, kind, line, span, params, implements) | machine consumption |
-| json-structured | `--json-structured` | structured JSON repository map (files, symbols, scores; tier breakdown after `explain`) | programmatic ranking/selection |
+| json-structured | `--json-structured` | structured JSON repository map (files, symbols, call sites, scores; tier breakdown after `explain`) | programmatic ranking/selection |
 
 **Gotchas.** The default (enriched) is **richer** than `-f compact` — compact is names only. `-f verbose` is *wider* but *shallower* per file than the default: it lists every file and symbol but drops signatures. And `--intent` reranks files **silently** — add `--explain` to see why files ranked.
 
@@ -248,11 +248,12 @@ Agents usually want structured output, not prose. Three shapes:
 
 ```bash
 repomap --json              # JSON array of the rendered lines
-repomap --json-structured   # structured repository map (files, symbols, scores)
+repomap --json-structured   # structured repository map (files, symbols, call sites, scores)
 repomap -f lines            # actual source lines instead of a symbol summary
 ```
 
-`--json-structured` is the richest: it carries per-file scores and, after an
+`--json-structured` is the richest: it carries per-file scores, structural
+call-site records when parser-backed extraction is available, and, after an
 `explain`, the tier breakdown — ideal for an agent that ranks and selects
 programmatically.
 

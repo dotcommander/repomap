@@ -127,6 +127,7 @@ func (m *Map) Build(ctx context.Context) error {
 	ranked := RankFiles(parsed)
 
 	ApplyIntraPackageRefs(m.root, ranked)
+	ApplyCallSiteReferenceBonus(ranked)
 
 	applyTestDemotion(ranked, m.config.IncludeTests)
 

@@ -50,6 +50,7 @@ type StructuredFile struct {
 	Imports          []string             `json:"imports,omitempty"`
 	RelationEvidence []StructuredEvidence `json:"relation_evidence,omitempty"`
 	Symbols          []StructuredSymbol   `json:"symbols,omitempty"`
+	CallSites        []StructuredCallSite `json:"call_sites,omitempty"`
 	OmittedReason    string               `json:"omitted_reason,omitempty"`
 }
 
@@ -80,6 +81,13 @@ type StructuredSymbol struct {
 	Implements  []string `json:"implements,omitempty"`
 	Doc         string   `json:"doc,omitempty"`
 	Hash        string   `json:"hash,omitempty"`
+}
+
+// StructuredCallSite is one parser-backed call expression emitted for tools
+// that need relation evidence without re-reading source.
+type StructuredCallSite struct {
+	Name string `json:"name"`
+	Line int    `json:"line,omitempty"`
 }
 
 // StructuredJSON returns the structured map encoded as indented JSON.
@@ -181,6 +189,7 @@ func structuredFile(f RankedFile, omitted string) StructuredFile {
 		Imports:          append([]string(nil), f.Imports...),
 		RelationEvidence: structuredRelationEvidence(f),
 		Symbols:          structuredSymbolsForFile(filepath.ToSlash(f.Path), f.Symbols),
+		CallSites:        structuredCallSites(f.CallSites),
 		OmittedReason:    omitted,
 	}
 }
@@ -213,6 +222,26 @@ func structuredRelationEvidence(f RankedFile) []StructuredEvidence {
 			Detail:        "Other files mentioned exported symbol names lexically",
 			Caveat:        "Lexical references are capped and approximate; use exact callers where available",
 		})
+	}
+	if f.ScoreComponents[scoreComponentCallSites] > 0 {
+		out = append(out, StructuredEvidence{
+			Kind:          "call_site_reference",
+			EvidenceClass: "ast",
+			Confidence:    "medium",
+			Detail:        "Other files called exported symbols through parser-backed call-site captures",
+			Caveat:        "Tree-sitter call sites are structural but not type-resolved; aliases and dynamic dispatch may be missed",
+		})
+	}
+	return out
+}
+
+func structuredCallSites(callSites []CallSite) []StructuredCallSite {
+	if len(callSites) == 0 {
+		return nil
+	}
+	out := make([]StructuredCallSite, 0, len(callSites))
+	for _, site := range callSites {
+		out = append(out, StructuredCallSite{Name: site.Name, Line: site.Line})
 	}
 	return out
 }

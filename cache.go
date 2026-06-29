@@ -53,7 +53,7 @@ type diskCache struct {
 	Explain       bool                 `json:"explain,omitempty"`  // whether --explain was active at write time
 }
 
-const cacheVersion = 9
+const cacheVersion = 10
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {

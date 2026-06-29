@@ -185,9 +185,12 @@ func TestStructuredOutputIncludesRelationEvidence(t *testing.T) {
 			FileSymbols: &FileSymbols{
 				Path:     "src/session.ts",
 				Language: "typescript",
+				CallSites: []CallSite{
+					{Name: "Session.start", Line: 12},
+				},
 			},
 			ImportedBy:      2,
-			ScoreComponents: map[string]int{scoreComponentSymbolRefs: 4},
+			ScoreComponents: map[string]int{scoreComponentSymbolRefs: 4, scoreComponentCallSites: 8},
 		},
 	}
 
@@ -201,11 +204,15 @@ func TestStructuredOutputIncludesRelationEvidence(t *testing.T) {
 	assert.Equal(t, "high", goEvidence[0].Confidence)
 
 	tsEvidence := out.Files[1].RelationEvidence
-	require.Len(t, tsEvidence, 2)
+	require.Len(t, tsEvidence, 3)
 	assert.Equal(t, "import_reference", tsEvidence[0].Kind)
 	assert.Equal(t, "heuristic", tsEvidence[0].EvidenceClass)
 	assert.Equal(t, "medium", tsEvidence[0].Confidence)
 	assert.NotEmpty(t, tsEvidence[0].Caveat)
 	assert.Equal(t, "symbol_reference", tsEvidence[1].Kind)
 	assert.Equal(t, "low", tsEvidence[1].Confidence)
+	assert.Equal(t, "call_site_reference", tsEvidence[2].Kind)
+	assert.Equal(t, "ast", tsEvidence[2].EvidenceClass)
+	assert.Equal(t, "medium", tsEvidence[2].Confidence)
+	assert.Equal(t, []StructuredCallSite{{Name: "Session.start", Line: 12}}, out.Files[1].CallSites)
 }

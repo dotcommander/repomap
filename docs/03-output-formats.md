@@ -89,7 +89,7 @@ Structured output for programmatic consumers.
   <dependencies>
     <pkg name="repomap/internal/cli">repomap</pkg>
   </dependencies>
-  <file path="repomap.go" lang="go" score="120" pkg="repomap" parsed="ast">
+  <file path="repomap.go" lang="go" score="120" pkg="repomap" parsed="go_ast">
     <symbols>
       <sym name="Config" kind="struct" exported="true" line="28" span="4"/>
       <sym name="New" kind="function" exported="true" line="57" params="2" results="1">
@@ -130,7 +130,7 @@ Use this when you need line-by-line parsing with a small stable envelope. Use `-
 repomap --json-structured
 ```
 
-Emits schema-versioned file, symbol, rank, parser, and budget data:
+Emits schema-versioned file, symbol, call-site, rank, parser, and budget data:
 
 ```json
 {
@@ -142,13 +142,14 @@ Emits schema-versioned file, symbol, rank, parser, and budget data:
       "score": 123,
       "score_components": {"imports": 110, "symbols": 3, "transitive": 10},
       "detail_level": 2,
-      "symbols": [{"name": "RankFiles", "kind": "function", "line": 48}]
+      "symbols": [{"name": "RankFiles", "kind": "function", "line": 48}],
+      "call_sites": [{"name": "BudgetFiles", "line": 54}]
     }
   ]
 }
 ```
 
-Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Files omitted by budget include `detail_level: -1` and `omitted_reason`.
+Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Files omitted by budget include `detail_level: -1` and `omitted_reason`. Parser-backed non-Go call sites appear when the language grammar supports call-expression extraction; they are structural, not type-resolved.
 
 ## Command JSON
 

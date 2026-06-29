@@ -43,7 +43,7 @@ repomap ~/projects/my-app
 repomap -t 4000 | pbcopy                    # macOS clipboard
 repomap | llm "summarize this codebase"     # pipe to an LLM CLI
 repomap --json > map-lines.json             # schema-versioned rendered lines
-repomap --json-structured > map-data.json   # structured file/symbol/ranking data
+repomap --json-structured > map-data.json   # structured file/symbol/call-site/ranking data
 ```
 
 ## Inspect one symbol

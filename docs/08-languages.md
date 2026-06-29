@@ -6,7 +6,7 @@ repomap parses source files in three tiers. It tries the best parser first and f
 
 | Tier | Parser | Fidelity |
 | --- | --- | --- |
-| 1 | `go/ast` for Go, tree-sitter for seven others | High |
+| 1 | `go/ast` for Go, tree-sitter for supported full languages | High |
 | 2 | ctags (if installed) | Medium |
 | 3 | Regex | Low but always available |
 
@@ -24,20 +24,25 @@ Extracts:
 - Imports (for the dependency graph)
 - Package name and import path (from `go.mod`)
 
-Every Go file gets `parsed="ast"` in XML output.
+Every Go file gets `parsed="go_ast"` in XML and structured output.
 
 ## Tree-sitter supported
 
-Tree-sitter grammars ship with repomap for:
+Tree-sitter grammars ship with repomap for the full non-Go language set:
 
+- TypeScript
+- TSX
+- JavaScript
+- JSX
 - Python
 - Rust
-- TypeScript, JavaScript, JSX, TSX
+- C
+- C++
 - Java
-- C, C++
-- HTML, CSS
+- Ruby
+- PHP
 
-If tree-sitter is available at build time, these languages get `parsed="treesitter"`. If not, they drop to ctags or regex.
+If tree-sitter is available at build time, these languages get `parsed="tree_sitter"`. If not, they drop to ctags or regex.
 
 ## ctags fallback
 
@@ -54,12 +59,14 @@ Files parsed this way get `parsed="ctags"`.
 
 ## Regex fallback
 
-Always present. Pattern-matches common declarations for:
+Always present. Pattern-matches common declarations for full languages and provides best-effort coverage for extension-only languages:
 
-- Ruby (`def`, `class`, `module`)
-- PHP (`function`, `class`, `interface`)
-- Shell (`function`, top-level `name() {}`)
-- Lua, Perl, Elixir, and anything else with a declaration keyword
+- Lua
+- Zig
+- Swift
+- Kotlin
+
+Tree-sitter and ctags can also fall back to regex for a full language when the structural parser is unavailable.
 
 Noisy — a comment that looks like a function declaration will produce a false symbol — but cheap and language-independent. Files parsed this way get `parsed="regex"`.
 

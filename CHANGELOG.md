@@ -4,6 +4,18 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.18.1 — 2026-06-29
+
+### Features
+
+- **Structural non-Go call-site evidence** — tree-sitter-backed files now record parser-derived call expressions in structured JSON and use them as a bounded ranking signal, helping behavior files rise above passive type or data barrels in TypeScript, JavaScript, Python, Rust, C-family, Java, Ruby, and PHP projects.
+
+### Changes
+
+- **Tree-sitter parsing reuses runtime state safely** — non-Go parsing now uses a build-scoped tree-sitter runtime that caches language objects, deduplicates first-use initialization, and reuses parser instances across the parallel parse pool.
+- **Docs reflect the current parser surface** — language support, `parse_method` values, structured JSON call-site fields, ranking signals, and tree-sitter troubleshooting now match the implementation.
+- **Coverage guards parser/runtime and docs drift** — added tests for call-site extraction, structural ranking evidence, runtime language caching, and language documentation consistency.
+
 ## v0.17.0 — 2026-06-23
 
 ### Features

@@ -56,6 +56,39 @@ def handle():
 	assert.Empty(t, topLevel.Receiver)
 }
 
+func TestTreeSitterTypeScriptCallSites(t *testing.T) {
+	fs := parseWithTreeSitter([]byte(`
+class Thing {}
+
+function factory() {
+  return () => 42
+}
+
+const api = { call() {} }
+const first = api.call()
+const second = new Thing()
+const third = factory()()
+`), "typescript", "calls.ts")
+	require.NotNil(t, fs)
+
+	names := callSiteNames(fs.CallSites)
+	assert.Contains(t, names, "api.call")
+	assert.Contains(t, names, "Thing")
+	assert.Contains(t, names, "factory()")
+}
+
+func TestTreeSitterRuntimeCachesLanguages(t *testing.T) {
+	rt := newTreeSitterRuntime()
+	defer rt.close()
+
+	first, err := rt.language("typescript")
+	require.NoError(t, err)
+	second, err := rt.language("typescript")
+	require.NoError(t, err)
+
+	assert.Same(t, first, second)
+}
+
 func findContextSymbol(symbols []Symbol, kind, name, receiver string) *Symbol {
 	for i := range symbols {
 		if symbols[i].Kind == kind && symbols[i].Name == name && symbols[i].Receiver == receiver {
@@ -63,4 +96,12 @@ func findContextSymbol(symbols []Symbol, kind, name, receiver string) *Symbol {
 		}
 	}
 	return nil
+}
+
+func callSiteNames(callSites []CallSite) []string {
+	names := make([]string, 0, len(callSites))
+	for _, site := range callSites {
+		names = append(names, site.Name)
+	}
+	return names
 }
