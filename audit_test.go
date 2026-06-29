@@ -189,6 +189,10 @@ func main() {
 	assertAuditReadGroup(t, brief.FirstReadQueue, "dependency-policy")
 	assertAuditReadGroup(t, brief.FirstReadQueue, "lifecycle-concurrency")
 	assertAuditReadGroup(t, brief.FirstReadQueue, "resource-bounds")
+	lifecycle := findAuditReadGroup(t, brief.FirstReadQueue, "lifecycle-concurrency")
+	require.NotEmpty(t, lifecycle.ReadNext)
+	assert.Equal(t, "main.go", lifecycle.ReadNext[0].File)
+	assert.Contains(t, lifecycle.ReadNext[0].Reason, "context")
 }
 
 func TestAuditSurfaceExtractsFrameworkRoles(t *testing.T) {
@@ -256,12 +260,18 @@ func surfaceHitNames(hits []AuditSurfaceHit) []string {
 
 func assertAuditReadGroup(t *testing.T, groups []AuditReadGroup, name string) {
 	t.Helper()
+	_ = findAuditReadGroup(t, groups, name)
+}
+
+func findAuditReadGroup(t *testing.T, groups []AuditReadGroup, name string) AuditReadGroup {
+	t.Helper()
 	for _, group := range groups {
 		if group.Group == name {
-			return
+			return group
 		}
 	}
 	t.Fatalf("expected audit read group %q in %#v", name, groups)
+	return AuditReadGroup{}
 }
 
 func runGitForAuditTest(t *testing.T, root string, args ...string) {

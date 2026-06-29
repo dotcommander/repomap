@@ -33,6 +33,7 @@ func TestImpactReportsLocalFacts(t *testing.T) {
 			FileSymbols: &FileSymbols{
 				Path:       "internal/http/middleware.go",
 				Language:   "go",
+				Package:    "http",
 				ImportPath: "example.com/app/internal/http",
 				Imports:    []string{"example.com/app/internal/auth"},
 			},
@@ -59,4 +60,11 @@ func TestImpactReportsLocalFacts(t *testing.T) {
 	assert.Equal(t, "RefreshToken", impact.ExportedSymbols[0].Name)
 	assert.Equal(t, []string{"HTTP"}, impact.Boundaries)
 	assert.Equal(t, 20, impact.ScoreComponents[scoreComponentImports])
+	assert.Equal(t, "medium", impact.RiskLevel)
+	assert.Equal(t, []string{"auth", "http"}, impact.AffectedPackages)
+	assert.Contains(t, impact.CheckNext, "inspect importer internal/http/middleware.go")
+	assert.Equal(t, []string{"go test ./internal/auth"}, impact.LikelyTestCommands)
+	require.NotEmpty(t, impact.ReadNext)
+	assert.Equal(t, "internal/auth/token.go", impact.ReadNext[0].File)
+	assert.Equal(t, "inspect target file", impact.ReadNext[0].Reason)
 }

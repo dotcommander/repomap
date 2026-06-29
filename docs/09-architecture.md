@@ -81,7 +81,7 @@ Each renderer consumes `RankedFile.DetailLevel` and shapes output accordingly. R
 Focused commands reuse the built map instead of adding separate indexing paths:
 
 - `find` searches the ranked symbol set by exact, case-insensitive, prefix, then contains score.
-- `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, and score components.
+- `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, score components, risk level, check-next guidance, likely Go test commands, and bounded read-next ranges.
 - `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path uses `gopls` through the existing LSP manager.
 - `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild.
 

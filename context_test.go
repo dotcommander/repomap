@@ -42,6 +42,10 @@ func Run(cfg Config) error {
 	require.NotEmpty(t, got.Source)
 	assert.Equal(t, 9, got.Source[0].Number)
 	assert.Contains(t, got.Source[0].Text, "func Run")
+	require.NotEmpty(t, got.ReadNext)
+	assert.Equal(t, "service.go", got.ReadNext[0].File)
+	assert.Equal(t, 9, got.ReadNext[0].StartLine)
+	assert.Contains(t, got.ReadNext[0].Reason, "matched symbol")
 }
 
 func TestContextAcceptsSymbolHandle(t *testing.T) {

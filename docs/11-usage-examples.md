@@ -191,7 +191,8 @@ repomap --consumed ranker.go,budget.go -i "detail level assignment"
 ## 5. Scope a change before you make it
 
 Before editing a symbol, find out what leans on it. `impact` reports deterministic
-local facts — importers and tests — for a file:
+local facts and workflow guidance — importers, tests, risk, check-next files,
+likely Go test commands, and bounded read-next source ranges — for a file:
 
 ```bash
 repomap impact ranker.go
