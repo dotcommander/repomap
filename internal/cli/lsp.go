@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/dotcommander/repomap/internal/lsp"
 	"github.com/spf13/cobra"
@@ -47,10 +49,48 @@ type jsonSymbolsOutput struct {
 }
 
 // ---------------------------------------------------------------------------
-// LSP subcommand group
+// LSP commands
 // ---------------------------------------------------------------------------
 
-// newLSPCmds returns the lsp subcommands (refs, def, hover, symbols).
+func newLSPCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lsp",
+		Short: "Inspect LSP semantic coverage",
+	}
+	cmd.AddCommand(newLSPStatusCmd())
+	return cmd
+}
+
+func newLSPStatusCmd() *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "status [directory]",
+		Short: "Report detected LSP server coverage without starting servers",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) > 0 {
+				dir = args[0]
+			}
+			absDir, err := filepath.Abs(dir)
+			if err != nil {
+				return fmt.Errorf("resolve path: %w", err)
+			}
+			report, err := lsp.DetectStatus(cmd.Context(), absDir)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return writeJSON(report)
+			}
+			return printLSPStatus(cmd.OutOrStdout(), report)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Emit machine-readable LSP status JSON")
+	return cmd
+}
+
+// newLSPCmds returns the historical top-level LSP subcommands (refs, def, hover, symbols).
 // They share a --json flag via a closure.
 func newLSPCmds() []*cobra.Command {
 	return []*cobra.Command{
@@ -59,6 +99,56 @@ func newLSPCmds() []*cobra.Command {
 		newHoverCmd(),
 		newSymbolsCmd(),
 	}
+}
+
+func printLSPStatus(w io.Writer, report lsp.StatusReport) error {
+	if _, err := fmt.Fprintf(w, "lsp status: %s\n", report.Root); err != nil {
+		return err
+	}
+	if len(report.Servers) == 0 && len(report.Missing) == 0 {
+		_, err := fmt.Fprintln(w, "  no LSP-supported source files found")
+		return err
+	}
+	if len(report.Servers) > 0 {
+		if _, err := fmt.Fprintln(w, "available:"); err != nil {
+			return err
+		}
+		for _, server := range report.Servers {
+			if _, err := fmt.Fprintf(w, "  %s  %s\n", server.Language, server.Root); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, "    command: %s\n", lspCommandDisplay(server)); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, "    file types: %s\n", strings.Join(server.FileTypes, ", ")); err != nil {
+				return err
+			}
+		}
+	}
+	if len(report.Missing) > 0 {
+		if _, err := fmt.Fprintln(w, "missing:"); err != nil {
+			return err
+		}
+		for _, missing := range report.Missing {
+			if _, err := fmt.Fprintf(w, "  %s\n", missing.Language); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, "    tried: %s\n", strings.Join(missing.TriedCommands, ", ")); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(w, "    found: %s\n", strings.Join(missing.FoundExtensions, ", ")); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func lspCommandDisplay(server lsp.StatusServer) string {
+	if len(server.Args) == 0 {
+		return server.Command
+	}
+	return server.Command + " " + strings.Join(server.Args, " ")
 }
 
 // newRefsCmd builds `repomap refs FILE LINE SYMBOL`.

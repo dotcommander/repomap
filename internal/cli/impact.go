@@ -93,4 +93,22 @@ func printImpact(w io.Writer, impact repomap.ImpactResult) {
 	if len(impact.ScoreComponents) > 0 {
 		fmt.Fprintf(w, "  score: %d %v\n", impact.File.Score, impact.ScoreComponents)
 	}
+	if impact.RiskLevel != "" {
+		fmt.Fprintf(w, "  risk: %s\n", impact.RiskLevel)
+	}
+	if len(impact.AffectedPackages) > 0 {
+		fmt.Fprintf(w, "  affected packages: %s\n", strings.Join(impact.AffectedPackages, ", "))
+	}
+	if len(impact.CheckNext) > 0 {
+		fmt.Fprintf(w, "  check next: %s\n", strings.Join(impact.CheckNext, "; "))
+	}
+	if len(impact.LikelyTestCommands) > 0 {
+		fmt.Fprintf(w, "  likely test commands: %s\n", strings.Join(impact.LikelyTestCommands, "; "))
+	}
+	if len(impact.ReadNext) > 0 {
+		fmt.Fprintln(w, "  read next:")
+		for _, item := range impact.ReadNext {
+			fmt.Fprintf(w, "    - %s:%d-%d %s\n", item.File, item.StartLine, item.EndLine, item.Reason)
+		}
+	}
 }

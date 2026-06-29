@@ -255,6 +255,14 @@ func printAuditBrief(w io.Writer, report repomap.AuditBriefReport) error {
 			if _, err := fmt.Fprintf(w, "  - %s lane=%s files=%d\n", group.Group, group.Lane, len(group.Files)); err != nil {
 				return err
 			}
+			for i, item := range group.ReadNext {
+				if i >= 2 {
+					break
+				}
+				if _, err := fmt.Fprintf(w, "      read %s:%d-%d %s\n", item.File, item.StartLine, item.EndLine, item.Reason); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
