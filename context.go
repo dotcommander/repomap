@@ -28,14 +28,15 @@ type SourceLine struct {
 
 // SymbolContext is a bounded, symbol-centered context bundle.
 type SymbolContext struct {
-	Query      string        `json:"query"`
-	Match      SymbolMatch   `json:"match"`
-	Ambiguous  []SymbolMatch `json:"ambiguous,omitempty"`
-	Callers    []Location    `json:"callers,omitempty"`
-	Source     []SourceLine  `json:"source,omitempty"`
-	Truncated  bool          `json:"truncated,omitempty"`
-	Impact     ImpactResult  `json:"impact"`
-	SourceNote string        `json:"source_note,omitempty"`
+	Query      string         `json:"query"`
+	Match      SymbolMatch    `json:"match"`
+	Ambiguous  []SymbolMatch  `json:"ambiguous,omitempty"`
+	Callers    []Location     `json:"callers,omitempty"`
+	Source     []SourceLine   `json:"source,omitempty"`
+	ReadNext   []ReadNextItem `json:"read_next,omitempty"`
+	Truncated  bool           `json:"truncated,omitempty"`
+	Impact     ImpactResult   `json:"impact"`
+	SourceNote string         `json:"source_note,omitempty"`
 }
 
 // Context returns a bounded context bundle for the best matching symbol.
@@ -72,6 +73,7 @@ func (m *Map) Context(query string, opts ContextOptions) (SymbolContext, error) 
 		Match:      match,
 		Impact:     impact,
 		Source:     source,
+		ReadNext:   contextReadNext(match),
 		Truncated:  truncated,
 		SourceNote: note,
 	}
@@ -83,6 +85,20 @@ func (m *Map) Context(query string, opts ContextOptions) (SymbolContext, error) 
 		out.Ambiguous = append([]SymbolMatch(nil), matches[1:limit]...)
 	}
 	return out, nil
+}
+
+func contextReadNext(match SymbolMatch) []ReadNextItem {
+	sym := match.Symbol
+	if sym.Line <= 0 {
+		return nil
+	}
+	end := sym.EndLine
+	if end < sym.Line {
+		end = sym.Line
+	}
+	return []ReadNextItem{
+		readNextRange(match.File, sym.Line, end, "inspect the matched symbol before editing"),
+	}
 }
 
 func readSymbolSource(path string, sym Symbol, maxLines int) ([]SourceLine, bool, string) {

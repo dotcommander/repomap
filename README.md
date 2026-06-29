@@ -112,9 +112,17 @@ ranker.go
   tests: ranker_test.go, ranker_callers_test.go, ranker_consumed_test.go
   exported: RankFiles, RankedFile
   score: 133 map[imports:120 symbols:3 transitive:10]
+  risk: medium
+  check next: inspect importer internal/cli/root.go; run or inspect likely test ranker_test.go
+  likely test commands: go test .
+  read next:
+    - ranker.go:49-92 inspect exported symbol RankFiles
 ```
 
-`impact` reports local facts only: imports, reverse imports, nearby tests, exported symbols, boundaries, parser backend, and score components.
+`impact` reports local facts plus deterministic workflow guidance: imports,
+reverse imports, nearby tests, exported symbols, boundaries, parser backend,
+score components, risk level, next files to inspect, likely Go test commands,
+and bounded `read_next` source ranges.
 
 ### Get Context for One Symbol
 
@@ -221,7 +229,9 @@ repomap audit effects --json --limit 20
 ```
 
 `audit brief` builds the map once and emits risks, surface, effects, a
-grouped first-read queue, and a `review_plan` for workflow tools. The
+grouped first-read queue, and a `review_plan` for workflow tools. First-read
+groups include bounded `read_next` ranges when the static evidence has line
+numbers. The
 `review_plan` projects the first-read queue into per-lane review obligations —
 each lane lists the files to cover, the gates to discharge, suggested verify
 commands (Go-specific commands appear only when Go sources are detected), and
@@ -267,6 +277,7 @@ repomap audit risks                 # lane-oriented audit risk packets
 repomap audit surface               # command/flag/config/schema/API/output surfaces
 repomap audit effects               # side-effect and trust-boundary packets
 repomap cache status                # inspect disk cache freshness
+repomap lsp status                  # inspect LSP server coverage without starting servers
 repomap explain ranker.go           # ranking and budget evidence
 repomap init                        # scaffold .repomap.yaml and post-commit cache hook
 ```

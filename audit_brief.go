@@ -23,15 +23,16 @@ type AuditBriefReport struct {
 // AuditReadGroup is a compact first-read queue grouped by the kind of risk a
 // local static packet found.
 type AuditReadGroup struct {
-	ID            string   `json:"id"`
-	Group         string   `json:"group"`
-	Lane          string   `json:"lane"`
-	EvidenceClass string   `json:"evidence_class,omitempty"`
-	Confidence    string   `json:"confidence,omitempty"`
-	Reasons       []string `json:"reasons"`
-	Caveat        string   `json:"caveat,omitempty"`
-	Files         []string `json:"files"`
-	OmittedReason string   `json:"omitted_reason,omitempty"`
+	ID            string         `json:"id"`
+	Group         string         `json:"group"`
+	Lane          string         `json:"lane"`
+	EvidenceClass string         `json:"evidence_class,omitempty"`
+	Confidence    string         `json:"confidence,omitempty"`
+	Reasons       []string       `json:"reasons"`
+	Caveat        string         `json:"caveat,omitempty"`
+	Files         []string       `json:"files"`
+	ReadNext      []ReadNextItem `json:"read_next,omitempty"`
+	OmittedReason string         `json:"omitted_reason,omitempty"`
 }
 
 // AuditReviewLane is a deterministic per-lane review obligation derived from the
@@ -86,7 +87,7 @@ func (m *Map) AuditBrief(ctx context.Context, limit int) (AuditBriefReport, erro
 // grouped by why the files matter.
 func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effects AuditEffectReport) []AuditReadGroup {
 	groups := map[string]*AuditReadGroup{}
-	add := func(group, lane, reason string, files []string) {
+	add := func(group, lane, reason string, files []string, next []ReadNextItem) {
 		clean := make([]string, 0, len(files))
 		for _, file := range files {
 			if file == "" || isTestPath(file) {
@@ -104,32 +105,35 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 		}
 		entry.Reasons = appendUnique(entry.Reasons, reason)
 		entry.Files = append(entry.Files, clean...)
+		entry.ReadNext = append(entry.ReadNext, next...)
 	}
 
 	riskFiles := make([]string, 0, len(risks.Files))
 	for _, file := range risks.Files {
 		riskFiles = append(riskFiles, file.Path)
 	}
-	add("ranked-risk-packets", "architecture", "repomap ranked audit score", riskFiles)
+	add("ranked-risk-packets", "architecture", "repomap ranked audit score", riskFiles, nil)
 	for _, lane := range risks.Lanes {
 		switch lane.Name {
 		case "test-risk":
-			add("test-risk", "test-risk", lane.Reason, lane.Files)
+			add("test-risk", "test-risk", lane.Reason, lane.Files, nil)
 		case "dead-code":
-			add("dead-export-surface", "dead-code", lane.Reason, lane.Files)
+			add("dead-export-surface", "dead-code", lane.Reason, lane.Files, nil)
 		case "coupling":
-			add("coupling-hotspots", "coupling", lane.Reason, lane.Files)
+			add("coupling-hotspots", "coupling", lane.Reason, lane.Files, nil)
 		case "parse-fidelity":
-			add("parse-fidelity", "parse-fidelity", lane.Reason, lane.Files)
+			add("parse-fidelity", "parse-fidelity", lane.Reason, lane.Files, nil)
 		}
 	}
 
 	addSurfaceGroup := func(group, lane, reason string, hits []AuditSurfaceHit) {
 		files := make([]string, 0, len(hits))
+		next := make([]ReadNextItem, 0, len(hits))
 		for _, hit := range hits {
 			files = append(files, hit.Path)
+			next = append(next, readNextAround(hit.Path, hit.Line, reason))
 		}
-		add(group, lane, reason, files)
+		add(group, lane, reason, files, next)
 	}
 	addSurfaceGroup("user-surface", "cli-ux", "commands, flags, and output paths", surface.Commands)
 	addSurfaceGroup("user-surface", "cli-ux", "commands, flags, and output paths", surface.Flags)
@@ -143,19 +147,19 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 	for _, kind := range effects.Kinds {
 		switch kind.Name {
 		case "filesystem-write", "database":
-			add("writes-and-persistence", "data-integrity", kind.Reason, kind.Files)
+			add("writes-and-persistence", "data-integrity", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "http", "serialization":
-			add("network-and-api-effects", "api-contracts", kind.Reason, kind.Files)
+			add("network-and-api-effects", "api-contracts", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "subprocess", "process-exit":
-			add("subprocess-and-exit", "error-handling", kind.Reason, kind.Files)
+			add("subprocess-and-exit", "error-handling", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "secret", "crypto", "randomness":
-			add("secret-and-crypto", "security", kind.Reason, kind.Files)
+			add("secret-and-crypto", "security", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "time", "filesystem-read":
-			add("state-and-time", "data-integrity", kind.Reason, kind.Files)
+			add("state-and-time", "data-integrity", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "context-background", "goroutine":
-			add("lifecycle-concurrency", "lifecycle-concurrency", kind.Reason, kind.Files)
+			add("lifecycle-concurrency", "lifecycle-concurrency", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		case "unbounded-read":
-			add("resource-bounds", "performance", kind.Reason, kind.Files)
+			add("resource-bounds", "performance", kind.Reason, kind.Files, effectReadNext(effects, kind.Files, kind.Reason))
 		}
 	}
 
@@ -185,6 +189,11 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 			group.Files = group.Files[:12]
 			group.OmittedReason = fmt.Sprintf("showing 12 of %d files; truncated by brief cap", total)
 		}
+		var readOmitted string
+		group.ReadNext, readOmitted = dedupeReadNext(group.ReadNext, 8)
+		if readOmitted != "" && group.OmittedReason == "" {
+			group.OmittedReason = readOmitted
+		}
 		slices.Sort(group.Reasons)
 		if len(group.Reasons) > 4 {
 			group.Reasons = group.Reasons[:4]
@@ -202,6 +211,23 @@ func BuildAuditReadQueue(risks AuditRiskReport, surface AuditSurfaceReport, effe
 		}
 		return strings.Compare(a.Group, b.Group)
 	})
+	return out
+}
+
+func effectReadNext(report AuditEffectReport, files []string, reason string) []ReadNextItem {
+	fileSet := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		fileSet[file] = struct{}{}
+	}
+	var out []ReadNextItem
+	for _, file := range report.Files {
+		if _, ok := fileSet[file.Path]; !ok {
+			continue
+		}
+		for _, effect := range file.Effects {
+			out = append(out, readNextAround(effect.Path, effect.Line, reason))
+		}
+	}
 	return out
 }
 

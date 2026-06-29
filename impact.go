@@ -9,14 +9,20 @@ import (
 
 // ImpactResult is the factual blast-radius summary for one file.
 type ImpactResult struct {
-	File            StructuredFile `json:"file"`
-	Imports         []string       `json:"imports,omitempty"`
-	ImportedBy      []string       `json:"imported_by,omitempty"`
-	Tests           []string       `json:"tests,omitempty"`
-	ExportedSymbols []Symbol       `json:"exported_symbols,omitempty"`
-	Boundaries      []string       `json:"boundaries,omitempty"`
-	ScoreComponents map[string]int `json:"score_components,omitempty"`
-	ParseMethod     string         `json:"parse_method,omitempty"`
+	File               StructuredFile `json:"file"`
+	Imports            []string       `json:"imports,omitempty"`
+	ImportedBy         []string       `json:"imported_by,omitempty"`
+	Tests              []string       `json:"tests,omitempty"`
+	ExportedSymbols    []Symbol       `json:"exported_symbols,omitempty"`
+	Boundaries         []string       `json:"boundaries,omitempty"`
+	ScoreComponents    map[string]int `json:"score_components,omitempty"`
+	ParseMethod        string         `json:"parse_method,omitempty"`
+	RiskLevel          string         `json:"risk_level,omitempty"`
+	AffectedPackages   []string       `json:"affected_packages,omitempty"`
+	CheckNext          []string       `json:"check_next,omitempty"`
+	LikelyTestCommands []string       `json:"likely_test_commands,omitempty"`
+	ReadNext           []ReadNextItem `json:"read_next,omitempty"`
+	OmittedReason      string         `json:"omitted_reason,omitempty"`
 }
 
 // Impact returns a deterministic local blast-radius summary for relPath.
@@ -38,15 +44,23 @@ func (m *Map) Impact(relPath string) (ImpactResult, error) {
 	}
 
 	target := ranked[idx]
+	importers := impactImporters(target, ranked)
+	tests := impactTests(target, ranked)
 	return ImpactResult{
-		File:            structuredFile(target, ""),
-		Imports:         append([]string(nil), target.Imports...),
-		ImportedBy:      impactImporters(target, ranked),
-		Tests:           impactTests(target, ranked),
-		ExportedSymbols: exportedSymbols(target.Symbols),
-		Boundaries:      append([]string(nil), target.Boundaries...),
-		ScoreComponents: cloneScoreComponents(target.ScoreComponents),
-		ParseMethod:     target.ParseMethod,
+		File:               structuredFile(target, ""),
+		Imports:            append([]string(nil), target.Imports...),
+		ImportedBy:         importers,
+		Tests:              tests,
+		ExportedSymbols:    exportedSymbols(target.Symbols),
+		Boundaries:         append([]string(nil), target.Boundaries...),
+		ScoreComponents:    cloneScoreComponents(target.ScoreComponents),
+		ParseMethod:        target.ParseMethod,
+		RiskLevel:          impactRiskLevel(target, importers, tests),
+		AffectedPackages:   affectedPackages(target, importers, ranked),
+		CheckNext:          impactCheckNext(importers, tests),
+		LikelyTestCommands: likelyTestCommands(target.Language, tests),
+		ReadNext:           impactReadNext(target, importers, tests, ranked),
+		OmittedReason:      impactOmittedReason(importers, tests),
 	}, nil
 }
 
@@ -126,4 +140,133 @@ func exportedSymbols(symbols []Symbol) []Symbol {
 		}
 	}
 	return out
+}
+
+func impactRiskLevel(target RankedFile, importers, tests []string) string {
+	switch {
+	case len(importers) > 10 || len(target.Boundaries) > 0 && len(importers) > 3:
+		return "high"
+	case len(importers) > 3 || len(target.Boundaries) > 0 || len(tests) == 0 && len(exportedSymbols(target.Symbols)) > 0:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func affectedPackages(target RankedFile, importers []string, ranked []RankedFile) []string {
+	packages := map[string]struct{}{}
+	if target.Package != "" {
+		packages[target.Package] = struct{}{}
+	}
+	for _, importer := range importers {
+		if rf, ok := rankedFileByPath(ranked, importer); ok && rf.Package != "" {
+			packages[rf.Package] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(packages))
+	for pkg := range packages {
+		out = append(out, pkg)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func impactCheckNext(importers, tests []string) []string {
+	var out []string
+	for _, file := range importers {
+		out = append(out, "inspect importer "+file)
+		if len(out) >= 3 {
+			break
+		}
+	}
+	for _, file := range tests {
+		out = append(out, "run or inspect likely test "+file)
+		if len(out) >= 5 {
+			break
+		}
+	}
+	return out
+}
+
+func likelyTestCommands(language string, tests []string) []string {
+	if len(tests) == 0 || language != "go" {
+		return nil
+	}
+	dirs := map[string]struct{}{}
+	for _, test := range tests {
+		dir := filepath.ToSlash(filepath.Dir(test))
+		if dir == "." {
+			dirs["."] = struct{}{}
+			continue
+		}
+		dirs["./"+dir] = struct{}{}
+	}
+	out := make([]string, 0, len(dirs))
+	for dir := range dirs {
+		out = append(out, "go test "+dir)
+	}
+	slices.Sort(out)
+	return out
+}
+
+func impactReadNext(target RankedFile, importers, tests []string, ranked []RankedFile) []ReadNextItem {
+	var items []ReadNextItem
+	if len(target.Symbols) > 0 {
+		for _, sym := range target.Symbols {
+			if sym.Exported && sym.Line > 0 {
+				end := sym.EndLine
+				if end < sym.Line {
+					end = sym.Line
+				}
+				items = append(items, readNextRange(target.Path, sym.Line, end, "inspect exported symbol "+sym.Name))
+				break
+			}
+		}
+	}
+	if len(items) == 0 {
+		items = append(items, readNextAround(target.Path, 1, "inspect target file"))
+	}
+	for _, file := range importers {
+		items = append(items, readNextAround(file, firstSymbolLine(ranked, file), "inspect importer before changing target"))
+		if len(items) >= 3 {
+			break
+		}
+	}
+	for _, file := range tests {
+		items = append(items, readNextAround(file, firstSymbolLine(ranked, file), "inspect likely test coverage"))
+		if len(items) >= 5 {
+			break
+		}
+	}
+	out, _ := dedupeReadNext(items, 5)
+	return out
+}
+
+func impactOmittedReason(importers, tests []string) string {
+	if len(importers) > 3 || len(tests) > 2 {
+		return "check_next and read_next are capped to keep impact output bounded"
+	}
+	return ""
+}
+
+func rankedFileByPath(ranked []RankedFile, path string) (RankedFile, bool) {
+	for _, rf := range ranked {
+		if filepath.ToSlash(rf.Path) == filepath.ToSlash(path) {
+			return rf, true
+		}
+	}
+	return RankedFile{}, false
+}
+
+func firstSymbolLine(ranked []RankedFile, path string) int {
+	rf, ok := rankedFileByPath(ranked, path)
+	if !ok {
+		return 1
+	}
+	for _, sym := range rf.Symbols {
+		if sym.Line > 0 {
+			return sym.Line
+		}
+	}
+	return 1
 }
