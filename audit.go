@@ -35,12 +35,14 @@ type AuditHygieneReport struct {
 
 // AuditCounts records the path counts behind an AuditHygieneReport.
 type AuditCounts struct {
-	Tracked       int `json:"tracked"`
-	TrackedSource int `json:"tracked_source"`
-	Untracked     int `json:"untracked"`
-	UntrackedCode int `json:"untracked_code"`
-	Ignored       int `json:"ignored"`
-	IgnoredSource int `json:"ignored_source"`
+	Tracked                 int `json:"tracked"`
+	TrackedSource           int `json:"tracked_source"`
+	Untracked               int `json:"untracked"`
+	UntrackedCode           int `json:"untracked_code"`
+	SuppressedUntrackedCode int `json:"suppressed_untracked_code,omitempty"`
+	Ignored                 int `json:"ignored"`
+	IgnoredSource           int `json:"ignored_source"`
+	SuppressedIgnoredSource int `json:"suppressed_ignored_source,omitempty"`
 }
 
 // AuditRiskReport is a compact packet for selecting deep-audit lanes before
@@ -116,8 +118,8 @@ func AuditHygiene(ctx context.Context, root string) (AuditHygieneReport, error) 
 	report.Counts.Ignored = len(ignored)
 
 	report.Counts.TrackedSource = countSourcePaths(tracked)
-	report.UntrackedCode = sourcePaths(untracked)
-	report.IgnoredSource = sourcePaths(ignored)
+	report.UntrackedCode, report.Counts.SuppressedUntrackedCode = hygieneSourcePaths(untracked)
+	report.IgnoredSource, report.Counts.SuppressedIgnoredSource = hygieneSourcePaths(ignored)
 	report.Counts.UntrackedCode = len(report.UntrackedCode)
 	report.Counts.IgnoredSource = len(report.IgnoredSource)
 
@@ -391,8 +393,38 @@ func countSourcePaths(paths []string) int {
 	return len(sourcePaths(paths))
 }
 
+func hygieneSourcePaths(paths []string) ([]string, int) {
+	source := sourcePaths(paths)
+	out := source[:0]
+	suppressed := 0
+	for _, path := range source {
+		if isHygieneNoisePath(path) {
+			suppressed++
+			continue
+		}
+		out = append(out, path)
+	}
+	return out, suppressed
+}
+
 func isSourcePath(path string) bool {
 	return LanguageFor(filepath.Ext(path)) != "" && !isBuildArtifact(path)
+}
+
+func isHygieneNoisePath(path string) bool {
+	path = filepath.ToSlash(path)
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		switch part {
+		case "node_modules", "vendor", "archive":
+			return true
+		case ".work":
+			if i+1 < len(parts) && parts[i+1] == "archive" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isTestPath(path string) bool {

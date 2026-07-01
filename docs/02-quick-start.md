@@ -44,6 +44,15 @@ repomap -t 4000 | pbcopy                    # macOS clipboard
 repomap | llm "summarize this codebase"     # pipe to an LLM CLI
 repomap --json > map-lines.json             # schema-versioned rendered lines
 repomap --json-structured > map-data.json   # structured file/symbol/call-site/ranking data
+repomap --artifact map.md                    # write output without shell redirection
+```
+
+## Inventory a Boundary
+
+```bash
+repomap --intent "PostgreSQL database psql pgx migrations schema queries" --explain
+repomap inventory --boundary Postgres
+repomap audit effects --kind database --paths-only
 ```
 
 ## Inspect one symbol

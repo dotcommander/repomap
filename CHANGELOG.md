@@ -4,6 +4,20 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.18.2 — 2026-07-01
+
+### Features
+
+- **Postgres ownership inventory** — added `repomap inventory --boundary Postgres` to summarize constructors, writers, readers, migrations, tests, and docs for database-oriented review.
+- **Compact impact handoffs** — added `repomap impact --markdown` for human-readable blast-radius summaries without the verbosity of JSON.
+- **Focused audit effects** — added `repomap audit effects --kind database --paths-only` and `--top-files` aliases for audit packet limits.
+- **Artifact output** — added global `--artifact <path>` support so long command outputs can be written directly without shell redirection.
+
+### Changes
+
+- **Audit hygiene is quieter by default** — dependency and archive paths such as `node_modules/`, `vendor/`, `.work/archive/`, and `archive/` are suppressed from hygiene source leads while retaining suppressed counts in JSON.
+- **Impact path resolution is more robust** — file/root symlinks are normalized before computing impact paths, fixing macOS `/var` versus `/private/var` temp-path mismatches.
+
 ## v0.18.1 — 2026-06-29
 
 ### Features

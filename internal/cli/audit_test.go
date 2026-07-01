@@ -105,6 +105,49 @@ func main() {
 	assert.NotEmpty(t, brief.ReviewPlan[0].Gates)
 }
 
+func TestAuditCommandEffectsKindPathsOnly(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := `package main
+
+import "database/sql"
+
+func main() {
+	db, _ := sql.Open("postgres", "")
+	_, _ = db.QueryContext(nil, "select 1")
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644))
+
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"audit", "effects", "--kind", "database", "--paths-only", root})
+	require.NoError(t, cmd.Execute())
+
+	assert.Equal(t, "main.go\n", out.String())
+}
+
+func TestAuditCommandTopFilesAlias(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.go"), []byte("package main\n\nfunc a() { panic(\"a\") }\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b.go"), []byte("package main\n\nfunc b() { panic(\"b\") }\n"), 0o644))
+
+	cmd := newRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"audit", "effects", "--json", "--top-files", "1", root})
+	require.NoError(t, cmd.Execute())
+
+	var report repomap.AuditEffectReport
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+	assert.Len(t, report.Files, 1)
+	assert.Contains(t, report.FilesOmittedReason, "showing 1")
+}
+
 func TestAuditCommandRegistered(t *testing.T) {
 	t.Parallel()
 

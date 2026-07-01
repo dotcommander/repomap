@@ -38,6 +38,35 @@ func TestAuditHygieneReportsIgnoredAndUntrackedSource(t *testing.T) {
 	assert.Equal(t, "untracked_source_file", report.Issues[1].ID)
 }
 
+func TestAuditHygieneSuppressesIgnoredDependencyAndArchiveNoise(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	runGitForAuditTest(t, root, "init")
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("ignored/\nnode_modules/\nvendor/\n.work/\narchive/\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644))
+	for _, path := range []string{
+		"ignored/local.go",
+		"node_modules/pkg/index.ts",
+		"vendor/pkg/dep.go",
+		".work/archive/old.go",
+		"archive/old.ts",
+	} {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.Dir(path)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte("package ignored\n\nfunc Local() {}\n"), 0o644))
+	}
+	runGitForAuditTest(t, root, "add", ".gitignore", "main.go")
+
+	report, err := AuditHygiene(context.Background(), root)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"ignored/local.go"}, report.IgnoredSource)
+	assert.Equal(t, 1, report.Counts.IgnoredSource)
+	assert.Equal(t, 4, report.Counts.SuppressedIgnoredSource)
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, "ignored/local.go", report.Issues[0].Path)
+}
+
 func TestAuditRisksMapsFilesToAuditLanes(t *testing.T) {
 	t.Parallel()
 

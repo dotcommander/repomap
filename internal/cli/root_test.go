@@ -176,6 +176,25 @@ func TestRootCmd_JSONLegacyHasNoShortForm(t *testing.T) {
 	assert.Empty(t, legacyFlag.Shorthand, "--json-legacy must have no short form")
 }
 
+func TestRootCmdArtifactWritesOutputFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644))
+	artifact := filepath.Join(t.TempDir(), "repomap.md")
+
+	cmd := newRootCmd()
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"--artifact", artifact, root})
+
+	require.NoError(t, cmd.Execute())
+	assert.Empty(t, stdout.String())
+	data, err := os.ReadFile(artifact)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "main.go")
+}
+
 // TestCompactModeOrientation_NamesOnly verifies that StringCompact (the -f compact backend)
 // produces lean output (names only, no function signatures).
 func TestCompactModeOrientation_NamesOnly(t *testing.T) {

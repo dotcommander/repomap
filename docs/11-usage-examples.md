@@ -196,7 +196,19 @@ likely Go test commands, and bounded read-next source ranges — for a file:
 
 ```bash
 repomap impact ranker.go
+repomap impact ranker.go --markdown
 repomap impact ranker.go --json
+```
+
+Use `--markdown` for a compact human handoff and `--json` for tooling.
+
+For database ownership work, start with the map, then ask for the boundary
+answer and exact DB-effect paths:
+
+```bash
+repomap --intent "PostgreSQL database psql pgx migrations schema queries" --explain
+repomap inventory --boundary Postgres --json
+repomap audit effects --kind database --paths-only
 ```
 
 For a symbol-level view with bounded source and its blast radius, use `context`:
@@ -286,6 +298,7 @@ repomap audit hygiene --json
 repomap audit risks --json --limit 20
 repomap audit surface --json --limit 20
 repomap audit effects --json --limit 20
+repomap audit effects --kind database --paths-only
 ```
 
 `audit brief` builds the map once and emits risks, surface, effects, a
@@ -296,13 +309,16 @@ commands (Go-specific commands appear only when Go sources are detected), and
 why the lane matters — so deep-audit tools get coverage targets without
 inventing findings. Use the narrower commands when you only need one packet.
 `audit hygiene` catches tracked-vs-worktree drift such as ignored source files.
-`audit risks` groups central files, entrypoints, boundary files, and large
-symbols into repo-audit lanes. `audit surface` extracts the user-facing
+It suppresses dependency/archive noise from paths such as `node_modules/`,
+`vendor/`, `.work/archive/`, and `archive/`, while retaining suppressed counts
+in JSON. `audit risks` groups central files, entrypoints, boundary files, and
+large symbols into repo-audit lanes. `audit surface` extracts the user-facing
 contract: commands, flags, env vars, config keys, JSON schema fields, routes,
 and output paths. `audit effects` extracts side-effect boundaries such as
 filesystem writes, subprocesses, HTTP, DB calls, serialization, secrets, crypto,
 time, and randomness. Treat these outputs as audit packets: promote a lead only
 after source, docs, runtime, or command corroboration.
+Use `--top-files N` as a clearer alias for `--limit N` on audit packets.
 
 Every audit packet is self-describing (`schema_version` 2): each carries a stable
 `id` (e.g. `repomap:risk:internal-cli-audit-go`) for citation, an `evidence_class`

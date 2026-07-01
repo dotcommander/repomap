@@ -102,6 +102,7 @@ Use this as first context. It gives the agent entry points, central packages, pu
 
 ```bash
 repomap impact ranker.go
+repomap impact ranker.go --markdown
 ```
 
 ```text
@@ -119,6 +120,7 @@ ranker.go
     - ranker.go:49-92 inspect exported symbol RankFiles
 ```
 
+Use `--markdown` for a compact human handoff and `--json` for tooling.
 `impact` reports local facts plus deterministic workflow guidance: imports,
 reverse imports, nearby tests, exported symbols, boundaries, parser backend,
 score components, risk level, next files to inspect, likely Go test commands,
@@ -238,7 +240,9 @@ commands (Go-specific commands appear only when Go sources are detected), and
 why the lane matters — so deep-audit tools get coverage targets without
 inventing findings. Use the narrower commands when you only need one packet.
 `audit hygiene` reports tracked, untracked, and ignored source-file leads so
-release audits can catch local-only code. `audit risks` converts rank, boundary,
+release audits can catch local-only code. It suppresses dependency/archive noise
+from paths such as `node_modules/`, `vendor/`, `.work/archive/`, and `archive/`,
+while retaining suppressed counts in JSON. `audit risks` converts rank, boundary,
 and symbol-size facts into lane packets for tools such as repo-audit-deep.
 `audit surface` extracts commands, flags, env vars, config keys, JSON schema
 fields, routes, and output paths. `audit effects` extracts side-effect
@@ -267,15 +271,19 @@ repomap -f xml                      # structured XML
 repomap --json                      # JSON envelope with rendered lines
 repomap --json --json-legacy        # legacy bare []string JSON
 repomap --json-structured           # schema-versioned map data
+repomap --artifact out.md           # save long output without shell redirection
 repomap brief [directory]           # agent boot digest: identity + verify + state + map
 repomap find RankFiles              # locate symbols
 repomap context RankFiles           # source + impact context for one symbol
 repomap impact ranker.go            # blast-radius facts for a file
+repomap impact ranker.go --markdown # compact human handoff
+repomap inventory --boundary Postgres # ownership answer for DB work
 repomap audit brief                 # single-pass audit packets + first-read queue
 repomap audit hygiene               # tracked/untracked/ignored source leads
 repomap audit risks                 # lane-oriented audit risk packets
 repomap audit surface               # command/flag/config/schema/API/output surfaces
 repomap audit effects               # side-effect and trust-boundary packets
+repomap audit effects --kind database --paths-only # DB boundary paths
 repomap cache status                # inspect disk cache freshness
 repomap lsp status                  # inspect LSP server coverage without starting servers
 repomap explain ranker.go           # ranking and budget evidence
@@ -324,6 +332,15 @@ repomap ranks files before budgeting. Main signals:
 | `--symbol-refs` | non-Go symbols mentioned by many other files rise |
 | `--consumed` | read files fall; their importers rise |
 | `--calls` | files with many caller sites rise |
+
+For database work, a compact flow is:
+
+```bash
+repomap --intent "PostgreSQL database psql pgx migrations schema queries" --explain
+repomap inventory --boundary Postgres --json
+repomap audit effects --kind database --paths-only
+repomap impact internal/database/connection.go --markdown
+```
 
 Check exact evidence with:
 

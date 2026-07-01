@@ -22,6 +22,7 @@ type jsonOutput struct {
 
 func renderWithCalls(
 	ctx context.Context,
+	w io.Writer,
 	m *repomap.Map,
 	format string,
 	asJSON bool,
@@ -87,11 +88,11 @@ func renderWithCalls(
 		if err != nil {
 			return err
 		}
-		_, err = os.Stdout.Write(append(data, '\n'))
+		_, err = w.Write(append(data, '\n'))
 		return err
 	}
 
-	return renderCallsOutput(os.Stdout, m, format, asJSON, jsonLegacy, ranked, callers, limit)
+	return renderCallsOutput(w, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }
 
 func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {

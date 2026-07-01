@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,6 +21,7 @@ func newRootCmd() *cobra.Command {
 	var asJSON bool
 	var jsonLegacy bool
 	var jsonStructured bool
+	var artifact string
 
 	// --calls flags
 	var callsMode bool
@@ -86,11 +88,35 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 			}
 
 			if !callsMode {
-				return renderStandard(m, format, asJSON, jsonLegacy, jsonStructured)
+				return renderStandard(cmd.OutOrStdout(), m, format, asJSON, jsonLegacy, jsonStructured)
 			}
 
-			return renderWithCalls(cmd.Context(), m, format, asJSON, jsonLegacy, jsonStructured, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
+			return renderWithCalls(cmd.Context(), cmd.OutOrStdout(), m, format, asJSON, jsonLegacy, jsonStructured, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
 		},
+	}
+
+	var artifactFile *os.File
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if artifact == "" {
+			return nil
+		}
+		f, err := os.Create(artifact)
+		if err != nil {
+			return fmt.Errorf("create artifact: %w", err)
+		}
+		artifactFile = f
+		cmd.SetOut(f)
+		return nil
+	}
+	cmd.PersistentPostRunE = func(_ *cobra.Command, _ []string) error {
+		if artifactFile == nil {
+			return nil
+		}
+		if err := artifactFile.Close(); err != nil {
+			return fmt.Errorf("close artifact: %w", err)
+		}
+		artifactFile = nil
+		return nil
 	}
 
 	cmd.Flags().IntVarP(&tokens, "tokens", "t", 2048, "Token budget")
@@ -98,6 +124,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON array of lines")
 	cmd.Flags().BoolVar(&jsonLegacy, "json-legacy", false, "Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release.")
 	cmd.Flags().BoolVar(&jsonStructured, "json-structured", false, "Output a structured JSON repository map")
+	cmd.PersistentFlags().StringVar(&artifact, "artifact", "", "Write command output to this file instead of stdout")
 
 	cmd.Flags().BoolVar(&callsMode, "calls", false, "Expand exported symbols with caller information via gopls")
 	cmd.Flags().IntVar(&callsThreshold, "calls-threshold", 2, "Only expand symbols in files with at least N importers")
@@ -122,6 +149,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.AddCommand(newFindCmd())
 	cmd.AddCommand(newServeCmd())
 	cmd.AddCommand(newImpactCmd())
+	cmd.AddCommand(newInventoryCmd())
 	cmd.AddCommand(newContextCmd())
 	cmd.AddCommand(newExplainCmd())
 	cmd.AddCommand(newOrphansCmd())
@@ -135,17 +163,17 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	return cmd
 }
 
-func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool, jsonStructured bool) error {
+func renderStandard(w io.Writer, m *repomap.Map, format string, asJSON bool, jsonLegacy bool, jsonStructured bool) error {
 	if jsonStructured {
 		data, err := m.StructuredJSON()
 		if err != nil {
 			return err
 		}
-		_, err = os.Stdout.Write(append(data, '\n'))
+		_, err = w.Write(append(data, '\n'))
 		return err
 	}
 	if asJSON {
-		return printJSON(os.Stdout, m, jsonLegacy)
+		return printJSON(w, m, jsonLegacy)
 	}
 
 	var out string
@@ -163,6 +191,6 @@ func renderStandard(m *repomap.Map, format string, asJSON bool, jsonLegacy bool,
 	default:
 		out = m.String() // enriched default: signatures + godoc + fields
 	}
-	fmt.Print(out)
-	return nil
+	_, err := fmt.Fprint(w, out)
+	return err
 }

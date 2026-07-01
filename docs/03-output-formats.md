@@ -157,11 +157,16 @@ Subcommands that return focused data have their own JSON shapes:
 
 ```bash
 repomap context RankFiles --json
+repomap impact ranker.go --markdown
 repomap impact ranker.go --json
 repomap cache status --json
 ```
 
-`context` includes the selected symbol, ambiguity hints, bounded source lines, optional callers, and the owning file's impact facts. `cache status` reports cache existence, usability, freshness, reason, path, saved/current HEAD, and tracked file count.
+`impact --markdown` emits a compact human handoff from the same impact facts as
+JSON. `context` includes the selected symbol, ambiguity hints, bounded source
+lines, optional callers, and the owning file's impact facts. `cache status`
+reports cache existence, usability, freshness, reason, path, saved/current HEAD,
+and tracked file count.
 
 ## Budget behavior
 
