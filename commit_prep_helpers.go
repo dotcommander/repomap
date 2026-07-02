@@ -6,12 +6,16 @@ package repomap
 // without Cobra.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -82,6 +86,8 @@ type PrepState struct {
 	ReleaseRecipe bool             `json:"release_recipe"`
 	ReleaseGate   *PrepReleaseGate `json:"release_gate,omitempty"`
 	RepoRoot      string           `json:"repo_root"`
+	HeadSHA       string           `json:"head_sha,omitempty"`     // HEAD at prep time; finish refuses on mismatch
+	FileHashes    map[string]string `json:"file_hashes,omitempty"` // planned rel path → sha256 hex ("absent" for planned deletions)
 }
 
 // LoadPrepState reads a persisted PrepState from tmpdir by token.
@@ -252,4 +258,88 @@ func ModeHint(p PrepPreflight) string {
 		return "FULL"
 	}
 	return "LOCAL"
+}
+
+// BuildPrepStateBinding captures the git state a plan was computed against:
+// the HEAD SHA plus a sha256 of each planned file's current worktree content.
+// Planned files absent from the worktree (deletions) record the sentinel
+// "absent". commit finish refuses to execute when either no longer matches.
+func BuildPrepStateBinding(ctx context.Context, repoRoot string, groups []CommitGroup) (string, map[string]string, error) {
+	headSHA, err := gitHeadSHA(ctx, repoRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve HEAD: %w", err)
+	}
+	hashes := make(map[string]string)
+	for _, g := range groups {
+		for _, f := range g.Files {
+			if _, ok := hashes[f]; ok {
+				continue
+			}
+			h, hErr := sha256OfFile(filepath.Join(repoRoot, f))
+			if hErr != nil {
+				if errors.Is(hErr, fs.ErrNotExist) {
+					hashes[f] = "absent"
+					continue
+				}
+				return "", nil, fmt.Errorf("hash %s: %w", f, hErr)
+			}
+			hashes[f] = h
+		}
+	}
+	return headSHA, hashes, nil
+}
+
+// VerifyPrepStateFresh checks that the repo still matches the state captured
+// at prep time. Fail-closed: legacy states without a binding are rejected.
+func VerifyPrepStateFresh(ctx context.Context, state *PrepState) error {
+	if state.HeadSHA == "" {
+		return fmt.Errorf("prep state predates freshness binding; re-run commit prep")
+	}
+	head, err := gitHeadSHA(ctx, state.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+	if head != state.HeadSHA {
+		return fmt.Errorf("HEAD moved since prep (%.8s → %.8s); re-run commit prep", state.HeadSHA, head)
+	}
+	var changed []string
+	for f, want := range state.FileHashes {
+		got, hErr := sha256OfFile(filepath.Join(state.RepoRoot, f))
+		if hErr != nil {
+			if errors.Is(hErr, fs.ErrNotExist) {
+				got = "absent"
+			} else {
+				return fmt.Errorf("hash %s: %w", f, hErr)
+			}
+		}
+		if got != want {
+			changed = append(changed, f)
+		}
+	}
+	if len(changed) > 0 {
+		sort.Strings(changed)
+		return fmt.Errorf("file(s) changed since prep: %s — re-run commit prep", strings.Join(changed, ", "))
+	}
+	return nil
+}
+
+// PersistPrepStateAt rewrites the state file for an existing token in place.
+// Used by commit finish after review decisions mutate planned files, so a
+// retry of the same token still passes freshness verification.
+func PersistPrepStateAt(token string, state *PrepState) error {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(filepath.Join(os.TempDir(), "prep-"+token+".json"), data, 0o600)
+}
+
+// DeletePrepState removes the state file for a token. Missing file is not an
+// error — deletion is idempotent.
+func DeletePrepState(token string) error {
+	err := os.Remove(filepath.Join(os.TempDir(), "prep-"+token+".json"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

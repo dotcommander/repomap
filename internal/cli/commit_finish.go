@@ -89,6 +89,11 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 	if err != nil {
 		return finishFatal(jsonOut, 2, fmt.Sprintf("load prep state: %v", err))
 	}
+
+	if err := repomap.VerifyPrepStateFresh(ctx, state); err != nil {
+		return finishFatal(jsonOut, 2, fmt.Sprintf("stale prep state: %v", err))
+	}
+
 	repoRoot := state.RepoRoot
 
 	// Step 2: parse and apply decisions.
@@ -122,12 +127,23 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 		}
 	}
 
+	// Review decisions legitimately mutate planned files; refresh the binding
+	// so a retry of the same token still passes freshness verification.
+	if len(dec.ReviewDecisions) > 0 {
+		if headSHA, fileHashes, bindErr := repomap.BuildPrepStateBinding(ctx, repoRoot, state.Plan); bindErr == nil {
+			state.HeadSHA = headSHA
+			state.FileHashes = fileHashes
+			_ = repomap.PersistPrepStateAt(prepToken, state)
+		}
+	}
+
 	// Step 3: Justfile branch.
 	if state.ReleaseRecipe && tag != "" {
 		bump := bumpLevel(groups, tag)
 		if justErr := runJustRelease(ctx, repoRoot, bump); justErr != nil {
 			return finishFatal(jsonOut, 4, fmt.Sprintf("just release: %v", justErr))
 		}
+		_ = repomap.DeletePrepState(prepToken)
 		return runVerifyAndEmit(ctx, repoRoot, state.SessionRepos, nil, tag, jsonOut)
 	}
 
@@ -146,6 +162,7 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 		return finishFatal(jsonOut, code, detail)
 	}
 
+	_ = repomap.DeletePrepState(prepToken)
 	return runVerifyAndEmit(ctx, repoRoot, state.SessionRepos, execResult, tag, jsonOut)
 }
 

@@ -165,6 +165,13 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 	// Status determination.
 	status, abortReason := prepStatus(analysis, reviewCount, lowConf)
 
+	// Bind prep state to current git HEAD and file content so finish can
+	// detect mutations after prep.
+	headSHA, fileHashes, bindErr := repomap.BuildPrepStateBinding(ctx, repoRoot, groups)
+	if bindErr != nil {
+		return nil, fmt.Errorf("bind prep state: %w", bindErr)
+	}
+
 	// Step 9: persist state.
 	state := &repomap.PrepState{
 		Analysis:      analysis,
@@ -173,6 +180,8 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 		ReleaseRecipe: hasRecipe,
 		ReleaseGate:   gate,
 		RepoRoot:      repoRoot,
+		HeadSHA:       headSHA,
+		FileHashes:    fileHashes,
 	}
 	token, err := repomap.PersistPrepState(state)
 	if err != nil {
