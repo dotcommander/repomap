@@ -61,8 +61,6 @@ type PrepReviewItem struct {
 	Snippet       string `json:"snippet"`
 	Detail        string `json:"detail"`
 	DefaultAction string `json:"default_action"`
-	ByteOffset    int    `json:"byte_offset"`
-	ByteLength    int    `json:"byte_length"`
 }
 
 // PrepLowConf is one group requiring LLM subject polish (capped at 3; diff_slice ≤500 chars).
