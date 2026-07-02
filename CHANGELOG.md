@@ -4,7 +4,7 @@ All notable changes to repomap are documented here.
 
 ---
 
-## Unreleased
+## v0.20.0 — 2026-07-02
 
 ### Features
 

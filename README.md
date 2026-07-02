@@ -211,6 +211,8 @@ repomap --calls --calls-threshold 2 --calls-limit 8
 
 `--calls` asks `gopls` for references to exported symbols in highly imported files, then boosts files with many caller sites. Caller data is cached under `~/.cache/repomap` unless `--no-cache` is set.
 
+Add `--precise` (on `repomap --calls` or `repomap context --calls`) to build a type-checked, whole-program Go call graph via Class Hierarchy Analysis instead of per-symbol `gopls` queries. It resolves callers for every symbol in one pass — not just exported symbols above `--calls-threshold` — and falls back to the `gopls` `--calls` tier automatically when packages fail to load.
+
 ### Inspect Cache State
 
 ```bash
@@ -277,6 +279,7 @@ repomap find RankFiles              # locate symbols
 repomap context RankFiles           # source + impact context for one symbol
 repomap impact ranker.go            # blast-radius facts for a file
 repomap impact ranker.go --markdown # compact human handoff
+repomap endpoint "GET /users/{id}"  # route -> handler -> callees -> tests
 repomap inventory --boundary Postgres # ownership answer for DB work
 repomap audit brief                 # single-pass audit packets + first-read queue
 repomap audit hygiene               # tracked/untracked/ignored source leads
