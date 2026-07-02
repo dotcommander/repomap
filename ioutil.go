@@ -9,13 +9,36 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// atomicWriteFile writes data to path via temp file + rename (prevents partial writes).
+// atomicWriteFile writes data to path via a uniquely named temp file + rename.
+// Unique temp names keep concurrent writers to the same path from publishing
+// each other's partial bytes (a fixed ".tmp" name let writer A rename writer
+// B's half-written file into place); Sync bounds torn writes across crashes.
 func atomicWriteFile(path string, data []byte, perm fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, perm); err != nil {
+	f, err := os.CreateTemp(dir, ".atomic-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
 		os.Remove(tmp)
 		return err
 	}
