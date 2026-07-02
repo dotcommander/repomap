@@ -47,6 +47,12 @@ func renderWithCalls(
 	var callers repomap.SymbolCallers
 	resolved := false
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve home dir: %w", err)
+	}
+	cacheDir := filepath.Join(home, ".cache", "repomap")
+
 	if precise {
 		// --precise takes priority over --calls-use-binary silently: the typed
 		// graph never shells out to lspq, and a fail-open fallback uses gopls.
@@ -62,12 +68,6 @@ func renderWithCalls(
 	}
 
 	if !resolved {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve home dir: %w", err)
-		}
-		cacheDir := filepath.Join(home, ".cache", "repomap")
-
 		if !noCache {
 			hash := repomap.CallsCacheKey(root, ranked, callsCfg)
 			cached := repomap.LoadCallsCache(cacheDir, hash)
