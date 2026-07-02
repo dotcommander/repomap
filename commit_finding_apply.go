@@ -129,7 +129,11 @@ func ValidateReviewDecisions(findings []Finding, decisions []ReviewDecision) err
 	reviewByID := make(map[string]Finding)
 	for _, f := range findings {
 		if f.DefaultAction == ActionReview {
-			reviewByID[findingID(f)] = f
+			id := findingID(f)
+			if _, dup := reviewByID[id]; dup {
+				return fmt.Errorf("multiple review findings share %s; cannot adjudicate by id", id)
+			}
+			reviewByID[id] = f
 		}
 	}
 

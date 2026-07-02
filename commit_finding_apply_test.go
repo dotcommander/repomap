@@ -272,6 +272,18 @@ func TestValidateReviewDecisions(t *testing.T) {
 	}
 }
 
+func TestValidateReviewDecisions_DuplicateFindingIDRejected(t *testing.T) {
+	t.Parallel()
+	findings := []Finding{
+		{File: "secrets.go", Line: 1, DefaultAction: ActionReview},
+		{File: "secrets.go", Line: 1, DefaultAction: ActionReview},
+	}
+	err := ValidateReviewDecisions(findings, nil)
+	if err == nil || !strings.Contains(err.Error(), "multiple review findings share secrets.go:1") {
+		t.Fatalf("error = %v, want containing %q", err, "multiple review findings share secrets.go:1")
+	}
+}
+
 func TestApplyReviewDecisions_StaleLineAborts(t *testing.T) {
 	t.Parallel()
 
