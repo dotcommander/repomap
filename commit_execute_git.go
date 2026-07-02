@@ -149,3 +149,16 @@ func execRelease(ctx context.Context, root, tag, notesFrom string) (string, erro
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }
+
+// groupHasChanges reports whether any of the group's files carry staged,
+// unstaged, or untracked changes. Used to skip already-landed groups when a
+// plan is retried after a mid-loop failure — their files are clean, and
+// `git commit` would fail with "nothing to commit".
+func groupHasChanges(ctx context.Context, root string, files []string) (bool, error) {
+	args := append([]string{"status", "--porcelain", "-z", "--"}, files...)
+	out, err := gitOutput(ctx, root, args...)
+	if err != nil {
+		return false, fmt.Errorf("status for group files: %w", err)
+	}
+	return strings.TrimRight(out, "\x00") != "", nil
+}

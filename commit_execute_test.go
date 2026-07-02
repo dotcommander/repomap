@@ -468,3 +468,115 @@ func Test_Execute_PreStagedDeletionOnly(t *testing.T) {
 		t.Errorf("workspace dirty after execute:\n%s", porcelain)
 	}
 }
+
+// TestExecuteGroups_PartialFailureReturnsLanded verifies that when a mid-loop
+// commit fails, the error carries exit code 3 and the result includes all
+// CommitRecords that landed before the failure.
+func TestExecuteGroups_PartialFailureReturnsLanded(t *testing.T) {
+	t.Parallel()
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod": "module fixture\ngo 1.22\n",
+			"a.txt":  "alpha\n",
+			"b.txt":  "beta\n",
+		},
+		map[string]string{
+			"a.txt": "alpha\n// changed\n",
+			"b.txt": "beta\n// changed\n",
+		},
+	)
+
+	// Install a failing pre-commit hook that rejects b.txt.
+	hookPath := filepath.Join(root, ".git", "hooks", "pre-commit")
+	hookScript := []byte("#!/bin/sh\ngit diff --cached --name-only | grep -q '^b\\.txt$' && exit 1\nexit 0\n")
+	if err := os.WriteFile(hookPath, hookScript, 0o755); err != nil {
+		t.Fatalf("write pre-commit hook: %v", err)
+	}
+
+	groups := []CommitGroup{
+		{ID: "g1", SuggestedMsg: "feat: update alpha", Files: []string{"a.txt"}},
+		{ID: "g2", SuggestedMsg: "chore: update beta", Files: []string{"b.txt"}},
+	}
+
+	result, err := ExecuteFromGroups(context.Background(), root, groups, ExecuteOptions{SkipFix: true})
+	if err == nil {
+		t.Fatalf("expected error from ExecuteFromGroups, got nil")
+	}
+	if code := ExecExitCode(err); code != 3 {
+		t.Fatalf("expected exit code 3, got %d", code)
+	}
+	if result == nil {
+		t.Fatalf("expected non-nil partial result, got nil")
+	}
+	if len(result.Commits) != 1 {
+		t.Fatalf("expected 1 landed commit, got %d", len(result.Commits))
+	}
+	if result.Commits[0].Message != groups[0].SuggestedMsg {
+		t.Errorf("landed commit message = %q, want %q", result.Commits[0].Message, groups[0].SuggestedMsg)
+	}
+}
+
+// TestExecuteGroups_RetrySkipsLandedGroups continues from the state left by
+// TestExecuteGroups_PartialFailureReturnsLanded: remove the hook, retry with
+// both groups, and assert only the second group lands (first is clean).
+func TestExecuteGroups_RetrySkipsLandedGroups(t *testing.T) {
+	t.Parallel()
+	root := initTestRepo(t,
+		map[string]string{
+			"go.mod": "module fixture\ngo 1.22\n",
+			"a.txt":  "alpha\n",
+			"b.txt":  "beta\n",
+		},
+		map[string]string{
+			"a.txt": "alpha\n// changed\n",
+			"b.txt": "beta\n// changed\n",
+		},
+	)
+
+	// Run 1: install hook that rejects b.txt, commit a.txt.
+	hookPath := filepath.Join(root, ".git", "hooks", "pre-commit")
+	hookScript := []byte("#!/bin/sh\ngit diff --cached --name-only | grep -q '^b\\.txt$' && exit 1\nexit 0\n")
+	if err := os.WriteFile(hookPath, hookScript, 0o755); err != nil {
+		t.Fatalf("write pre-commit hook: %v", err)
+	}
+
+	groups := []CommitGroup{
+		{ID: "g1", SuggestedMsg: "feat: update alpha", Files: []string{"a.txt"}},
+		{ID: "g2", SuggestedMsg: "chore: update beta", Files: []string{"b.txt"}},
+	}
+
+	result1, err1 := ExecuteFromGroups(context.Background(), root, groups, ExecuteOptions{SkipFix: true})
+	if err1 == nil {
+		t.Fatalf("first run: expected error, got nil")
+	}
+	if code := ExecExitCode(err1); code != 3 {
+		t.Fatalf("first run: expected exit code 3, got %d", code)
+	}
+	if result1 == nil || len(result1.Commits) != 1 {
+		t.Fatalf("first run: expected 1 landed commit, got %+v", result1)
+	}
+
+	commitsBefore := gitLogCount(t, root)
+
+	// Remove the hook so the retry can succeed.
+	if err := os.Remove(hookPath); err != nil {
+		t.Fatalf("remove hook: %v", err)
+	}
+
+	// Run 2: retry with both groups — g1 skipped (clean), g2 lands.
+	result2, err2 := ExecuteFromGroups(context.Background(), root, groups, ExecuteOptions{SkipFix: true})
+	if err2 != nil {
+		t.Fatalf("retry: %v", err2)
+	}
+	if len(result2.Commits) != 1 {
+		t.Fatalf("retry: expected 1 commit (g2), got %d", len(result2.Commits))
+	}
+	if result2.Commits[0].Message != groups[1].SuggestedMsg {
+		t.Errorf("retry: landed commit message = %q, want %q", result2.Commits[0].Message, groups[1].SuggestedMsg)
+	}
+
+	commitsAfter := gitLogCount(t, root)
+	if commitsAfter != commitsBefore+1 {
+		t.Errorf("retry: commit count grew from %d to %d, want exactly +1", commitsBefore, commitsAfter)
+	}
+}

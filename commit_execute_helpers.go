@@ -25,8 +25,8 @@ func printDryRun(w io.Writer, groups []CommitGroup, opts ExecuteOptions) {
 	}
 }
 
-// buildPartialResult constructs an exit-4 result when commits landed but push/release failed.
-func buildPartialResult(branch string, landed []CommitRecord, opts ExecuteOptions, pushed bool, releaseURL *string, errMsg string) (*ExecuteResult, error) {
+// buildPartialResult constructs a partial result when commits landed but a later step failed.
+func buildPartialResult(branch string, landed []CommitRecord, opts ExecuteOptions, pushed bool, releaseURL *string, code int, errMsg string) (*ExecuteResult, error) {
 	result := &ExecuteResult{
 		Branch:     branch,
 		Commits:    landed,
@@ -35,7 +35,7 @@ func buildPartialResult(branch string, landed []CommitRecord, opts ExecuteOption
 		ReleaseURL: releaseURL,
 		Postflight: PostflightCheck{Clean: true, Convent: true, TagLocal: opts.Tag != ""},
 	}
-	return result, execError{code: 4, msg: errMsg}
+	return result, execError{code: code, msg: errMsg}
 }
 
 func resolveRoot(root string) (string, error) {

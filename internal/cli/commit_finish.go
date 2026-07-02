@@ -139,8 +139,8 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 	if execErr != nil {
 		code := repomap.ExecExitCode(execErr)
 		detail := execErr.Error()
-		// For exit-4 (push/release failed after commits landed), still emit result.
-		if code == 4 && execResult != nil {
+		// For exit-3/4 failures after some commits landed, still emit the partial result.
+		if (code == 3 || code == 4) && execResult != nil {
 			return emitFinishResult(jsonOut, code, buildFinishResult(finishStatusFailed, execResult, detail))
 		}
 		return finishFatal(jsonOut, code, detail)

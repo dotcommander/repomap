@@ -134,9 +134,18 @@ func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts 
 	}
 	var landed []CommitRecord
 	for _, g := range groups {
+		changed, chErr := groupHasChanges(ctx, root, g.Files)
+		if chErr != nil {
+			return buildPartialResult(branch, landed, opts, false, nil, 3,
+				fmt.Sprintf("check group %s: %v", g.ID, chErr))
+		}
+		if !changed {
+			continue // group already landed (idempotent retry)
+		}
 		sha, err := execCommit(ctx, root, g.Files, g.SuggestedMsg)
 		if err != nil {
-			return nil, execError{code: 3, msg: fmt.Sprintf("commit %q: %v", g.SuggestedMsg, err)}
+			return buildPartialResult(branch, landed, opts, false, nil, 3,
+				fmt.Sprintf("commit %q: %v", g.SuggestedMsg, err))
 		}
 		landed = append(landed, CommitRecord{SHA: sha, Message: g.SuggestedMsg})
 	}
@@ -148,7 +157,7 @@ func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts 
 	pushed := false
 	if opts.Push {
 		if err := execPush(ctx, root, branch); err != nil {
-			return buildPartialResult(branch, landed, opts, false, nil,
+			return buildPartialResult(branch, landed, opts, false, nil, 4,
 				fmt.Sprintf("push failed: %v", err))
 		}
 		pushed = true
@@ -157,7 +166,7 @@ func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts 
 	if opts.Push && opts.Tag != "" && !opts.NoRelease {
 		url, err := execRelease(ctx, root, opts.Tag, opts.ReleaseNotesFrom)
 		if err != nil {
-			return buildPartialResult(branch, landed, opts, pushed, nil,
+			return buildPartialResult(branch, landed, opts, pushed, nil, 4,
 				fmt.Sprintf("gh release failed: %v", err))
 		}
 		releaseURL = &url
