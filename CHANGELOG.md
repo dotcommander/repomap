@@ -4,11 +4,26 @@ All notable changes to repomap are documented here.
 
 ---
 
-## [Unreleased]
+## v0.19.0 — 2026-07-02
 
 ### Features
 
 - **Opt-in precise call graph** — added `--precise` on `repomap --calls` and `repomap context --calls` to build a type-checked, whole-program Go call graph (go/packages + Class Hierarchy Analysis) instead of per-symbol gopls queries. It resolves callers for *every* symbol in one pass — not just exported symbols in files above `--calls-threshold` — disambiguates same-named methods by receiver, and falls back to the gopls `--calls` tier automatically when packages fail to load, so it never turns a working `--calls` run into an error.
+
+### Fixed
+
+- **Commit substitutions verify line content before applying** — a finding's replacement is now checked against the current line text before it's written; a line that drifted since `commit prep` aborts `commit finish` with a "stale finding(s)" error instead of silently substituting the wrong line.
+- **Mid-loop commit failures report landed commits and retry cleanly** — if a commit group fails partway through `commit execute`, the result now lists which commits already landed; re-running skips groups with no pending changes instead of re-committing them.
+- **Prep state is bound to HEAD and file content** — `commit finish` now rejects a prep token if HEAD moved or any planned file changed since `commit prep` ("stale prep state... re-run commit prep"), and deletes the prep-state file once finish succeeds.
+- **Incremental rebuilds apply the same rank passes as full builds** — an incrementally-updated map previously could rank files differently than a full rebuild of the same tree.
+- **Cache validity is keyed on a config fingerprint** — token budget, intent, method blocklist, and other build-affecting settings (including `.repomap.yaml`) are now part of the cache key, so a config change can no longer produce a stale cache hit.
+- **`atomicWriteFile` is safe under concurrent writers** — unique temp file names plus fsync-before-rename prevent torn writes when multiple processes write the same path.
+- **`Stale()` detects newly created files** — previously only modified/deleted files triggered a rebuild; new files in the tracked tree now do too.
+- **`commit prep` aborts when applying fix-findings fails** — previously the error was swallowed and prep could report success against a partially-redacted working tree.
+- **Ambiguous review-finding identities are rejected** — two findings sharing the same `file:line` no longer resolve by silently picking the last one.
+- **Rune-safe snippet truncation** — review-item snippets no longer truncate mid-UTF-8-rune.
+- **`commit execute`'s workspace-clean check parses `git status --porcelain -z` correctly** — filenames with spaces and rename records no longer produce false "unplanned" aborts.
+- **Dropped never-populated `byte_offset`/`byte_length` fields** from the `commit prep` JSON payload.
 
 ## v0.18.2 — 2026-07-01
 
