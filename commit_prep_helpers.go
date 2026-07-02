@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // PrepPayload is the JSON document emitted by `repomap commit prep --json`.
@@ -126,7 +127,11 @@ func BuildReviewItems(findings []Finding, maxItems int) []PrepReviewItem {
 		}
 		snippet := f.Snippet
 		if len(snippet) > 200 {
-			snippet = snippet[:200]
+			cut := 200
+			for cut > 0 && !utf8.RuneStart(snippet[cut]) {
+				cut--
+			}
+			snippet = snippet[:cut]
 		}
 		out = append(out, PrepReviewItem{
 			ID:            fmt.Sprintf("%s:%d", f.File, f.Line),
