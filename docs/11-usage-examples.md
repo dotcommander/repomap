@@ -230,6 +230,18 @@ repomap --calls
 repomap --calls --calls-threshold 1 --calls-limit 20 --calls-include-tests
 ```
 
+Add `--precise` to swap the per-symbol gopls queries for an opt-in, type-checked
+whole-program Go call graph (go/packages + Class Hierarchy Analysis). It resolves
+callers for *every* symbol in one pass — not just exported symbols in files above
+`--calls-threshold` — and disambiguates same-named methods by receiver. If the
+packages fail to type-check it falls back to the gopls `--calls` tier
+automatically, so it never turns a working `--calls` run into an error:
+
+```bash
+repomap --calls --precise
+repomap context RankFiles --calls --precise
+```
+
 For pinpoint navigation, the LSP subcommands take `FILE LINE SYMBOL` (1-based line):
 
 ```bash

@@ -4,6 +4,12 @@ All notable changes to repomap are documented here.
 
 ---
 
+## [Unreleased]
+
+### Features
+
+- **Opt-in precise call graph** — added `--precise` on `repomap --calls` and `repomap context --calls` to build a type-checked, whole-program Go call graph (go/packages + Class Hierarchy Analysis) instead of per-symbol gopls queries. It resolves callers for *every* symbol in one pass — not just exported symbols in files above `--calls-threshold` — disambiguates same-named methods by receiver, and falls back to the gopls `--calls` tier automatically when packages fail to load, so it never turns a working `--calls` run into an error.
+
 ## v0.18.2 — 2026-07-01
 
 ### Features
