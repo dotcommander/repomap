@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +20,7 @@ func newContextCmd() *cobra.Command {
 		file           string
 		jsonOut        bool
 		withCalls      bool
+		precise        bool
 		includeTests   bool
 		callsLimit     int
 		maxSourceLines int
@@ -42,6 +44,10 @@ func newContextCmd() *cobra.Command {
 			m := repomap.New(absDir, repomap.Config{MaxTokens: 8192, MaxTokensNoCtx: 8192})
 			if err := m.Build(cmd.Context()); err != nil {
 				return err
+			}
+
+			if precise && !withCalls {
+				fmt.Fprintln(os.Stderr, "repomap: --precise has no effect without --calls")
 			}
 
 			result, err := m.Context(args[0], repomap.ContextOptions{
@@ -78,6 +84,9 @@ func newContextCmd() *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "Filter to files matching this substring")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable context JSON")
 	cmd.Flags().BoolVar(&withCalls, "calls", false, "Include exact Go callers via gopls")
+	// --precise: registered in Phase A; the contextCallers wiring lands in Phase C
+	// (precise-callgraph.md). Today it only drives the no-effect notice above.
+	cmd.Flags().BoolVar(&precise, "precise", false, "Use a type-checked whole-program call graph (go/packages+CHA) instead of gopls for --calls")
 	cmd.Flags().BoolVar(&includeTests, "calls-include-tests", false, "Include _test.go callers")
 	cmd.Flags().IntVar(&callsLimit, "calls-limit", 10, "Max callers to include when --calls is set")
 	cmd.Flags().IntVar(&maxSourceLines, "max-source-lines", 200, "Max source lines to include for the symbol")

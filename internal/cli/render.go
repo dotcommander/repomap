@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap"
+	"github.com/dotcommander/repomap/internal/callgraph"
 	"github.com/dotcommander/repomap/internal/lsp"
 )
 
@@ -33,6 +35,7 @@ func renderWithCalls(
 	includeTests bool,
 	noCache bool,
 	useBinary bool,
+	precise bool,
 ) error {
 	ranked := m.Ranked()
 	callsCfg := repomap.CallsConfig{
@@ -41,41 +44,59 @@ func renderWithCalls(
 		IncludeTests: includeTests,
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home dir: %w", err)
-	}
-	cacheDir := filepath.Join(home, ".cache", "repomap")
 	var callers repomap.SymbolCallers
+	resolved := false
 
-	if !noCache {
-		hash := repomap.CallsCacheKey(root, ranked, callsCfg)
-		cached := repomap.LoadCallsCache(cacheDir, hash)
-		if cached != nil {
-			callers = cached
+	if precise {
+		// --precise takes priority over --calls-use-binary silently: the typed
+		// graph never shells out to lspq, and a fail-open fallback uses gopls.
+		useBinary = false
+		typed, ok, err := resolvePreciseCallers(ctx, root)
+		if err != nil {
+			return err
+		}
+		if ok {
+			callers = typed
+			resolved = true
+		}
+	}
+
+	if !resolved {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home dir: %w", err)
+		}
+		cacheDir := filepath.Join(home, ".cache", "repomap")
+
+		if !noCache {
+			hash := repomap.CallsCacheKey(root, ranked, callsCfg)
+			cached := repomap.LoadCallsCache(cacheDir, hash)
+			if cached != nil {
+				callers = cached
+			} else {
+				var (
+					err   error
+					stats repomap.CallsStats
+				)
+				callers, stats, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
+				if err != nil {
+					return err
+				}
+				// Degraded run = any LSP timeout or error. Caching a degraded
+				// (possibly incomplete) result as authoritative would poison
+				// future runs, so skip the write and tell the user once.
+				if callsRunDegraded(stats) {
+					fmt.Fprintf(os.Stderr, "repomap: calls cache not written: %d LSP errors/timeouts\n", stats.Timeout+stats.Error)
+				} else {
+					_ = repomap.SaveCallsCache(cacheDir, hash, callers) // best-effort
+				}
+			}
 		} else {
-			var (
-				err   error
-				stats repomap.CallsStats
-			)
-			callers, stats, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
+			var err error
+			callers, _, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
 			if err != nil {
 				return err
 			}
-			// Degraded run = any LSP timeout or error. Caching a degraded
-			// (possibly incomplete) result as authoritative would poison
-			// future runs, so skip the write and tell the user once.
-			if callsRunDegraded(stats) {
-				fmt.Fprintf(os.Stderr, "repomap: calls cache not written: %d LSP errors/timeouts\n", stats.Timeout+stats.Error)
-			} else {
-				_ = repomap.SaveCallsCache(cacheDir, hash, callers) // best-effort
-			}
-		}
-	} else {
-		var err error
-		callers, _, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
-		if err != nil {
-			return err
 		}
 	}
 
@@ -93,6 +114,28 @@ func renderWithCalls(
 	}
 
 	return renderCallsOutput(w, m, format, asJSON, jsonLegacy, ranked, callers, limit)
+}
+
+// resolvePreciseCallers attempts to build the type-checked whole-program call
+// graph (--precise, precise-callgraph.md Decision 3) and adapt it into the
+// SymbolCallers shape every --calls consumer already reads. It returns
+// (callers, true, nil) on success. On callgraph.ErrLoadFailed it prints the
+// fallback notice and returns (nil, false, nil) so renderWithCalls falls back to
+// the existing gopls --calls tier — --precise never turns a working --calls
+// invocation into a hard error. Any other error propagates unchanged.
+//
+// Phase A: internal/callgraph.Build is a stub that always returns ErrLoadFailed,
+// so this always takes the fallback branch.
+func resolvePreciseCallers(ctx context.Context, root string) (repomap.SymbolCallers, bool, error) {
+	edges, err := callgraph.Build(ctx, root)
+	if err != nil {
+		if errors.Is(err, callgraph.ErrLoadFailed) {
+			fmt.Fprintln(os.Stderr, "repomap: --precise disabled \u2014 go/packages load failed, falling back to --calls")
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return repomap.TypedGraphToSymbolCallers(edges), true, nil
 }
 
 func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {

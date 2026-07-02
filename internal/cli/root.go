@@ -30,6 +30,7 @@ func newRootCmd() *cobra.Command {
 	var callsIncludeTests bool
 	var noCache bool
 	var callsUseBinary bool // hidden fallback: shell out to lspq instead of in-process gopls
+	var precise bool        // --precise: type-checked whole-program call graph instead of gopls for --calls
 	var intent string
 	var consumed []string
 	var symbolRefs bool
@@ -87,11 +88,15 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 				return err
 			}
 
+			if precise && !callsMode {
+				fmt.Fprintln(os.Stderr, "repomap: --precise has no effect without --calls")
+			}
+
 			if !callsMode {
 				return renderStandard(cmd.OutOrStdout(), m, format, asJSON, jsonLegacy, jsonStructured)
 			}
 
-			return renderWithCalls(cmd.Context(), cmd.OutOrStdout(), m, format, asJSON, jsonLegacy, jsonStructured, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary)
+			return renderWithCalls(cmd.Context(), cmd.OutOrStdout(), m, format, asJSON, jsonLegacy, jsonStructured, absDir, callsThreshold, callsLimit, callsIncludeTests, noCache, callsUseBinary, precise)
 		},
 	}
 
@@ -127,6 +132,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.PersistentFlags().StringVar(&artifact, "artifact", "", "Write command output to this file instead of stdout")
 
 	cmd.Flags().BoolVar(&callsMode, "calls", false, "Expand exported symbols with caller information via gopls")
+	cmd.Flags().BoolVar(&precise, "precise", false, "Use a type-checked whole-program call graph (go/packages+CHA) instead of gopls for --calls")
 	cmd.Flags().IntVar(&callsThreshold, "calls-threshold", 2, "Only expand symbols in files with at least N importers")
 	cmd.Flags().IntVar(&callsLimit, "calls-limit", 10, "Max callers shown per symbol")
 	cmd.Flags().BoolVar(&callsIncludeTests, "calls-include-tests", false, "Include _test.go callers (excluded by default)")
