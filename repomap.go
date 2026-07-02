@@ -2,6 +2,8 @@ package repomap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"maps"
 	"os"
@@ -55,6 +57,7 @@ type Map struct {
 	builtAt       time.Time
 	mtimes        map[string]time.Time // path → mtime at last build
 	contentHashes map[string]string    // path → sha256 hex at last build; nil on old cache loads
+	scanFP        string             // fingerprint of the scanned file set at last build; "" = mtime-only (legacy/tests)
 	coverage      ParseCoverage
 	outputs       outputCache
 
@@ -134,6 +137,7 @@ func (m *Map) Build(ctx context.Context) error {
 	m.mtimes = mtimes
 	m.contentHashes = hashes
 	m.coverage = coverage
+	m.scanFP = scanFingerprint(files)
 	m.outputs.reset()
 	m.mu.Unlock()
 
@@ -297,13 +301,34 @@ func (m *Map) BuiltAt() time.Time {
 	return m.builtAt
 }
 
-// Stale reports whether any tracked file has been modified since the last build.
-// Uses file mtimes for fast checking.
+// scanFingerprint identifies the discovered file set (relative paths, already
+// sorted by the scanner). Stale compares it against a fresh scan so newly
+// created files mark the map stale — mtime polling alone can never see them.
+func scanFingerprint(files []FileInfo) string {
+	h := sha256.New()
+	for _, f := range files {
+		h.Write([]byte(f.Path))
+		h.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// Stale reports whether the tracked tree has changed since the last build.
+// See StaleContext.
+func (m *Map) Stale() bool {
+	return m.StaleContext(context.Background())
+}
+
+// StaleContext reports whether any tracked file has been modified since the
+// last build (mtime polling), or whether the discovered file set itself has
+// changed (fresh scan vs stored fingerprint — catches newly created files,
+// which mtime polling over recorded paths can never see).
 // Also stale if Build has never been called.
 // Debounced: returns false if last build was <30s ago.
-func (m *Map) Stale() bool {
+func (m *Map) StaleContext(ctx context.Context) bool {
 	m.mu.RLock()
 	builtAt := m.builtAt
+	fp := m.scanFP
 	mtimes := make(map[string]time.Time, len(m.mtimes))
 	maps.Copy(mtimes, m.mtimes)
 	m.mu.RUnlock()
@@ -318,7 +343,6 @@ func (m *Map) Stale() bool {
 	var stale atomic.Bool
 	g := new(errgroup.Group)
 	g.SetLimit(runtime.NumCPU())
-
 	for path, recorded := range mtimes {
 		g.Go(func() error {
 			if stale.Load() {
@@ -332,6 +356,18 @@ func (m *Map) Stale() bool {
 		})
 	}
 	_ = g.Wait()
+	if stale.Load() {
+		return true
+	}
 
-	return stale.Load()
+	// "" = populated without a fingerprint (direct state injection in tests,
+	// pre-fingerprint caches) — mtime-only behavior for those.
+	if fp == "" {
+		return false
+	}
+	files, err := scanFilesLimited(ctx, m.root, m.blocklist, m.config.MaxFileSize)
+	if err != nil {
+		return true // fail-stale: cannot prove the set unchanged
+	}
+	return scanFingerprint(files) != fp
 }

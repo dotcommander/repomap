@@ -107,6 +107,7 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
 	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
+	m.scanFP = entry.ScanFP
 	m.coverage = entry.Coverage
 	// One source of truth for derived-output invalidation: reset() clears every
 	// format (including ones added later), then the two cache-persisted strings
@@ -125,7 +126,8 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	if len(changedRel) == 0 {
 		// Nothing to re-parse — cache is authoritative. Still refresh builtAt
 		// and save so LastSHA advances if HEAD moved without touching tracked
-		// files (rare but possible).
+		// files (rare but possible). No fingerprint change needed — hydrated
+		// ScanFP already matches the tree as it stands.
 		m.mu.Lock()
 		m.builtAt = time.Now()
 		m.mu.Unlock()
@@ -217,10 +219,22 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	ranked := RankFiles(existing)
 	ranked = m.applyRankPasses(ranked)
 
+	// The file set may have changed; refresh the fingerprint from a real scan
+	// so Stale() compares against exactly what a rebuild would discover.
+	// On scan failure keep the old fingerprint — a later false-stale just
+	// triggers a full rebuild, which self-heals.
+	newFP := ""
+	if files, scanErr := scanFilesLimited(ctx, m.root, m.blocklist, m.config.MaxFileSize); scanErr == nil {
+		newFP = scanFingerprint(files)
+	}
+
 	m.mu.Lock()
 	m.ranked = ranked
 	m.builtAt = time.Now()
 	m.coverage = parseCoverageFromRanked(ranked, m.tsAvailable, m.ctagsAvailable)
+	if newFP != "" {
+		m.scanFP = newFP
+	}
 	m.outputs.reset()
 	m.mu.Unlock()
 

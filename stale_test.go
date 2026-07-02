@@ -1,6 +1,7 @@
 package repomap
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -160,4 +161,31 @@ func TestStale_EmptyMtimes(t *testing.T) {
 	populateMapState(m, pastBuild, map[string]time.Time{})
 
 	assert.False(t, m.Stale(), "map with no tracked files must not be stale")
+}
+
+// TestStaleDetectsNewFile verifies that after a real Build, creating a new
+// source file (which has no mtime entry in the map) is detected as stale
+// via the scan-set fingerprint. Without the fingerprint path, mtime-only
+// polling would never see a newly created file.
+func TestStaleDetectsNewFile(t *testing.T) {
+	t.Parallel()
+	repo := newGitRepo(t)
+	ctx := context.Background()
+	m := New(repo, DefaultConfig())
+	require.NoError(t, m.Build(ctx))
+
+	// Backdate builtAt past the debounce window.
+	m.mu.Lock()
+	m.builtAt = time.Now().Add(-time.Minute)
+	m.mu.Unlock()
+
+	// Unchanged tree must not be stale.
+	assert.False(t, m.Stale(), "unchanged tree must not be stale")
+
+	// Write a new valid Go file.
+	extra := filepath.Join(repo, "extra.go")
+	require.NoError(t, os.WriteFile(extra, []byte("package main\n\nfunc Extra() int { return 1 }\n"), 0o644))
+
+	// New file must be detected — mtime polling alone would miss it.
+	assert.True(t, m.Stale(), "newly created file must mark map stale")
 }

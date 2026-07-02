@@ -47,6 +47,7 @@ type diskCache struct {
 	BuiltAt       time.Time            `json:"built_at"`
 	Mtimes        map[string]time.Time `json:"mtimes"`
 	ContentHashes map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
+	ScanFP        string               `json:"scan_fp,omitempty"`
 	Coverage      ParseCoverage        `json:"coverage,omitempty"`
 	Output        string               `json:"output"`
 	OutputLines   string               `json:"output_lines"`
@@ -55,7 +56,7 @@ type diskCache struct {
 	GitRoot       bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
 }
 
-const cacheVersion = 11
+const cacheVersion = 12
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -84,6 +85,7 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		BuiltAt:       m.builtAt,
 		Mtimes:        m.mtimes,
 		ContentHashes: m.contentHashes,
+		ScanFP:        m.scanFP,
 		Coverage:      m.coverage,
 		Output:        compact,
 		OutputLines:   lines,
@@ -133,6 +135,7 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
 	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
+	m.scanFP = entry.ScanFP
 	m.coverage = entry.Coverage
 	m.mu.Unlock()
 
