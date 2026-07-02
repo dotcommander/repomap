@@ -157,6 +157,7 @@ Pass --intent to bias the output toward files relevant to a specific task.`,
 	cmd.AddCommand(newImpactCmd())
 	cmd.AddCommand(newInventoryCmd())
 	cmd.AddCommand(newContextCmd())
+	cmd.AddCommand(newEndpointCmd())
 	cmd.AddCommand(newExplainCmd())
 	cmd.AddCommand(newOrphansCmd())
 	cmd.AddCommand(newBriefCmd())
