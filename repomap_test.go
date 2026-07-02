@@ -13,12 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// findBenchRoot walks up from cwd to find the repo root (go.mod).
-func findBenchRoot(b *testing.B) string {
-	b.Helper()
+// findBenchRoot walks up from cwd to find the repo root (go.mod). Accepts
+// testing.TB so both benchmarks (*testing.B) and TestPreciseBudget (*testing.T)
+// can share the walk-up logic.
+func findBenchRoot(tb testing.TB) string {
+	tb.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
-		b.Fatal(err)
+		tb.Fatal(err)
 	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
@@ -26,7 +28,7 @@ func findBenchRoot(b *testing.B) string {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			b.Skip("cannot find repo root")
+			tb.Skip("cannot find repo root")
 		}
 		dir = parent
 	}
