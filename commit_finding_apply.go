@@ -168,19 +168,22 @@ func ValidateReviewDecisions(findings []Finding, decisions []ReviewDecision) err
 // ApplyReviewDecisions applies LLM-adjudicated verdicts to REVIEW findings.
 // For verdict="unsafe": applies the decision's Replacement at the finding's
 // file+line. For verdict="safe": no-op (finding is cleared without edit).
-// Callers should validate decisions before applying them.
+// Fail-closed: every edit is verified against current file content BEFORE any
+// file is written — the target line must still contain the finding's snippet
+// (or already equal the replacement, for idempotent retries). A stale finding
+// aborts with zero files mutated. Callers should validate decisions first.
 func ApplyReviewDecisions(ctx context.Context, repoRoot string, decisions []ReviewDecision, findings []Finding) error {
 	// Build finding lookup by ID (file:line).
 	findByID := make(map[string]Finding, len(findings))
 	for _, f := range findings {
-		id := findingID(f)
-		findByID[id] = f
+		findByID[findingID(f)] = f
 	}
 
 	// Group unsafe decisions by file so we do one read+write per file.
 	type lineEdit struct {
 		lineIdx     int
 		replacement string
+		snippet     string
 	}
 	fileEdits := make(map[string][]lineEdit)
 
@@ -198,24 +201,53 @@ func ApplyReviewDecisions(ctx context.Context, repoRoot string, decisions []Revi
 		fileEdits[f.File] = append(fileEdits[f.File], lineEdit{
 			lineIdx:     f.Line - 1,
 			replacement: d.Replacement,
+			snippet:     f.Snippet,
 		})
 	}
 
+	// Phase 1: verify every edit against current content.
+	fileLines := make(map[string][]string, len(fileEdits))
+	var stale []string
 	for path, edits := range fileEdits {
 		abs := filepath.Join(repoRoot, path)
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
-
 		lines := strings.Split(string(data), "\n")
 		for _, e := range edits {
 			if e.lineIdx < 0 || e.lineIdx >= len(lines) {
+				stale = append(stale, fmt.Sprintf("%s:%d", path, e.lineIdx+1))
+				continue
+			}
+			if lines[e.lineIdx] == e.replacement {
+				continue // already applied — idempotent retry
+			}
+			if e.snippet == "" || !strings.Contains(lines[e.lineIdx], e.snippet) {
+				stale = append(stale, fmt.Sprintf("%s:%d", path, e.lineIdx+1))
+			}
+		}
+		fileLines[path] = lines
+	}
+	if len(stale) > 0 {
+		return fmt.Errorf("stale finding(s), file changed since prep: %s — re-run commit prep", strings.Join(stale, ", "))
+	}
+
+	// Phase 2: apply and write.
+	for path, edits := range fileEdits {
+		lines := fileLines[path]
+		dirty := false
+		for _, e := range edits {
+			if lines[e.lineIdx] == e.replacement {
 				continue
 			}
 			lines[e.lineIdx] = e.replacement
+			dirty = true
 		}
-
+		if !dirty {
+			continue
+		}
+		abs := filepath.Join(repoRoot, path)
 		if err := atomicWriteFile(abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}

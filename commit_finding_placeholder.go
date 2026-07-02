@@ -33,13 +33,14 @@ func applyFindingPlaceholder(line, snippet, placeholder string) (string, bool) {
 	if placeholder == "/path/to/project" {
 		return applyPlaceholder(line, placeholder)
 	}
-	if snippet != "" && snippet != placeholder && strings.Contains(line, snippet) {
-		newLine := strings.ReplaceAll(line, snippet, placeholder)
-		if newLine != line {
-			return newLine, true
-		}
+	// Fail closed: a secret substitution requires the finding's snippet to still
+	// be present on the line. The old pattern-based fallback rewrote unrelated
+	// lines when the finding was stale (e.g. `token := lexer.Next()`).
+	if snippet == "" || snippet == placeholder || !strings.Contains(line, snippet) {
+		return line, false
 	}
-	return applyPlaceholder(line, placeholder)
+	newLine := strings.ReplaceAll(line, snippet, placeholder)
+	return newLine, newLine != line
 }
 
 func applyPlaceholder(line, placeholder string) (string, bool) {

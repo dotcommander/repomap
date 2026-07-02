@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestApplyFixFindings(t *testing.T) {
@@ -141,7 +143,7 @@ func TestApplyReviewDecisions(t *testing.T) {
 				{ID: "secrets.go:1", Verdict: VerdictUnsafe, Replacement: "api_key: YOUR_API_KEY"},
 			},
 			findings: []Finding{
-				{File: "secrets.go", Line: 1, DefaultAction: ActionReview},
+				{File: "secrets.go", Line: 1, Snippet: "myRealKey123", DefaultAction: ActionReview},
 			},
 			wantContains: []string{"YOUR_API_KEY"},
 			wantAbsent:   []string{"myRealKey123"},
@@ -268,4 +270,89 @@ func TestValidateReviewDecisions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyReviewDecisions_StaleLineAborts(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "secrets.go")
+	// Write a file where line 3 does NOT contain the snippet.
+	fileContent := "line one\nline two\nline three\n"
+	if err := os.WriteFile(fpath, []byte(fileContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := []Finding{
+		{File: "secrets.go", Line: 3, Snippet: "sk-ant-abc123", DefaultAction: ActionReview},
+	}
+	decisions := []ReviewDecision{
+		{ID: "secrets.go:3", Verdict: VerdictUnsafe, Replacement: `key := "REDACTED"`},
+	}
+
+	err := ApplyReviewDecisions(context.Background(), dir, decisions, findings)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "stale finding")
+
+	// File bytes unchanged.
+	result, _ := os.ReadFile(fpath)
+	require.Equal(t, fileContent, string(result))
+}
+
+func TestApplyReviewDecisions_IdempotentRetry(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "secrets.go")
+	fileContent := "line one\napi_key: myRealKey123\nline three\n"
+	if err := os.WriteFile(fpath, []byte(fileContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := []Finding{
+		{File: "secrets.go", Line: 2, Snippet: "myRealKey123", DefaultAction: ActionReview},
+	}
+	decisions := []ReviewDecision{
+		{ID: "secrets.go:2", Verdict: VerdictUnsafe, Replacement: "api_key: YOUR_API_KEY"},
+	}
+
+	// First apply: should succeed and rewrite line 2.
+	err := ApplyReviewDecisions(context.Background(), dir, decisions, findings)
+	require.NoError(t, err)
+
+	result, _ := os.ReadFile(fpath)
+	resultStr := string(result)
+	require.Contains(t, resultStr, "YOUR_API_KEY")
+	require.NotContains(t, resultStr, "myRealKey123")
+
+	// Second apply (identical args): idempotent retry, no error, content unchanged.
+	err = ApplyReviewDecisions(context.Background(), dir, decisions, findings)
+	require.NoError(t, err)
+
+	result2, _ := os.ReadFile(fpath)
+	require.Equal(t, resultStr, string(result2))
+}
+
+func TestApplyFixFindings_SnippetMismatchSkips(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "fix.go")
+	fileContent := "token := lexer.Next()\n"
+	if err := os.WriteFile(fpath, []byte(fileContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings := []Finding{
+		{Class: "FLAG", Kind: "secret_token", File: "fix.go", Line: 1, Snippet: "sk-ant-xxxx", DefaultAction: ActionFix},
+	}
+
+	applied, skipped, err := ApplyFixFindings(context.Background(), dir, findings)
+	require.NoError(t, err)
+	require.Empty(t, applied)
+	require.Len(t, skipped, 1)
+
+	// File bytes unchanged — the regex fallback must not rewrite the line.
+	result, _ := os.ReadFile(fpath)
+	require.Equal(t, fileContent, string(result))
 }
