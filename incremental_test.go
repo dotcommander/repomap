@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -309,4 +310,102 @@ func TestIncrementalCacheVersionBump(t *testing.T) {
 	// Full Build must still succeed.
 	require.NoError(t, m.Build(context.Background()))
 	assert.Contains(t, m.String(), "Hello", "full rebuild must produce correct output after v5 cache rejection")
+}
+
+// TestIncrementalEquivalence verifies that an incremental rebuild produces the
+// same ranked output as a cold full build for an identical tree+config. Before
+// the applyRankPasses fix, the incremental path skipped test demotion and
+// reference bonuses, diverging from cold-build output.
+func TestIncrementalEquivalence(t *testing.T) {
+	t.Parallel()
+
+	repo := newGitRepo(t)
+
+	// Add util.go with two exported functions.
+	utilSrc := `package main
+
+func UtilA() string { return "a" }
+func UtilB() int    { return 1 }
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "util.go"), []byte(utilSrc), 0o644))
+
+	// Add util_test.go with a trivial test referencing util.go.
+	testSrc := `package main
+
+import "testing"
+
+func TestUtil(t *testing.T) {
+	if UtilA() != "a" {
+		t.Fatal("unexpected UtilA")
+	}
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "util_test.go"), []byte(testSrc), 0o644))
+
+	gitRun(t, repo, "add", "util.go", "util_test.go")
+	gitCommitAll(t, repo, "add util files")
+
+	cfg := DefaultConfig() // IncludeTests stays false — test demotion must apply
+
+	// Cold build with cache.
+	cacheDir := t.TempDir()
+	m1 := New(repo, cfg)
+	m1.SetCacheDir(cacheDir)
+	require.NoError(t, m1.Build(context.Background()))
+
+	// Mutate util.go: append a new exported function.
+	mutatedSrc := `package main
+
+func UtilA() string { return "a" }
+func UtilB() int    { return 1 }
+func UtilC() bool   { return true }
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "util.go"), []byte(mutatedSrc), 0o644))
+	gitRun(t, repo, "add", "util.go")
+	gitCommitAll(t, repo, "add UtilC to util.go")
+
+	// Incremental rebuild from cache.
+	m2 := New(repo, cfg)
+	m2.SetCacheDir(cacheDir)
+	require.NoError(t, m2.Build(context.Background()))
+
+	// Cold full rebuild as reference (no cache).
+	m3 := New(repo, cfg)
+	require.NoError(t, m3.Build(context.Background()))
+
+	// Compare m2 (incremental) vs m3 (cold reference).
+	r2 := m2.Ranked()
+	r3 := m3.Ranked()
+	require.Equal(t, len(r3), len(r2), "ranked lengths must match")
+
+	scores2 := make(map[string]int, len(r2))
+	detail2 := make(map[string]int, len(r2))
+	paths2 := make([]string, 0, len(r2))
+	for _, rf := range r2 {
+		scores2[rf.Path] = rf.Score
+		detail2[rf.Path] = rf.DetailLevel
+		paths2 = append(paths2, rf.Path)
+	}
+
+	scores3 := make(map[string]int, len(r3))
+	detail3 := make(map[string]int, len(r3))
+	paths3 := make([]string, 0, len(r3))
+	for _, rf := range r3 {
+		scores3[rf.Path] = rf.Score
+		detail3[rf.Path] = rf.DetailLevel
+		paths3 = append(paths3, rf.Path)
+	}
+
+	// Compare path sets.
+	slices.Sort(paths2)
+	slices.Sort(paths3)
+	require.Equal(t, paths3, paths2, "sorted path sets must match")
+
+	// Compare scores and detail levels per path.
+	for path, s3 := range scores3 {
+		s2, ok := scores2[path]
+		require.True(t, ok, "path %s missing in incremental output", path)
+		require.InDelta(t, float64(s3), float64(s2), 1e-9, "score mismatch for %s", path)
+		require.Equal(t, detail3[path], detail2[path], "detail level mismatch for %s", path)
+	}
 }

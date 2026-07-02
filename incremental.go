@@ -100,19 +100,20 @@ func (m *Map) prepareIncremental(entry diskCache, added, modified, deleted []str
 }
 
 // hydrateFromCache populates the Map from the deserialized disk entry.
-// Mirrors LoadCache's post-decode block. Must be called under m.mu NOT held.
+// Must be called with m.mu NOT held.
 func (m *Map) hydrateFromCache(entry diskCache) {
 	m.mu.Lock()
 	m.ranked = entry.Ranked
-	m.outputs.compact = &entry.Output
-	m.outputs.lines = &entry.OutputLines
 	m.builtAt = entry.BuiltAt
 	m.mtimes = entry.Mtimes
-	m.contentHashes = entry.ContentHashes
+	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
 	m.coverage = entry.Coverage
-	m.outputs.verbose = nil
-	m.outputs.detail = nil
-	m.outputs.xml = nil
+	// One source of truth for derived-output invalidation: reset() clears every
+	// format (including ones added later), then the two cache-persisted strings
+	// are restored.
+	m.outputs.reset()
+	m.outputs.compact = &entry.Output
+	m.outputs.lines = &entry.OutputLines
 	m.mu.Unlock()
 }
 
@@ -214,6 +215,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	// DetectImplementations must see the FULL merged set, not just parsed subset.
 	DetectImplementations(existing)
 	ranked := RankFiles(existing)
+	ranked = m.applyRankPasses(ranked)
 
 	m.mu.Lock()
 	m.ranked = ranked

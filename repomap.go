@@ -126,6 +126,28 @@ func (m *Map) Build(ctx context.Context) error {
 
 	ranked := RankFiles(parsed)
 
+	ranked = m.applyRankPasses(ranked)
+
+	m.mu.Lock()
+	m.ranked = ranked
+	m.builtAt = time.Now()
+	m.mtimes = mtimes
+	m.contentHashes = hashes
+	m.coverage = coverage
+	m.outputs.reset()
+	m.mu.Unlock()
+
+	if m.cacheDir != "" {
+		_ = m.SaveCacheContext(ctx, m.cacheDir) // best-effort
+	}
+
+	return nil
+}
+
+// applyRankPasses runs every post-rank scoring pass. Build and the
+// incremental rebuild MUST both route through this — a pass added to only
+// one path silently diverges cache-hit output from cold-build output.
+func (m *Map) applyRankPasses(ranked []RankedFile) []RankedFile {
 	ApplyIntraPackageRefs(m.root, ranked)
 	ApplyCallSiteReferenceBonus(ranked)
 
@@ -147,21 +169,7 @@ func (m *Map) Build(ctx context.Context) error {
 		}
 		ApplyConsumedBonus(ranked, consumed)
 	}
-
-	m.mu.Lock()
-	m.ranked = ranked
-	m.builtAt = time.Now()
-	m.mtimes = mtimes
-	m.contentHashes = hashes
-	m.coverage = coverage
-	m.outputs.reset()
-	m.mu.Unlock()
-
-	if m.cacheDir != "" {
-		_ = m.SaveCacheContext(ctx, m.cacheDir) // best-effort
-	}
-
-	return nil
+	return ranked
 }
 
 // String returns the current formatted map output.
