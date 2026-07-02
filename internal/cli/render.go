@@ -57,13 +57,29 @@ func renderWithCalls(
 		// --precise takes priority over --calls-use-binary silently: the typed
 		// graph never shells out to lspq, and a fail-open fallback uses gopls.
 		useBinary = false
-		typed, ok, err := resolvePreciseCallers(ctx, root)
-		if err != nil {
-			return err
+
+		// Precise cache (precise-<hash>.json) is checked before building the
+		// whole-program graph; --no-cache bypasses read and write identically to
+		// the gopls --calls cache below.
+		preciseHash := repomap.PreciseCacheKey(root, ranked)
+		if !noCache {
+			if cached := repomap.LoadPreciseCache(cacheDir, preciseHash); cached != nil {
+				callers = cached
+				resolved = true
+			}
 		}
-		if ok {
-			callers = typed
-			resolved = true
+		if !resolved {
+			typed, ok, err := resolvePreciseCallers(ctx, root)
+			if err != nil {
+				return err
+			}
+			if ok {
+				callers = typed
+				resolved = true
+				if !noCache {
+					_ = repomap.SavePreciseCache(cacheDir, preciseHash, typed) // best-effort
+				}
+			}
 		}
 	}
 

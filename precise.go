@@ -1,6 +1,10 @@
 package repomap
 
-import "github.com/dotcommander/repomap/internal/callgraph"
+import (
+	"path/filepath"
+
+	"github.com/dotcommander/repomap/internal/callgraph"
+)
 
 // TypedGraphToSymbolCallers converts the typed call graph's edges
 // (precise-callgraph.md Decision 3) into the SymbolCallers shape every --calls
@@ -18,4 +22,19 @@ func TypedGraphToSymbolCallers(edges []callgraph.CallEdge) SymbolCallers {
 		out[key] = append(out[key], Location{File: e.CallerFile, Line: e.CallerLine})
 	}
 	return out
+}
+
+// CallersFor returns the caller locations recorded for the given file+symbol,
+// or nil if the symbol has no recorded callers. It builds the same lookup key
+// used at construction (callsKey); on an exact-key miss it retries with
+// forward-slash-normalized separators (filepath.ToSlash) so a lookup passing an
+// OS-native path still matches keys built with root-relative slashed paths.
+func (sc SymbolCallers) CallersFor(file, symbol string) []Location {
+	if locs, ok := sc[callsKey(file, symbol)]; ok {
+		return locs
+	}
+	if slash := filepath.ToSlash(file); slash != file {
+		return sc[callsKey(slash, symbol)]
+	}
+	return nil
 }

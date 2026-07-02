@@ -60,7 +60,7 @@ func newContextCmd() *cobra.Command {
 			}
 
 			if withCalls {
-				callers, err := contextCallers(cmd.Context(), absDir, result.Match, includeTests, callsLimit)
+				callers, err := contextCallers(cmd.Context(), absDir, result.Match, includeTests, callsLimit, precise, m.Ranked())
 				if err != nil {
 					return err
 				}
@@ -84,8 +84,8 @@ func newContextCmd() *cobra.Command {
 	cmd.Flags().StringVar(&file, "file", "", "Filter to files matching this substring")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable context JSON")
 	cmd.Flags().BoolVar(&withCalls, "calls", false, "Include exact Go callers via gopls")
-	// --precise: registered in Phase A; the contextCallers wiring lands in Phase C
-	// (precise-callgraph.md). Today it only drives the no-effect notice above.
+	// --precise: type-checked whole-program call graph for --calls (Phase C,
+	// precise-callgraph.md). Without --calls it only drives the no-effect notice above.
 	cmd.Flags().BoolVar(&precise, "precise", false, "Use a type-checked whole-program call graph (go/packages+CHA) instead of gopls for --calls")
 	cmd.Flags().BoolVar(&includeTests, "calls-include-tests", false, "Include _test.go callers")
 	cmd.Flags().IntVar(&callsLimit, "calls-limit", 10, "Max callers to include when --calls is set")
@@ -95,7 +95,10 @@ func newContextCmd() *cobra.Command {
 	return cmd
 }
 
-func contextCallers(ctx context.Context, root string, match repomap.SymbolMatch, includeTests bool, limit int) ([]repomap.Location, error) {
+func contextCallers(ctx context.Context, root string, match repomap.SymbolMatch, includeTests bool, limit int, precise bool, ranked []repomap.RankedFile) ([]repomap.Location, error) {
+	if precise {
+		return preciseContextCallers(ctx, root, match, includeTests, limit, ranked)
+	}
 	if err := repomap.CheckGopls(); err != nil {
 		return nil, err
 	}
@@ -114,6 +117,47 @@ func contextCallers(ctx context.Context, root string, match repomap.SymbolMatch,
 		if loc.Line == match.Symbol.Line && samePath(root, loc.File, match.File) {
 			continue
 		}
+		if !includeTests && strings.Contains(loc.File, "_test.go") {
+			continue
+		}
+		loc.File = relPathForDisplay(root, loc.File)
+		out = append(out, loc)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// preciseContextCallers resolves callers for the matched symbol from the
+// type-checked whole-program call graph (--precise), reusing the same on-disk
+// cache as renderWithCalls (precise-<hash>.json). On a callgraph load failure it
+// returns (nil, nil) so ` + "`" + `context --calls --precise` + "`" + ` falls back to no callers
+// rather than erroring — mirroring resolvePreciseCallers' fail-open contract.
+func preciseContextCallers(ctx context.Context, root string, match repomap.SymbolMatch, includeTests bool, limit int, ranked []repomap.RankedFile) ([]repomap.Location, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve home dir: %w", err)
+	}
+	cacheDir := filepath.Join(home, ".cache", "repomap")
+
+	hash := repomap.PreciseCacheKey(root, ranked)
+	callers := repomap.LoadPreciseCache(cacheDir, hash)
+	if callers == nil {
+		typed, ok, err := resolvePreciseCallers(ctx, root)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, nil
+		}
+		callers = typed
+		_ = repomap.SavePreciseCache(cacheDir, hash, typed) // best-effort
+	}
+
+	locs := callers.CallersFor(match.File, match.Symbol.Name)
+	out := make([]repomap.Location, 0, len(locs))
+	for _, loc := range locs {
 		if !includeTests && strings.Contains(loc.File, "_test.go") {
 			continue
 		}
