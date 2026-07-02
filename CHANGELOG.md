@@ -4,6 +4,12 @@ All notable changes to repomap are documented here.
 
 ---
 
+## Unreleased
+
+### Features
+
+- **`repomap endpoint`** — new vertical-slice query verb for web-service work: given a route pattern it resolves the route registration, the handler symbol, the handler's direct callee names, and the tests touching the handler in one call. Detects chi/v5 verb methods (`.Get`/`.Post`/…) and net/http `Handle`/`HandleFunc` (including the Go 1.22+ `"METHOD /path"` form). List mode (`repomap endpoint ./dir`) prints all detected routes as a table; single-pattern mode (`repomap endpoint "GET /users/{id}"`) returns the full route → handler → callees → tests bundle, with `--json` for machine output.
+
 ## v0.19.0 — 2026-07-02
 
 ### Features

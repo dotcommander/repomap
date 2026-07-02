@@ -392,6 +392,57 @@ stderr only; stdout stays JSON-RPC. JSON-RPC errors use `-32700` parse error,
 
 ---
 
+## 13. Trace a route to its handler, callees, and tests
+
+The `endpoint` verb answers a web-service question in a single call: **what
+handles this route, what does the handler call, and which tests touch it?** It
+detects chi/v5 verb methods (`.Get`/`.Post`/…) and net/http `Handle`/`HandleFunc`
+(including the Go 1.22+ `"METHOD /path"` form).
+
+List every detected route as a table:
+
+```bash
+repomap endpoint ./internal/server
+```
+
+```
+METHOD  PATTERN        HANDLER      FRAMEWORK  FILE:LINE
+GET     /users/{id}    getUser      chi        routes.go:14
+POST    /users         createUser   net/http   routes.go:22
+```
+
+Pass a pattern to get the full vertical slice — route registration, resolved
+handler, direct callee names, and the tests touching the handler:
+
+```bash
+repomap endpoint "GET /users/{id}" ./internal/server
+```
+
+```
+routes.go:14  GET /users/{id}  getUser  [chi]
+
+handler: getUser(w http.ResponseWriter, r *http.Request)
+  routes.go:30
+
+callees:
+  db.FindUser
+  json.NewEncoder
+  render.Status
+
+tests:
+  handlers_test.go:18:2
+
+impact:
+routes.go
+  imported by: server.go
+  tests: handlers_test.go
+```
+
+Add `--json` for the machine-readable bundle. A repo with no detected routes
+prints `no routes found` and exits 0, so `endpoint` is safe to run anywhere.
+
+---
+
 ## A worked agent loop
 
 Putting it together — how an agent might use repomap across a single task ("fix the
