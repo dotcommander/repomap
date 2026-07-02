@@ -221,18 +221,23 @@ func verifyWorkspaceClean(ctx context.Context, root string, groups []CommitGroup
 			planned[f] = true
 		}
 	}
-	porcelain, err := gitOutput(ctx, root, "status", "--porcelain")
+	porcelain, err := gitOutput(ctx, root, "status", "--porcelain", "-z")
 	if err != nil {
 		return fmt.Errorf("git status: %w", err)
 	}
+	tokens := strings.Split(strings.TrimRight(porcelain, "\x00"), "\x00")
 	var unplanned []string
-	for _, line := range strings.Split(strings.TrimRight(porcelain, "\n"), "\n") {
-		if len(line) < 4 {
+	for i := 0; i < len(tokens); i++ {
+		rec := tokens[i]
+		if len(rec) < 4 {
 			continue
 		}
-		path := strings.TrimSpace(line[3:])
-		if i := strings.Index(path, " -> "); i >= 0 {
-			path = path[i+4:]
+		status := rec[:2]
+		path := rec[3:]
+		if strings.ContainsAny(status, "RC") {
+			// Rename/copy records carry the original path as the next NUL
+			// token; consume it and keep the (already-extracted) new path.
+			i++
 		}
 		if !planned[path] {
 			unplanned = append(unplanned, path)

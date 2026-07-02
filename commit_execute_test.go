@@ -580,3 +580,16 @@ func TestExecuteGroups_RetrySkipsLandedGroups(t *testing.T) {
 		t.Errorf("retry: commit count grew from %d to %d, want exactly +1", commitsBefore, commitsAfter)
 	}
 }
+
+func TestVerifyWorkspaceClean_SpacedFilenamePasses(t *testing.T) {
+	t.Parallel()
+	dir := newGitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "file name.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, dir, "add", "file name.go")
+	groups := []CommitGroup{{Files: []string{"file name.go"}}}
+	if err := verifyWorkspaceClean(context.Background(), dir, groups); err != nil {
+		t.Fatalf("verifyWorkspaceClean() = %v, want nil", err)
+	}
+}
