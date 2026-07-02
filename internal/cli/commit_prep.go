@@ -104,7 +104,22 @@ func buildPrepPayload(ctx context.Context, repoRoot string, noReview, withTag, a
 
 	// Step 3: apply default_action=fix findings; re-analyze if any applied.
 	findings, _ := repomap.LoadFindings(analysis.Refs.Findings)
-	if applied, _, _ := repomap.ApplyFixFindings(ctx, repoRoot, findings); len(applied) > 0 {
+	applied, _, fixErr := repomap.ApplyFixFindings(ctx, repoRoot, findings)
+	if fixErr != nil {
+		preflight := buildPrepPreflight(ctx, repoRoot, analysis)
+		return &repomap.PrepPayload{
+			Preflight:       preflight,
+			ModeHint:        repomap.ModeHint(preflight),
+			PrepToken:       "none",
+			Status:          repomap.PrepStatusAbort,
+			AbortReason:     fmt.Sprintf("apply fix findings: %v (working tree may be partially redacted)", fixErr),
+			Plan:            []repomap.PrepPlanGroup{},
+			Review:          []repomap.PrepReviewItem{},
+			LowConfSubjects: []repomap.PrepLowConf{},
+			SessionRepos:    repomap.DetectSessionRepos(repoRoot),
+		}, nil
+	}
+	if len(applied) > 0 {
 		analysis, err = repomap.AnalyzeCommit(ctx, repomap.AnalyzeOptions{Root: repoRoot})
 		if err != nil {
 			return nil, fmt.Errorf("re-analyze after fix findings: %w", err)

@@ -333,6 +333,33 @@ func TestApplyReviewDecisions_IdempotentRetry(t *testing.T) {
 	require.Equal(t, resultStr, string(result2))
 }
 
+func TestApplyFixFindings_WriteErrorPropagates(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	fpath := filepath.Join(dir, "fix.go")
+	fileContent := "const apiKey = \"myRealSecret123\"\n"
+	if err := os.WriteFile(fpath, []byte(fileContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove write permission from the parent directory so the fix
+	// write (atomic temp+rename) fails at the OS level.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o700)
+	})
+
+	findings := []Finding{
+		{Class: "FLAG", Kind: "secret", File: "fix.go", Line: 1, Snippet: "myRealSecret123", DefaultAction: ActionFix},
+	}
+
+	_, _, err := ApplyFixFindings(context.Background(), dir, findings)
+	require.Error(t, err)
+}
+
 func TestApplyFixFindings_SnippetMismatchSkips(t *testing.T) {
 	t.Parallel()
 
