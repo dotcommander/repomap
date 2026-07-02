@@ -3,10 +3,12 @@ package repomap
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -39,8 +41,9 @@ func (c *outputCache) reset() {
 
 // diskCache is the on-disk format for a cached repomap build.
 type diskCache struct {
-	Version       int                  `json:"version"`
-	Root          string               `json:"root"`
+	Version    int    `json:"version"`
+	Root       string `json:"root"`
+	ConfigHash string `json:"config_hash"`
 	BuiltAt       time.Time            `json:"built_at"`
 	Mtimes        map[string]time.Time `json:"mtimes"`
 	ContentHashes map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
@@ -50,10 +53,9 @@ type diskCache struct {
 	Ranked        []RankedFile         `json:"ranked"`
 	LastSHA       string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
 	GitRoot       bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
-	Explain       bool                 `json:"explain,omitempty"`  // whether --explain was active at write time
 }
 
-const cacheVersion = 10
+const cacheVersion = 11
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -78,6 +80,7 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 	entry := diskCache{
 		Version:       cacheVersion,
 		Root:          m.root,
+		ConfigHash:    m.configHash(),
 		BuiltAt:       m.builtAt,
 		Mtimes:        m.mtimes,
 		ContentHashes: m.contentHashes,
@@ -85,7 +88,6 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		Output:        compact,
 		OutputLines:   lines,
 		Ranked:        m.ranked,
-		Explain:       m.config.Explain,
 	}
 	if isInsideGitRepo(m.root) {
 		entry.GitRoot = true
@@ -120,7 +122,7 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return false
 	}
-	if entry.Version != cacheVersion || entry.Root != m.root || entry.Explain != m.config.Explain {
+	if !m.cacheEntryValid(&entry) {
 		return false
 	}
 
@@ -141,4 +143,23 @@ func cachePath(cacheDir, root string) string {
 	h := sha256.Sum256([]byte(root))
 	name := fmt.Sprintf("repomap-%x.json", h[:8])
 	return filepath.Join(cacheDir, name)
+}
+
+// configHash fingerprints every config input that shapes ranked output or the
+// persisted output strings, plus the blocklist (captures .repomap.yaml edits).
+// A cache entry is valid only for the exact config that produced it.
+func (m *Map) configHash() string {
+	bl, _ := json.Marshal(m.blocklist)
+	c := m.config
+	s := fmt.Sprintf("%d|%d|%s|%s|%t|%t|%t|%d|%s",
+		c.MaxTokens, c.MaxTokensNoCtx, c.Intent, strings.Join(c.ConsumedPaths, ","),
+		c.SymbolRefs, c.Explain, c.IncludeTests, c.MaxFileSize, bl)
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// cacheEntryValid is the single validity check shared by LoadCache and
+// LoadCacheIncremental — the two paths must never diverge on what "valid" means.
+func (m *Map) cacheEntryValid(entry *diskCache) bool {
+	return entry.Version == cacheVersion && entry.Root == m.root && entry.ConfigHash == m.configHash()
 }

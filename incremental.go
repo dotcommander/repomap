@@ -39,7 +39,7 @@ func (m *Map) LoadCacheIncremental(ctx context.Context, cacheDir string) (bool, 
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return false, nil
 	}
-	if entry.Version != cacheVersion || entry.Root != m.root {
+	if !m.cacheEntryValid(&entry) {
 		return false, nil
 	}
 	if !entry.GitRoot || entry.LastSHA == "" {
