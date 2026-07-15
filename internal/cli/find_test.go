@@ -33,11 +33,7 @@ func findCLITestRoot(t *testing.T) string {
 func runFindCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	cmd := newFindCmd()
-	cmd.SetOut(&buf)
-	cmd.SetErr(&buf)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := execute(t.Context(), append([]string{"find"}, args...), &buf, &buf)
 	return buf.String(), err
 }
 

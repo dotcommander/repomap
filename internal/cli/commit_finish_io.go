@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,32 +20,40 @@ const (
 	finishStatusFailed = "failed"
 )
 
+type commandExitError struct {
+	code int
+	err  error
+}
+
+func (e commandExitError) Error() string { return e.err.Error() }
+func (e commandExitError) Unwrap() error { return e.err }
+
 // emitFinishResult writes JSON to stdout (or a terse message) then exits with code.
-func emitFinishResult(jsonOut bool, exitCode int, fr *finishResult) error {
+func emitFinishResult(w io.Writer, jsonOut bool, exitCode int, fr *finishResult) error {
 	if jsonOut {
 		data, err := json.MarshalIndent(fr, "", "  ")
 		if err != nil {
 			return fmt.Errorf("encode result: %w", err)
 		}
-		if _, err := os.Stdout.Write(data); err != nil {
+		if _, err := w.Write(data); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(w)
 	} else {
-		fmt.Printf("status: %s\n", fr.Status)
+		fmt.Fprintf(w, "status: %s\n", fr.Status)
 		if fr.FailureDetail != "" {
-			fmt.Printf("failure: %s\n", fr.FailureDetail)
+			fmt.Fprintf(w, "failure: %s\n", fr.FailureDetail)
 		}
 	}
 	if exitCode != 0 {
-		os.Exit(exitCode)
+		return commandExitError{code: exitCode, err: fmt.Errorf("commit finish: %s", fr.FailureDetail)}
 	}
 	return nil
 }
 
 // finishFatal emits a minimal JSON error payload and exits.
-func finishFatal(jsonOut bool, exitCode int, detail string) error {
-	return emitFinishResult(jsonOut, exitCode, &finishResult{
+func finishFatal(w io.Writer, jsonOut bool, exitCode int, detail string) error {
+	return emitFinishResult(w, jsonOut, exitCode, &finishResult{
 		Status:        finishStatusFailed,
 		FailureDetail: detail,
 	})
@@ -109,10 +118,10 @@ func bumpLevel(groups []repomap.CommitGroup, tag string) string {
 }
 
 // runJustRelease executes `just release <arg>` streaming output to stderr.
-func runJustRelease(ctx context.Context, repoRoot, arg string) error {
+func runJustRelease(ctx context.Context, stderr io.Writer, repoRoot, arg string) error {
 	cmd := exec.CommandContext(ctx, "just", "release", arg) //nolint:gosec // arg is bumpLevel output: "major"|"minor"|"patch"|"vX.Y.Z"
 	cmd.Dir = repoRoot
-	cmd.Stdout = os.Stderr // stream to stderr; stdout reserved for JSON
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stderr // stream to stderr; stdout reserved for JSON
+	cmd.Stderr = stderr
 	return cmd.Run()
 }

@@ -143,6 +143,37 @@ type CallsStats struct {
 	Error   int
 }
 
+// SelectSemanticCallers applies the existing --calls threshold, test, and
+// limit policy to callers produced by the canonical semantic analysis.
+func SelectSemanticCallers(all SymbolCallers, ranked []RankedFile, cfg CallsConfig) SymbolCallers {
+	out := make(SymbolCallers)
+	for _, file := range ranked {
+		if file.ImportedBy < cfg.Threshold {
+			continue
+		}
+		for _, symbol := range file.Symbols {
+			if !symbol.Exported {
+				continue
+			}
+			locations := all.CallersForSymbol(file.Path, symbol)
+			filtered := make([]Location, 0, len(locations))
+			for _, location := range locations {
+				if !cfg.IncludeTests && strings.Contains(location.File, "_test.go") {
+					continue
+				}
+				filtered = append(filtered, location)
+				if cfg.Limit > 0 && len(filtered) == cfg.Limit {
+					break
+				}
+			}
+			if len(filtered) > 0 {
+				out[semanticCallsKey(file.Path, symbol.Receiver, symbol.Name)] = filtered
+			}
+		}
+	}
+	return out
+}
+
 // ExpandCallers queries a RefsQuerier for each exported symbol in files that
 // meet the threshold, returning a SymbolCallers map and run statistics.
 //

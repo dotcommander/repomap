@@ -3,8 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,15 +18,14 @@ import (
 // ErrLoadFailed, so resolvePreciseCallers (the --precise seam renderWithCalls
 // uses) must fail open: emit the fallback notice and signal "not resolved" so
 // the caller falls back to the gopls --calls tier — never a hard error.
-// Not parallel: captureStderr mutates the process-global os.Stderr.
 func TestRenderWithCalls_PreciseFallback(t *testing.T) {
-	stderr := captureStderr(t, func() {
-		callers, resolved, err := resolvePreciseCallers(context.Background(), t.TempDir())
-		require.NoError(t, err, "ErrLoadFailed must fail open, not surface as an error")
-		assert.False(t, resolved, "Phase A stub always fails open → not resolved")
-		assert.Nil(t, callers)
-	})
-	assert.Contains(t, stderr, "repomap: --precise disabled — go/packages load failed, falling back to --calls")
+	t.Parallel()
+	var stderr bytes.Buffer
+	callers, resolved, err := resolvePreciseCallers(context.Background(), t.TempDir(), &stderr)
+	require.NoError(t, err, "ErrLoadFailed must fail open, not surface as an error")
+	assert.False(t, resolved, "Phase A stub always fails open → not resolved")
+	assert.Nil(t, callers)
+	assert.Contains(t, stderr.String(), "repomap: --precise disabled — go/packages load failed, falling back to --calls")
 }
 
 // TestPreciseCalls_SameNameDisambiguation — Verification Surface §6 (golden CLI).
@@ -39,10 +38,7 @@ func TestPreciseCalls_SameNameDisambiguation(t *testing.T) {
 	t.Parallel()
 
 	var stdout bytes.Buffer
-	cmd := newRootCmd()
-	cmd.SetOut(&stdout)
-	cmd.SetArgs([]string{"--precise", "--calls", "--no-cache", "-f", "detail", "testdata/samename"})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"--precise", "--calls", "--no-cache", "-f", "detail", "testdata/samename"}, &stdout, io.Discard))
 
 	out := stdout.String()
 	// A.Get's caller is the call site in main.go (line 4).
@@ -54,14 +50,10 @@ func TestPreciseCalls_SameNameDisambiguation(t *testing.T) {
 		"same-named B.Get must not cross-contaminate A.Get's caller")
 }
 
-// TestPreciseCalls_UnloadableFallback — Verification Surface §6 (golden CLI).
-// A directory that HAS Go source the scanner accepts but go/packages cannot
-// type-check (an undefined identifier) exercises the --precise fail-open path:
-// resolvePreciseCallers emits the fallback notice and defers to the gopls
-// --calls tier. (An empty dir cannot reach this — the scanner rejects it with
-// ErrNotCodeProject before --precise runs.)
-// Not parallel: captureStderr mutates the process-global os.Stderr.
-func TestPreciseCalls_UnloadableFallback(t *testing.T) {
+// TestPreciseCalls_PartialDiagnostics — type errors remain visible through the
+// Map diagnostics surface while usable syntax and semantic data fail open.
+func TestPreciseCalls_PartialDiagnostics(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
 		[]byte("module broken\n\ngo 1.26\n"), 0o644))
@@ -70,22 +62,27 @@ func TestPreciseCalls_UnloadableFallback(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var execErr error
-	stderr := captureStderr(t, func() {
-		cmd := newRootCmd()
-		cmd.SetOut(&stdout)
-		cmd.SetArgs([]string{"--precise", "--calls", "--no-cache", dir})
-		execErr = cmd.Execute()
-	})
+	var stderr bytes.Buffer
+	execErr = executeTest(t, []string{"--precise", "--calls", "--no-cache", dir}, &stdout, &stderr)
 
-	// Ungated: the fail-open fallback notice must always be emitted.
-	assert.Contains(t, stderr,
-		"repomap: --precise disabled — go/packages load failed, falling back to --calls",
-		"unloadable Go source must trigger the --precise fail-open notice")
+	assert.NoError(t, execErr)
+	assert.NotContains(t, stderr.String(), "falling back to --calls")
+}
 
-	// Gated: the fallback lands on the gopls --calls route, which errors when
-	// gopls is absent. Only assert exit-0 when gopls is on PATH.
-	if _, err := exec.LookPath("gopls"); err == nil {
-		assert.NoError(t, execErr,
-			"with gopls present, --precise on unloadable source falls back and exits 0")
-	}
+func TestSemanticCallsIncludeTestsWithoutRankingTests(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"),
+		[]byte("module example.com/calltests\n\ngo 1.26\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lib.go"),
+		[]byte("package calltests\n\nfunc Exported() {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lib_test.go"),
+		[]byte("package calltests\n\nimport \"testing\"\n\nfunc TestExported(t *testing.T) { Exported() }\n"), 0o644))
+
+	var stdout bytes.Buffer
+	require.NoError(t, executeTest(t, []string{
+		"--calls", "--calls-threshold", "0", "--calls-include-tests", "-f", "detail", dir,
+	}, &stdout, io.Discard))
+
+	assert.Contains(t, stdout.String(), "lib_test.go:5")
 }

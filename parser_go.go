@@ -1,6 +1,7 @@
 package repomap
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -14,8 +15,18 @@ import (
 // ParseGoFile extracts exported symbols from a Go source file.
 // path is absolute, root is the project root for relative path calculation.
 func ParseGoFile(path, root string) (*FileSymbols, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return ParseGoSource(data, path, root)
+}
+
+// ParseGoSource performs syntax-only Go parsing for dirty buffers, historical
+// revisions, inactive build files, and invalid workspace states.
+func ParseGoSource(source []byte, path, root string) (*FileSymbols, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	file, err := parser.ParseFile(fset, path, bytes.NewReader(source), parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -23,11 +34,12 @@ func ParseGoFile(path, root string) (*FileSymbols, error) {
 	rel := relPath(root, path)
 
 	fs := &FileSymbols{
-		Path:        rel,
-		Language:    "go",
-		Package:     file.Name.Name,
-		ImportPath:  resolveImportPath(path, root),
-		ParseMethod: "go_ast",
+		Path:         rel,
+		Language:     "go",
+		Package:      file.Name.Name,
+		ImportPath:   resolveImportPath(path, root),
+		ParseMethod:  "go_ast",
+		AnalysisMode: "syntax_only",
 	}
 
 	// Collect imports.
@@ -151,7 +163,7 @@ func findGoMod(root string) string {
 // isExported reports whether name begins with an uppercase ASCII letter,
 // meaning it is an exported Go identifier.
 func isExported(name string) bool {
-	return len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
+	return ast.IsExported(name)
 }
 
 // parseModuleName extracts the module name from go.mod content.

@@ -40,14 +40,16 @@ func (s Symbol) LineSpan() int {
 
 // FileSymbols holds all symbols extracted from a single source file.
 type FileSymbols struct {
-	Path        string // relative path from project root
-	Language    string // language ID
-	Package     string // Go package name (empty for non-Go)
-	ImportPath  string // Go import path from module (empty for non-Go)
-	Symbols     []Symbol
-	Imports     []string // import paths (Go) or module names (other)
-	CallSites   []CallSite
-	ParseMethod string // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
+	Path         string // relative path from project root
+	Language     string // language ID
+	Package      string // Go package name (empty for non-Go)
+	ImportPath   string // Go import path from module (empty for non-Go)
+	Symbols      []Symbol
+	Imports      []string // import paths (Go) or module names (other)
+	CallSites    []CallSite
+	ParseMethod  string // "go_ast", "tree_sitter", "ctags", or "regex" — signals symbol fidelity
+	BuildActive  bool   `json:"build_active,omitempty"`  // true when included by the active Go build context
+	AnalysisMode string `json:"analysis_mode,omitempty"` // "semantic", "syntax_only", or empty for non-Go
 }
 
 // ParseCoverage records observed parser fidelity for a build.
@@ -60,4 +62,7 @@ type ParseCoverage struct {
 	FailuresByLang    map[string]int `json:"failures_by_language,omitempty"`
 	TreeSitterEnabled bool           `json:"tree_sitter_enabled"`
 	CtagsEnabled      bool           `json:"ctags_enabled"`
+	GoSemanticActive  int            `json:"go_semantic_active,omitempty"`
+	GoSyntaxInactive  int            `json:"go_syntax_inactive,omitempty"`
+	GoAnalysisFailed  int            `json:"go_analysis_failed,omitempty"`
 }

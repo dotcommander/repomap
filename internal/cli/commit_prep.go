@@ -1,6 +1,6 @@
 package cli
 
-// commit_prep.go — `repomap commit prep` subcommand (thin Cobra wiring).
+// commit_prep.go — `repomap commit prep` subcommand wiring.
 //
 // All types and stateless helpers live in repomap.commit_prep_helpers.go.
 // This file owns: flag parsing, the 10-step pipeline orchestration, and
@@ -11,58 +11,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
-func newCommitPrepCmd() *cobra.Command {
-	var (
-		jsonOut    bool
-		noReview   bool
-		tag        bool
-		allowLarge bool
-	)
-	cmd := &cobra.Command{
-		Use:   "prep [directory]",
-		Short: "Prepare a commit plan (analyze + fix + consolidate) in one call",
-		Long: `Runs the full pre-commit pipeline and emits a JSON payload for the agent.
-
-The agent calls 'commit finish --prep-token <t>' with any LLM decisions for
-ambiguous findings or low-confidence subjects.
-
-Exit codes:
-  0  payload emitted (check status field for "ready"/"needs_judgment"/"abort")
-  1  fatal error (I/O, git not a repo, etc.)`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root := "."
-			if len(args) > 0 {
-				root = args[0]
-			}
-			abs, err := filepath.Abs(root)
-			if err != nil {
-				return fmt.Errorf("resolve root: %w", err)
-			}
-			return runCommitPrep(cmd.Context(), abs, jsonOut, noReview, tag, allowLarge)
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable JSON payload on stdout")
-	cmd.Flags().BoolVar(&noReview, "no-review", false, "Skip simplify scan (phase 0.5)")
-	cmd.Flags().BoolVar(&tag, "tag", false, "Run release gate (dep bump + build verify)")
-	cmd.Flags().BoolVar(&allowLarge, "allow-large", false, "Skip the kitchen-sink guard that downgrades large/cross-plugin groups to needs_judgment.")
-	return cmd
+type commitPrepCommand struct {
+	Directory  string `arg:"" optional:"" default:"." type:"path" help:"Repository directory"`
+	JSON       bool   `help:"Emit machine-readable JSON payload on stdout"`
+	NoReview   bool   `help:"Skip simplify scan (phase 0.5)"`
+	Tag        bool   `help:"Run release gate (dep bump + build verify)"`
+	AllowLarge bool   `help:"Skip the kitchen-sink guard that downgrades large/cross-plugin groups to needs_judgment"`
 }
 
-func runCommitPrep(ctx context.Context, repoRoot string, jsonOut, noReview, withTag, allowLarge bool) error {
+func (c *commitPrepCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	abs, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve root: %w", err)
+	}
+	return runCommitPrep(ctx, ioctx.stdout, abs, c.JSON, c.NoReview, c.Tag, c.AllowLarge)
+}
+
+func runCommitPrep(ctx context.Context, w io.Writer, repoRoot string, jsonOut, noReview, withTag, allowLarge bool) error {
 	payload, err := buildPrepPayload(ctx, repoRoot, noReview, withTag, allowLarge)
 	if err != nil {
 		return err
 	}
-	return emitPrep(os.Stdout, jsonOut, payload)
+	return emitPrep(w, jsonOut, payload)
 }
 
 // buildPrepPayload runs the full prep pipeline and returns the assembled payload.

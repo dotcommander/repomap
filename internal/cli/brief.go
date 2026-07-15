@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
 // verifyCmds holds the detected build and test commands for a project.
@@ -25,106 +25,95 @@ type verifyCmds struct {
 // wants the spine, not every file — the full map is one `repomap` call away.
 const briefMapFiles = 20
 
-// newBriefCmd builds the `repomap brief` subcommand: an agent boot digest that
-// answers identity + how-to-verify + current git state in one call, then
-// appends the standard enriched repo map. Task surfacing is intentionally
-// omitted — there is no reliable in-repo task source.
-func newBriefCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "brief [directory]",
-		Short: "Print an agent boot digest (identity + verify + state) followed by the repo map",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-			absDir, err := filepath.Abs(dir)
-			if err != nil {
-				return fmt.Errorf("resolve path: %w", err)
-			}
+type briefCommand struct {
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to inspect"`
+}
 
-			cfg := repomap.Config{MaxTokens: 2048, MaxTokensNoCtx: 2048}
-			m := repomap.New(absDir, cfg)
-			if err := m.Build(cmd.Context()); err != nil {
-				return err
-			}
-
-			ctx := cmd.Context()
-			out := cmd.OutOrStdout()
-
-			modulePath := readModulePath(absDir)
-			lang, kind := briefIdentity(absDir, m)
-
-			title := path.Base(absDir)
-			if modulePath != "" {
-				title = path.Base(modulePath)
-			}
-			if _, err := fmt.Fprintf(out, "%s, agent — here's your briefing.\n\n", greeting(time.Now().Hour())); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "# %s — %s %s\n", title, lang, kind); err != nil {
-				return err
-			}
-			if modulePath != "" {
-				if _, err := fmt.Fprintf(out, "  module %s\n", modulePath); err != nil {
-					return err
-				}
-			}
-
-			vc := detectVerify(absDir)
-			if _, err := fmt.Fprintf(out, "\n## Verify\n  build: %s\n  test:  %s\n", vc.build, vc.test); err != nil {
-				return err
-			}
-			if vc.vet != "" {
-				if _, err := fmt.Fprintf(out, "  vet:   %s\n", vc.vet); err != nil {
-					return err
-				}
-			}
-			if vc.lint != "" {
-				if _, err := fmt.Fprintf(out, "  lint:  %s\n", vc.lint); err != nil {
-					return err
-				}
-			}
-
-			branch := runTrimmed(ctx, "git", "-C", absDir, "branch", "--show-current")
-			if branch == "" {
-				branch = "(none)"
-			}
-			dirtyLines := runLines(ctx, "git", "-C", absDir, "status", "--short")
-			recent := runLines(ctx, "git", "-C", absDir, "log", "-3", "--format=%s")
-			if _, err := fmt.Fprint(out, briefState(branch, dirtyLines, recent)); err != nil {
-				return err
-			}
-
-			if rules := briefRules(absDir); rules != "" {
-				if _, err := fmt.Fprint(out, rules); err != nil {
-					return err
-				}
-			}
-
-			if note := briefConfigNote(absDir); note != "" {
-				if _, err := fmt.Fprint(out, note); err != nil {
-					return err
-				}
-			}
-			mapBody, total := m.StringBriefMap(briefMapFiles)
-			if _, err := fmt.Fprintf(out, "\n## Map\n%s", mapBody); err != nil {
-				return err
-			}
-			if total > briefMapFiles {
-				if _, err := fmt.Fprintf(out, "  +%d more files — run `repomap` for the full map\n", total-briefMapFiles); err != nil {
-					return err
-				}
-			}
-			if own := briefOwnership(m.Ranked()); own != "" {
-				if _, err := fmt.Fprint(out, own); err != nil {
-					return err
-				}
-			}
-			return nil
-		},
+// Run emits an agent boot digest followed by the standard enriched repo map.
+func (c *briefCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	absDir, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
 	}
+
+	cfg := repomap.Config{MaxTokens: 2048, MaxTokensNoCtx: 2048}
+	m := repomap.New(absDir, cfg)
+	if err := m.Build(ctx); err != nil {
+		return err
+	}
+
+	out := ioctx.stdout
+
+	modulePath := readModulePath(absDir)
+	lang, kind := briefIdentity(absDir, m)
+
+	title := path.Base(absDir)
+	if modulePath != "" {
+		title = path.Base(modulePath)
+	}
+	if _, err := fmt.Fprintf(out, "%s, agent — here's your briefing.\n\n", greeting(time.Now().Hour())); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "# %s — %s %s\n", title, lang, kind); err != nil {
+		return err
+	}
+	if modulePath != "" {
+		if _, err := fmt.Fprintf(out, "  module %s\n", modulePath); err != nil {
+			return err
+		}
+	}
+
+	vc := detectVerify(absDir)
+	if _, err := fmt.Fprintf(out, "\n## Verify\n  build: %s\n  test:  %s\n", vc.build, vc.test); err != nil {
+		return err
+	}
+	if vc.vet != "" {
+		if _, err := fmt.Fprintf(out, "  vet:   %s\n", vc.vet); err != nil {
+			return err
+		}
+	}
+	if vc.lint != "" {
+		if _, err := fmt.Fprintf(out, "  lint:  %s\n", vc.lint); err != nil {
+			return err
+		}
+	}
+
+	branch := runTrimmed(ctx, "git", "-C", absDir, "branch", "--show-current")
+	if branch == "" {
+		branch = "(none)"
+	}
+	dirtyLines := runLines(ctx, "git", "-C", absDir, "status", "--short")
+	recent := runLines(ctx, "git", "-C", absDir, "log", "-3", "--format=%s")
+	if _, err := fmt.Fprint(out, briefState(branch, dirtyLines, recent)); err != nil {
+		return err
+	}
+
+	if rules := briefRules(absDir); rules != "" {
+		if _, err := fmt.Fprint(out, rules); err != nil {
+			return err
+		}
+	}
+
+	if note := briefConfigNote(absDir); note != "" {
+		if _, err := fmt.Fprint(out, note); err != nil {
+			return err
+		}
+	}
+	mapBody, total := m.StringBriefMap(briefMapFiles)
+	if _, err := fmt.Fprintf(out, "\n## Map\n%s", mapBody); err != nil {
+		return err
+	}
+	if total > briefMapFiles {
+		if _, err := fmt.Fprintf(out, "  +%d more files — run `repomap` for the full map\n", total-briefMapFiles); err != nil {
+			return err
+		}
+	}
+	if own := briefOwnership(m.Ranked()); own != "" {
+		if _, err := fmt.Fprint(out, own); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // briefState renders the "## State" section: branch, dirty file count plus up
@@ -319,4 +308,3 @@ func greeting(hour int) string {
 		return "Good evening"
 	}
 }
-

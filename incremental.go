@@ -3,6 +3,7 @@ package repomap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -109,6 +110,8 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
 	m.scanFP = entry.ScanFP
 	m.coverage = entry.Coverage
+	m.semanticCallers = entry.SemanticCallers
+	m.goDiagnostics = entry.GoDiagnostics
 	// One source of truth for derived-output invalidation: reset() clears every
 	// format (including ones added later), then the two cache-persisted strings
 	// are restored.
@@ -123,6 +126,13 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 // set, re-ranks, and saves the cache. Returns an error if re-parsing fails
 // entirely; caller must fall through to a full rebuild.
 func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
+	for _, path := range changedRel {
+		ext := filepath.Ext(path)
+		base := filepath.Base(path)
+		if ext == ".go" || base == "go.mod" || base == "go.sum" || base == "go.work" {
+			return errors.New("Go semantic input changed; full analysis required")
+		}
+	}
 	if len(changedRel) == 0 {
 		// Nothing to re-parse — cache is authoritative. Still refresh builtAt
 		// and save so LastSHA advances if HEAD moved without touching tracked
@@ -214,8 +224,8 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	}
 	m.mu.Unlock()
 
-	// DetectImplementations must see the FULL merged set, not just parsed subset.
-	DetectImplementations(existing)
+	// Go inputs force a full rebuild above, so cached semantic implementation
+	// relationships remain authoritative during a non-Go incremental merge.
 	ranked := RankFiles(existing)
 	ranked = m.applyRankPasses(ranked)
 

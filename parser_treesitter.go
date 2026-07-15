@@ -82,6 +82,7 @@ func registerTSCustom(lang string, provider tsLangProvider, parser func(content 
 	tsCustomParsers[lang] = parser
 }
 
+//nolint:gochecknoinits // Tree-sitter grammars must register before parser dispatch.
 func init() {
 	tsRegistry = make(map[string]tsLangProvider)
 	tsSymbolQueries = make(map[string]string)
@@ -423,13 +424,6 @@ func tsKindToSymbolKind(tsKind string) string {
 	default:
 		return tsKind
 	}
-}
-
-// parseTreeSitterFile reads and parses a single file with tree-sitter.
-func (m *Map) parseTreeSitterFile(fi FileInfo) *FileSymbols {
-	rt := newTreeSitterRuntime()
-	defer rt.close()
-	return m.parseTreeSitterFileWithRuntime(rt, fi)
 }
 
 func (m *Map) parseTreeSitterFileWithRuntime(rt *treeSitterRuntime, fi FileInfo) *FileSymbols {

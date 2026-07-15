@@ -18,7 +18,7 @@ import (
 func TypedGraphToSymbolCallers(edges []callgraph.CallEdge) SymbolCallers {
 	out := make(SymbolCallers)
 	for _, e := range edges {
-		key := callsKey(e.CalleeFile, e.CalleeSymbol)
+		key := semanticCallsKey(e.CalleeFile, e.CalleeReceiver, e.CalleeSymbol)
 		out[key] = append(out[key], Location{File: e.CallerFile, Line: e.CallerLine})
 	}
 	return out
@@ -37,4 +37,20 @@ func (sc SymbolCallers) CallersFor(file, symbol string) []Location {
 		return sc[callsKey(slash, symbol)]
 	}
 	return nil
+}
+
+// CallersForSymbol resolves receiver-qualified semantic caller keys and falls
+// back to the legacy file/name key for cached and external caller maps.
+func (sc SymbolCallers) CallersForSymbol(file string, symbol Symbol) []Location {
+	if locations, ok := sc[semanticCallsKey(file, symbol.Receiver, symbol.Name)]; ok {
+		return locations
+	}
+	return sc.CallersFor(file, symbol.Name)
+}
+
+func semanticCallsKey(file, receiver, symbol string) string {
+	if receiver == "" {
+		return callsKey(file, symbol)
+	}
+	return callsKey(file, receiver+"."+symbol)
 }

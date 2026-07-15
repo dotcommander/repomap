@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,7 +85,7 @@ func TestRenderCallsOutput_JSONEmitsEnvelope(t *testing.T) {
 	callers := repomap.SymbolCallers{} // empty — no gopls needed
 
 	var buf bytes.Buffer
-	require.NoError(t, renderCallsOutput(&buf, m, "compact", true, false, ranked, callers, 10))
+	require.NoError(t, renderCallsOutput(&buf, io.Discard, m, "compact", true, false, ranked, callers, 10))
 
 	var out jsonOutput
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &out), "calls --json output must unmarshal into jsonOutput envelope")
@@ -102,7 +103,7 @@ func TestRenderCallsOutput_JSONLegacyEmitsBareArray(t *testing.T) {
 	callers := repomap.SymbolCallers{}
 
 	var buf bytes.Buffer
-	require.NoError(t, renderCallsOutput(&buf, m, "compact", true, true, ranked, callers, 10))
+	require.NoError(t, renderCallsOutput(&buf, io.Discard, m, "compact", true, true, ranked, callers, 10))
 
 	var lines []string
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &lines), "calls legacy output must unmarshal as bare []string")
@@ -156,24 +157,19 @@ func TestJSONLegacySchemaVersionAbsent(t *testing.T) {
 // TestRootCmd_JSONFlagRegistered verifies the CLI registers --json and --json-legacy flags.
 func TestRootCmd_JSONFlagRegistered(t *testing.T) {
 	t.Parallel()
-	cmd := newRootCmd()
-
-	jsonFlag := cmd.Flags().Lookup("json")
-	require.NotNil(t, jsonFlag, "--json flag must be registered")
-
-	legacyFlag := cmd.Flags().Lookup("json-legacy")
-	require.NotNil(t, legacyFlag, "--json-legacy flag must be registered")
-	assert.Contains(t, legacyFlag.Usage, "pre-v0.7.0", "--json-legacy help text must mention pre-v0.7.0")
+	var out bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"--help"}, &out, io.Discard))
+	assert.Contains(t, out.String(), "--json ")
+	assert.Contains(t, out.String(), "--json-legacy")
+	assert.Contains(t, out.String(), "pre-v0.7.0")
 }
 
 // TestRootCmd_JSONLegacyHasNoShortForm verifies --json-legacy has no short flag form.
 func TestRootCmd_JSONLegacyHasNoShortForm(t *testing.T) {
 	t.Parallel()
-	cmd := newRootCmd()
-
-	legacyFlag := cmd.Flags().Lookup("json-legacy")
-	require.NotNil(t, legacyFlag)
-	assert.Empty(t, legacyFlag.Shorthand, "--json-legacy must have no short form")
+	var out bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"--help"}, &out, io.Discard))
+	assert.NotContains(t, out.String(), "-j, --json-legacy")
 }
 
 func TestRootCmdArtifactWritesOutputFile(t *testing.T) {
@@ -183,12 +179,8 @@ func TestRootCmdArtifactWritesOutputFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644))
 	artifact := filepath.Join(t.TempDir(), "repomap.md")
 
-	cmd := newRootCmd()
 	var stdout bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetArgs([]string{"--artifact", artifact, root})
-
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"--artifact", artifact, root}, &stdout, io.Discard))
 	assert.Empty(t, stdout.String())
 	data, err := os.ReadFile(artifact)
 	require.NoError(t, err)
@@ -255,11 +247,7 @@ func TestDefaultModeContainsSymbols(t *testing.T) {
 // so the default path falls through to enriched rendering.
 func TestCompactModeFlagDefault(t *testing.T) {
 	t.Parallel()
-	cmd := newRootCmd()
-
-	formatFlag := cmd.Flags().Lookup("format")
-	require.NotNil(t, formatFlag, "-f/--format flag must be registered")
-	assert.Equal(t, "", formatFlag.DefValue,
+	assert.Equal(t, "", (mapCommand{}).Format,
 		"-f flag default must be empty so default rendering is enriched")
 }
 

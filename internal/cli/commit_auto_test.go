@@ -4,16 +4,15 @@ package cli
 //
 // We exercise the three non-execution branches (abort, needs_judgment, and
 // the force-mode override) by collecting the JSON payload that runCommitAuto
-// writes through its io.Writer parameter. The ready→finish path is not tested
-// here: runCommitFinish calls os.Exit on verify failure, which would terminate
-// the test process. That path is covered by the existing commit_v090
-// integration suite and the manual smoke test in Section 5 of the spec.
+// writes through its io.Writer parameter. The ready→finish path is covered by
+// the commit integration suite; these tests isolate auto's routing decisions.
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +66,7 @@ func TestRunCommitAuto_Abort_NoChanges(t *testing.T) {
 	root := initAutoTestRepo(t)
 
 	var buf bytes.Buffer
-	require.NoError(t, runCommitAuto(context.Background(), &buf, root, false, false, "", "", ""))
+	require.NoError(t, runCommitAuto(context.Background(), &buf, io.Discard, root, false, false, "", "", ""))
 
 	p := decodePayload(t, buf.String())
 	assert.Equal(t, repomap.PrepStatusAbort, p.Status)
@@ -92,7 +91,7 @@ func TestRunCommitAuto_ForceMode_OverridesPreflight(t *testing.T) {
 			t.Parallel()
 			root := initAutoTestRepo(t)
 			var buf bytes.Buffer
-			require.NoError(t, runCommitAuto(context.Background(), &buf, root, false, false, "", "", tc.forceMode))
+			require.NoError(t, runCommitAuto(context.Background(), &buf, io.Discard, root, false, false, "", "", tc.forceMode))
 			p := decodePayload(t, buf.String())
 			assert.Equal(t, tc.want, p.ModeHint)
 		})
@@ -107,7 +106,7 @@ func TestRunCommitAuto_ForceMode_InvalidIgnored(t *testing.T) {
 	root := initAutoTestRepo(t)
 
 	var buf bytes.Buffer
-	require.NoError(t, runCommitAuto(context.Background(), &buf, root, false, false, "", "", "BOGUS"))
+	require.NoError(t, runCommitAuto(context.Background(), &buf, io.Discard, root, false, false, "", "", "BOGUS"))
 
 	p := decodePayload(t, buf.String())
 	assert.Equal(t, "LOCAL", p.ModeHint, "unknown force-mode must fall through to preflight detection")
@@ -127,7 +126,7 @@ func TestRunCommitAuto_NeedsJudgment_KitchenSink(t *testing.T) {
 	runGitAuto(t, root, "add", "-A")
 
 	var buf bytes.Buffer
-	require.NoError(t, runCommitAuto(context.Background(), &buf, root, false, false, "", "", ""))
+	require.NoError(t, runCommitAuto(context.Background(), &buf, io.Discard, root, false, false, "", "", ""))
 
 	p := decodePayload(t, buf.String())
 	// The guard may produce either needs_judgment (one fused group) or abort

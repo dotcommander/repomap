@@ -38,5 +38,6 @@ func TestTypedGraphToSymbolCallers_ShapeAndRenderDrop(t *testing.T) {
 	})
 	out := formatFileBlockDetailWithCallers(rf, callers, 10, false)
 	assert.Contains(t, out, "cmd/main.go:8", "matched callee renders its caller location")
+	assert.NotContains(t, out, "callers: callers:", "caller label renders exactly once")
 	assert.NotContains(t, out, "Ghost", "unmatched callee produces no rendered output")
 }

@@ -34,7 +34,7 @@ func formatFileBlockVerboseWithCallers(f RankedFile, callers SymbolCallers, limi
 		names := make([]string, 0, len(g.syms))
 		for _, s := range g.syms {
 			name := symDisplayName(s)
-			if locs, ok := callers[callsKey(f.Path, s.Name)]; ok {
+			if locs := callers.CallersForSymbol(f.Path, s); len(locs) > 0 {
 				name += fmt.Sprintf(" [callers: %d]", len(locs))
 			}
 			names = append(names, name)
@@ -77,8 +77,8 @@ func formatFileBlockDetailWithCallers(f RankedFile, callers SymbolCallers, limit
 			if s.Doc != "" {
 				fmt.Fprintf(&b, "      // %s\n", s.Doc)
 			}
-			if locs, ok := callers[callsKey(f.Path, s.Name)]; ok {
-				fmt.Fprintf(&b, "      callers: %s\n", formatCallersInline(locs, len(locs)))
+			if locs := callers.CallersForSymbol(f.Path, s); len(locs) > 0 {
+				fmt.Fprintf(&b, "      %s\n", formatCallersInline(locs, len(locs)))
 			}
 		}
 	}
@@ -103,7 +103,7 @@ func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, c
 	for _, cg := range categorizedGroups {
 		total := 0
 		for _, s := range cg.syms {
-			if locs, ok := callers[callsKey(f.Path, s.Name)]; ok {
+			if locs := callers.CallersForSymbol(f.Path, s); len(locs) > 0 {
 				total += len(locs)
 			}
 		}
@@ -125,7 +125,7 @@ func formatFileBlockCompactWithCallers(f RankedFile, topTypes map[string]bool, c
 			continue
 		}
 		if (s.Kind == "struct" || s.Kind == "interface") && topTypes[s.Name] {
-			locs := callers[callsKey(f.Path, s.Name)]
+			locs := callers.CallersForSymbol(f.Path, s)
 			suffix := ""
 			if len(locs) > 0 {
 				suffix = fmt.Sprintf(" [callers: %d]", len(locs))

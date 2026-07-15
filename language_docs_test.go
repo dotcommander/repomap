@@ -18,7 +18,8 @@ func TestLanguageDocsMatchDeclaredSupport(t *testing.T) {
 
 	for _, def := range languageDefs {
 		if def.ID == "go" {
-			assert.Contains(t, doc, "Parsed with `go/ast` directly")
+			assert.Contains(t, doc, "`go/packages` and `go/types`")
+			assert.Contains(t, doc, "parsed with `go/ast`")
 			continue
 		}
 		name := languageDocName(def.ID)

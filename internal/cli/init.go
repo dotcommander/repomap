@@ -7,8 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/spf13/cobra"
 )
 
 // hookMarker identifies a post-commit hook that `repomap init` installed.
@@ -31,31 +29,15 @@ const configTemplate = `# .repomap.yaml — repomap configuration
 method_blocklist: []
 `
 
-func newInitCmd() *cobra.Command {
-	var (
-		force    bool
-		noHook   bool
-		noConfig bool
-	)
-	cmd := &cobra.Command{
-		Use:   "init [directory]",
-		Short: "Scaffold .repomap.yaml and install a post-commit cache-warm hook",
-		Long: `Creates .repomap.yaml at the project root (if absent) and installs a
-git post-commit hook that refreshes the repomap cache in the background.
-Idempotent: re-running without --force skips existing files.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-			return runInit(cmd.OutOrStdout(), dir, force, noHook, noConfig)
-		},
-	}
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing files")
-	cmd.Flags().BoolVar(&noHook, "no-hook", false, "Skip git hook installation")
-	cmd.Flags().BoolVar(&noConfig, "no-config", false, "Skip .repomap.yaml scaffold")
-	return cmd
+type initCommand struct {
+	Force     bool   `help:"Overwrite existing files"`
+	NoHook    bool   `name:"no-hook" help:"Skip git hook installation"`
+	NoConfig  bool   `name:"no-config" help:"Skip .repomap.yaml scaffold"`
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to initialize"`
+}
+
+func (c *initCommand) Run(ioctx *commandIO) error {
+	return runInit(ioctx.stdout, c.Directory, c.Force, c.NoHook, c.NoConfig)
 }
 
 // runInit is the testable core.

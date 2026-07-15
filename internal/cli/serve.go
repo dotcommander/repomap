@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/dotcommander/repomap"
 	"github.com/dotcommander/repomap/internal/serve"
-	"github.com/spf13/cobra"
 )
 
 const (
@@ -53,46 +53,32 @@ type rpcErrorResponse struct {
 	Error   rpcErrObj       `json:"error"`
 }
 
-func newServeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "serve [directory]",
-		Short: "Start a long-lived JSON-RPC 2.0 server on stdin/stdout",
-		Long: `Start a long-lived JSON-RPC 2.0 server on stdin/stdout.
+type serveCommand struct {
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to serve"`
+}
 
-The repository map is built once on startup and kept warm. Subsequent queries
-skip the scan→parse→rank pipeline unless the map becomes stale. Requests and
-responses use NDJSON framing: one JSON-RPC 2.0 object per line.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-
-			absDir, err := filepath.Abs(dir)
-			if err != nil {
-				return fmt.Errorf("resolve path: %w", err)
-			}
-
-			m := repomap.New(absDir, repomap.DefaultConfig())
-			fmt.Fprintf(cmd.ErrOrStderr(), "repomap serve: building map for %s...\n", absDir)
-			if err := m.Build(cmd.Context()); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "repomap serve: ready\n")
-
-			s := &serveServer{
-				root:   absDir,
-				m:      m,
-				codec:  serve.NewCodec(cmd.InOrStdin(), cmd.OutOrStdout()),
-				stderr: cmd.ErrOrStderr(),
-			}
-			s.Run(cmd.Context())
-			fmt.Fprintf(cmd.ErrOrStderr(), "repomap serve: shutting down\n")
-			return nil
-		},
+func (c *serveCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	absDir, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
 	}
-	return cmd
+	m := repomap.New(absDir, repomap.DefaultConfig())
+	fmt.Fprintf(ioctx.stderr, "repomap serve: building map for %s...\n", absDir)
+	if err := m.Build(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintln(ioctx.stderr, "repomap serve: ready")
+	s := &serveServer{
+		root:   absDir,
+		m:      m,
+		codec:  serve.NewCodec(os.Stdin, ioctx.stdout),
+		stderr: ioctx.stderr,
+	}
+	if err := s.Run(ctx); err != nil {
+		return err
+	}
+	fmt.Fprintln(ioctx.stderr, "repomap serve: shutting down")
+	return nil
 }
 
 // Run is the main loop. Exits when stdin yields io.EOF or ctx is cancelled.

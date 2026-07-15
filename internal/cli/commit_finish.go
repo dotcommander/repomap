@@ -19,9 +19,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
 // finishDecisions is the JSON schema accepted by --decisions.
@@ -48,50 +48,27 @@ type finishResult struct {
 	FailureDetail     string                 `json:"failure_detail,omitempty"`
 }
 
-func newCommitFinishCmd() *cobra.Command {
-	var (
-		prepToken string
-		decisions string
-		push      bool
-		tag       string
-		jsonOut   bool
-	)
-	cmd := &cobra.Command{
-		Use:   "finish",
-		Short: "Execute a prepared commit plan (output of `commit prep`)",
-		Long: `Loads the state written by 'commit prep --prep-token <t>' and executes it.
-
-Accepts optional LLM decisions for ambiguous findings and low-confidence
-subjects via --decisions (inline JSON or @path).
-
-Exit codes:
-  0  passed
-  2  plan/decision validation
-  3  git/execute failure
-  4  push/release failure (commits already landed)
-  5  verify failure`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommitFinish(cmd.Context(), prepToken, decisions, push, tag, jsonOut)
-		},
-	}
-	cmd.Flags().StringVar(&prepToken, "prep-token", "", "Token returned by `commit prep` (required)")
-	cmd.Flags().StringVar(&decisions, "decisions", "", "LLM decisions JSON string or @path")
-	cmd.Flags().BoolVar(&push, "push", false, "git push origin <branch> --follow-tags after commits")
-	cmd.Flags().StringVar(&tag, "tag", "", "Create annotated tag at HEAD (vX.Y.Z)")
-	cmd.Flags().BoolVar(&jsonOut, "json", true, "Emit machine-readable JSON result on stdout")
-	_ = cmd.MarkFlagRequired("prep-token")
-	return cmd
+type commitFinishCommand struct {
+	PrepToken string `required:"" help:"Token returned by commit prep (required)"`
+	Decisions string `help:"LLM decisions JSON string or @path"`
+	Push      bool   `help:"git push origin <branch> --follow-tags after commits"`
+	Tag       string `help:"Create annotated tag at HEAD (vX.Y.Z)"`
+	JSON      bool   `default:"true" help:"Emit machine-readable JSON result on stdout"`
 }
 
-func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push bool, tag string, jsonOut bool) error {
+func (c *commitFinishCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	return runCommitFinish(ctx, ioctx.stdout, ioctx.stderr, c.PrepToken, c.Decisions, c.Push, c.Tag, c.JSON)
+}
+
+func runCommitFinish(ctx context.Context, stdout, stderr io.Writer, prepToken, decisionsArg string, push bool, tag string, jsonOut bool) error {
 	// Step 1: load prep state.
 	state, err := repomap.LoadPrepState(prepToken)
 	if err != nil {
-		return finishFatal(jsonOut, 2, fmt.Sprintf("load prep state: %v", err))
+		return finishFatal(stdout, jsonOut, 2, fmt.Sprintf("load prep state: %v", err))
 	}
 
 	if err := repomap.VerifyPrepStateFresh(ctx, state); err != nil {
-		return finishFatal(jsonOut, 2, fmt.Sprintf("stale prep state: %v", err))
+		return finishFatal(stdout, jsonOut, 2, fmt.Sprintf("stale prep state: %v", err))
 	}
 
 	repoRoot := state.RepoRoot
@@ -102,13 +79,13 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 	if decisionsArg != "" {
 		parsed, parseErr := parseDecisions(decisionsArg)
 		if parseErr != nil {
-			return finishFatal(jsonOut, 2, fmt.Sprintf("parse decisions: %v", parseErr))
+			return finishFatal(stdout, jsonOut, 2, fmt.Sprintf("parse decisions: %v", parseErr))
 		}
 		dec = parsed
 	}
 
 	if err := validateAndApplyReviewDecisions(ctx, repoRoot, state, dec.ReviewDecisions); err != nil {
-		return finishFatal(jsonOut, 2, err.Error())
+		return finishFatal(stdout, jsonOut, 2, err.Error())
 	}
 
 	if decisionsArg != "" {
@@ -140,11 +117,11 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 	// Step 3: Justfile branch.
 	if state.ReleaseRecipe && tag != "" {
 		bump := bumpLevel(groups, tag)
-		if justErr := runJustRelease(ctx, repoRoot, bump); justErr != nil {
-			return finishFatal(jsonOut, 4, fmt.Sprintf("just release: %v", justErr))
+		if justErr := runJustRelease(ctx, stderr, repoRoot, bump); justErr != nil {
+			return finishFatal(stdout, jsonOut, 4, fmt.Sprintf("just release: %v", justErr))
 		}
 		_ = repomap.DeletePrepState(prepToken)
-		return runVerifyAndEmit(ctx, repoRoot, state.SessionRepos, nil, tag, jsonOut)
+		return runVerifyAndEmit(ctx, stdout, repoRoot, state.SessionRepos, nil, tag, jsonOut)
 	}
 
 	// Step 4: standard execute path.
@@ -157,13 +134,13 @@ func runCommitFinish(ctx context.Context, prepToken, decisionsArg string, push b
 		detail := execErr.Error()
 		// For exit-3/4 failures after some commits landed, still emit the partial result.
 		if (code == 3 || code == 4) && execResult != nil {
-			return emitFinishResult(jsonOut, code, buildFinishResult(finishStatusFailed, execResult, detail))
+			return emitFinishResult(stdout, jsonOut, code, buildFinishResult(finishStatusFailed, execResult, detail))
 		}
-		return finishFatal(jsonOut, code, detail)
+		return finishFatal(stdout, jsonOut, code, detail)
 	}
 
 	_ = repomap.DeletePrepState(prepToken)
-	return runVerifyAndEmit(ctx, repoRoot, state.SessionRepos, execResult, tag, jsonOut)
+	return runVerifyAndEmit(ctx, stdout, repoRoot, state.SessionRepos, execResult, tag, jsonOut)
 }
 
 func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state *repomap.PrepState, decisions []repomap.ReviewDecision) error {
@@ -197,7 +174,7 @@ func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state
 }
 
 // runVerifyAndEmit runs cross-repo + self-verify then emits the final JSON.
-func runVerifyAndEmit(ctx context.Context, repoRoot string, sessionRepos []string, execResult *repomap.ExecuteResult, tag string, jsonOut bool) error {
+func runVerifyAndEmit(ctx context.Context, stdout io.Writer, repoRoot string, sessionRepos []string, execResult *repomap.ExecuteResult, tag string, jsonOut bool) error {
 	crossRepo, _ := repomap.CrossRepoVerify(ctx, sessionRepos)
 	selfResult, selfErr := repomap.SelfVerify(ctx, repoRoot, "auto")
 
@@ -238,5 +215,5 @@ func runVerifyAndEmit(ctx context.Context, repoRoot string, sessionRepos []strin
 	if status == finishStatusFailed {
 		exitCode = 5
 	}
-	return emitFinishResult(jsonOut, exitCode, fr)
+	return emitFinishResult(stdout, jsonOut, exitCode, fr)
 }

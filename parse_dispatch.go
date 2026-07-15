@@ -9,8 +9,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/dotcommander/repomap/internal/goanalysis"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -118,13 +121,52 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 				goFiles = append(goFiles, fi)
 			}
 		}
+		var analysis *goanalysis.Result
+		var analysisErr error
+		active := make(map[string]goanalysis.File)
+		if m.config.GoAnalysis {
+			analysis, analysisErr = goanalysis.Analyze(egCtx, goanalysis.Options{
+				Root: m.root, IncludeCalls: m.config.GoAnalysisCalls,
+				IncludeTests: m.config.GoAnalysisTests,
+			})
+		}
+		if analysis != nil {
+			active = analysis.Files
+			callers := semanticCallsToSymbolCallers(analysis.Calls)
+			diagnostics := make([]GoDiagnostic, 0, len(analysis.Diagnostics))
+			for _, diagnostic := range analysis.Diagnostics {
+				diagnostics = append(diagnostics, GoDiagnostic{
+					PackagePath: diagnostic.PackagePath, Position: diagnostic.Position, Message: diagnostic.Message,
+				})
+			}
+			m.mu.Lock()
+			m.semanticCallers = callers
+			m.goDiagnostics = diagnostics
+			m.mu.Unlock()
+		} else if analysisErr != nil {
+			m.mu.Lock()
+			m.semanticCallers = nil
+			m.goDiagnostics = []GoDiagnostic{{Message: analysisErr.Error()}}
+			m.mu.Unlock()
+		}
 		goParsed = parallelParse(goFiles, func(fi FileInfo) *FileSymbols {
 			sym, err := ParseGoFile(m.absPath(fi.Path), m.root)
 			if err != nil {
 				return nil
 			}
+			if file, ok := active[filepath.ToSlash(fi.Path)]; ok {
+				sym.Package = file.PackageName
+				sym.ImportPath = file.PackagePath
+				sym.BuildActive = true
+				sym.AnalysisMode = "semantic"
+			} else if analysisErr != nil {
+				sym.AnalysisMode = "analysis_failed"
+			}
 			return sym
 		})
+		if analysis != nil {
+			applySemanticImplementations(goParsed, analysis.Implementations)
+		}
 		return nil
 	})
 	eg.Go(func() error {
@@ -154,7 +196,8 @@ func (m *Map) parseFiles(ctx context.Context, files []FileInfo) ([]*FileSymbols,
 		populateSymbolHashes(fs, m.absPath(fs.Path))
 	}
 
-	DetectImplementations(parsed)
+	// Go implementation relationships come from go/types. The legacy syntax
+	// matcher remains available to direct ParseGoSource consumers only.
 
 	return parsed, mtimes, hashes, buildParseCoverage(files, parsed, m.tsAvailable, m.ctagsAvailable), nil
 }
@@ -181,6 +224,19 @@ func buildParseCoverage(files []FileInfo, parsed []*FileSymbols, tsEnabled, ctag
 		if fs.ParseMethod != "" {
 			coverage.ByParseMethod[fs.ParseMethod]++
 		}
+		if fs.Language == "go" {
+			switch fs.AnalysisMode {
+			case "semantic":
+				coverage.GoSemanticActive++
+			case "syntax_only":
+				coverage.GoSyntaxInactive++
+			case "analysis_failed":
+				coverage.GoAnalysisFailed++
+			}
+		}
+	}
+	if goScanned := coverage.ByLanguage["go"]; goScanned > coverage.GoSemanticActive+coverage.GoSyntaxInactive+coverage.GoAnalysisFailed {
+		coverage.GoAnalysisFailed = goScanned - coverage.GoSemanticActive - coverage.GoSyntaxInactive
 	}
 	for lang, scanned := range coverage.ByLanguage {
 		if failed := scanned - parsedByLang[lang]; failed > 0 {
@@ -198,6 +254,49 @@ func buildParseCoverage(files []FileInfo, parsed []*FileSymbols, tsEnabled, ctag
 		coverage.FailuresByLang = nil
 	}
 	return coverage
+}
+
+func semanticCallsToSymbolCallers(edges []goanalysis.CallEdge) SymbolCallers {
+	out := make(SymbolCallers)
+	for _, edge := range edges {
+		if edge.CalleeFile == "" || edge.CalleeSymbol == "" || edge.CallerFile == "" {
+			continue
+		}
+		key := semanticCallsKey(edge.CalleeFile, edge.CalleeReceiver, edge.CalleeSymbol)
+		out[key] = append(out[key], Location{File: edge.CallerFile, Line: edge.CallerLine})
+	}
+	for key := range out {
+		slices.SortFunc(out[key], func(a, b Location) int {
+			if a.File != b.File {
+				return strings.Compare(a.File, b.File)
+			}
+			return a.Line - b.Line
+		})
+		out[key] = slices.Compact(out[key])
+	}
+	return out
+}
+
+func applySemanticImplementations(files []*FileSymbols, implementations []goanalysis.Implementation) {
+	byType := make(map[string][]string)
+	for _, implementation := range implementations {
+		key := filepath.ToSlash(implementation.TypeFile) + "\x00" + implementation.TypeName
+		byType[key] = append(byType[key], implementation.InterfaceName)
+	}
+	for _, file := range files {
+		if file == nil || file.AnalysisMode != "semantic" {
+			continue
+		}
+		for i := range file.Symbols {
+			symbol := &file.Symbols[i]
+			if symbol.Kind != "struct" {
+				continue
+			}
+			values := byType[filepath.ToSlash(file.Path)+"\x00"+symbol.Name]
+			slices.Sort(values)
+			symbol.Implements = slices.Compact(values)
+		}
+	}
 }
 
 func parseCoverageFromRanked(ranked []RankedFile, tsEnabled, ctagsEnabled bool) ParseCoverage {

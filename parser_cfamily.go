@@ -33,14 +33,14 @@ var (
 // parseRust processes Rust lines.
 func parseRust(lines []string, fs *FileSymbols) {
 	scanLines(lines, func(e lineEntry) bool {
-		if tryAppendSymbol(rustPubAsync, e, "fn", true, fs) {
+		if tryAppendSymbol(rustPubAsync, e, "fn", fs) {
 			return true
 		}
 		if m := rustPubItem.FindStringSubmatch(e.trimmed); m != nil {
 			fs.Symbols = append(fs.Symbols, Symbol{Name: m[2], Kind: m[1], Exported: true, Line: e.idx + 1})
 			return true
 		}
-		if tryAppendSymbol(rustImpl, e, "impl", true, fs) {
+		if tryAppendSymbol(rustImpl, e, "impl", fs) {
 			return true
 		}
 		tryAppendImport(rustUse, e, fs)
@@ -94,7 +94,7 @@ func parseJava(lines []string, fs *FileSymbols) {
 			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
 			return true
 		}
-		tryAppendSymbol(javaMethodDecl, e, "method", true, fs)
+		tryAppendSymbol(javaMethodDecl, e, "method", fs)
 		return true
 	})
 }
@@ -142,12 +142,12 @@ func trackBlockComment(trimmed string, inBlockComment bool) bool {
 }
 
 // tryAppendSymbol matches a regex and appends a symbol if found.
-func tryAppendSymbol(re *regexp.Regexp, e lineEntry, kind string, exported bool, fs *FileSymbols) bool {
+func tryAppendSymbol(re *regexp.Regexp, e lineEntry, kind string, fs *FileSymbols) bool {
 	m := re.FindStringSubmatch(e.trimmed)
 	if m == nil {
 		return false
 	}
-	fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: exported, Line: e.idx + 1})
+	fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
 	return true
 }
 

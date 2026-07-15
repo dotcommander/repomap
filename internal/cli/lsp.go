@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap/internal/lsp"
-	"github.com/spf13/cobra"
 )
 
 // ---------------------------------------------------------------------------
@@ -52,53 +51,54 @@ type jsonSymbolsOutput struct {
 // LSP commands
 // ---------------------------------------------------------------------------
 
-func newLSPCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "lsp",
-		Short: "Inspect LSP semantic coverage",
-	}
-	cmd.AddCommand(newLSPStatusCmd())
-	return cmd
+type lspCommand struct {
+	Status lspStatusCommand `cmd:"" help:"Report detected LSP server coverage without starting servers"`
 }
 
-func newLSPStatusCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "status [directory]",
-		Short: "Report detected LSP server coverage without starting servers",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-			absDir, err := filepath.Abs(dir)
-			if err != nil {
-				return fmt.Errorf("resolve path: %w", err)
-			}
-			report, err := lsp.DetectStatus(cmd.Context(), absDir)
-			if err != nil {
-				return err
-			}
-			if asJSON {
-				return writeJSON(report)
-			}
-			return printLSPStatus(cmd.OutOrStdout(), report)
-		},
-	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Emit machine-readable LSP status JSON")
-	return cmd
+type lspStatusCommand struct {
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to inspect"`
+	JSON      bool   `help:"Emit machine-readable LSP status JSON"`
 }
 
-// newLSPCmds returns the historical top-level LSP subcommands (refs, def, hover, symbols).
-// They share a --json flag via a closure.
-func newLSPCmds() []*cobra.Command {
-	return []*cobra.Command{
-		newRefsCmd(),
-		newDefCmd(),
-		newHoverCmd(),
-		newSymbolsCmd(),
+func (c *lspStatusCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	absDir, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
 	}
+	report, err := lsp.DetectStatus(ctx, absDir)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		return writeJSON(ioctx.stdout, report)
+	}
+	return printLSPStatus(ioctx.stdout, report)
+}
+
+type refsCommand struct {
+	File   string `arg:"" type:"path" help:"Source file"`
+	Line   string `arg:"" help:"1-based source line"`
+	Symbol string `arg:"" help:"Identifier name on that line"`
+	JSON   bool   `help:"Output JSON"`
+}
+
+type defCommand struct {
+	File   string `arg:"" type:"path" help:"Source file"`
+	Line   string `arg:"" help:"1-based source line"`
+	Symbol string `arg:"" help:"Identifier name on that line"`
+	JSON   bool   `help:"Output JSON"`
+}
+
+type hoverCommand struct {
+	File   string `arg:"" type:"path" help:"Source file"`
+	Line   string `arg:"" help:"1-based source line"`
+	Symbol string `arg:"" help:"Identifier name on that line"`
+	JSON   bool   `help:"Output JSON"`
+}
+
+type symbolsCommand struct {
+	File string `arg:"" type:"path" help:"Source file"`
+	JSON bool   `help:"Output JSON"`
 }
 
 func printLSPStatus(w io.Writer, report lsp.StatusReport) error {
@@ -151,138 +151,81 @@ func lspCommandDisplay(server lsp.StatusServer) string {
 	return server.Command + " " + strings.Join(server.Args, " ")
 }
 
-// newRefsCmd builds `repomap refs FILE LINE SYMBOL`.
-func newRefsCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "refs FILE LINE SYMBOL",
-		Short: "Find all references to a symbol",
-		Long: `Find all references to a symbol at FILE:LINE named SYMBOL.
-LINE is 1-based. SYMBOL is the identifier name on that line.`,
-		Args: cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sess, err := setupLSPSession(cmd.Context(), args)
-			if err != nil {
-				return err
-			}
-			defer sess.mgr.Shutdown(context.Background())
-
-			locs, err := sess.client.References(cmd.Context(), sess.file, sess.line, sess.col)
-			if err != nil {
-				return fmt.Errorf("references: %w", err)
-			}
-
-			if asJSON {
-				return writeJSON(buildRefsJSON(locs, sess.cwd))
-			}
-			fmt.Println(lsp.FormatLocations(locs, sess.cwd, 1))
-			return nil
-		},
+func (c *refsCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	sess, err := setupLSPSession(ctx, []string{c.File, c.Line, c.Symbol})
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output JSON")
-	return cmd
+	defer sess.mgr.Shutdown(context.Background())
+	locs, err := sess.client.References(ctx, sess.file, sess.line, sess.col)
+	if err != nil {
+		return fmt.Errorf("references: %w", err)
+	}
+	if c.JSON {
+		return writeJSON(ioctx.stdout, buildRefsJSON(locs, sess.cwd))
+	}
+	_, err = fmt.Fprintln(ioctx.stdout, lsp.FormatLocations(locs, sess.cwd, 1))
+	return err
 }
 
-// newDefCmd builds `repomap def FILE LINE SYMBOL`.
-func newDefCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "def FILE LINE SYMBOL",
-		Short: "Jump to the definition of a symbol",
-		Args:  cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sess, err := setupLSPSession(cmd.Context(), args)
-			if err != nil {
-				return err
-			}
-			defer sess.mgr.Shutdown(context.Background())
-
-			locs, err := sess.client.Definition(cmd.Context(), sess.file, sess.line, sess.col)
-			if err != nil {
-				return fmt.Errorf("definition: %w", err)
-			}
-
-			if asJSON {
-				return writeJSON(buildDefJSON(locs, sess.cwd))
-			}
-			fmt.Println(lsp.FormatLocations(locs, sess.cwd, 2))
-			return nil
-		},
+func (c *defCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	sess, err := setupLSPSession(ctx, []string{c.File, c.Line, c.Symbol})
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output JSON")
-	return cmd
+	defer sess.mgr.Shutdown(context.Background())
+	locs, err := sess.client.Definition(ctx, sess.file, sess.line, sess.col)
+	if err != nil {
+		return fmt.Errorf("definition: %w", err)
+	}
+	if c.JSON {
+		return writeJSON(ioctx.stdout, buildDefJSON(locs, sess.cwd))
+	}
+	_, err = fmt.Fprintln(ioctx.stdout, lsp.FormatLocations(locs, sess.cwd, 2))
+	return err
 }
 
-// newHoverCmd builds `repomap hover FILE LINE SYMBOL`.
-func newHoverCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "hover FILE LINE SYMBOL",
-		Short: "Get type info and docs for a symbol",
-		Args:  cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			sess, err := setupLSPSession(cmd.Context(), args)
-			if err != nil {
-				return err
-			}
-			defer sess.mgr.Shutdown(context.Background())
-
-			hover, err := sess.client.Hover(cmd.Context(), sess.file, sess.line, sess.col)
-			if err != nil {
-				return fmt.Errorf("hover: %w", err)
-			}
-
-			if asJSON {
-				return writeJSON(buildHoverJSON(hover))
-			}
-			fmt.Println(lsp.FormatHover(hover))
-			return nil
-		},
+func (c *hoverCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	sess, err := setupLSPSession(ctx, []string{c.File, c.Line, c.Symbol})
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output JSON")
-	return cmd
+	defer sess.mgr.Shutdown(context.Background())
+	hover, err := sess.client.Hover(ctx, sess.file, sess.line, sess.col)
+	if err != nil {
+		return fmt.Errorf("hover: %w", err)
+	}
+	if c.JSON {
+		return writeJSON(ioctx.stdout, buildHoverJSON(hover))
+	}
+	_, err = fmt.Fprintln(ioctx.stdout, lsp.FormatHover(hover))
+	return err
 }
 
-// newSymbolsCmd builds `repomap symbols FILE`.
-func newSymbolsCmd() *cobra.Command {
-	var asJSON bool
-	cmd := &cobra.Command{
-		Use:   "symbols FILE",
-		Short: "List symbols defined in a file",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("getwd: %w", err)
-			}
-
-			file := resolveFilePath(args[0], cwd)
-
-			mgr := lsp.NewManager(cwd)
-			defer mgr.Shutdown(context.Background())
-
-			client, lang, err := mgr.ForFile(cmd.Context(), file)
-			if err != nil {
-				return err
-			}
-			if err := mgr.EnsureFileOpen(cmd.Context(), client, file, lang); err != nil {
-				return err
-			}
-
-			syms, err := client.DocumentSymbols(cmd.Context(), file)
-			if err != nil {
-				return fmt.Errorf("symbols: %w", err)
-			}
-
-			if asJSON {
-				return writeJSON(buildSymbolsJSON(syms, file))
-			}
-			fmt.Println(lsp.FormatSymbols(syms, cwd))
-			return nil
-		},
+func (c *symbolsCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "Output JSON")
-	return cmd
+	file := resolveFilePath(c.File, cwd)
+	mgr := lsp.NewManager(cwd)
+	defer mgr.Shutdown(context.Background())
+	client, lang, err := mgr.ForFile(ctx, file)
+	if err != nil {
+		return err
+	}
+	if err := mgr.EnsureFileOpen(ctx, client, file, lang); err != nil {
+		return err
+	}
+	syms, err := client.DocumentSymbols(ctx, file)
+	if err != nil {
+		return fmt.Errorf("symbols: %w", err)
+	}
+	if c.JSON {
+		return writeJSON(ioctx.stdout, buildSymbolsJSON(syms, file))
+	}
+	_, err = fmt.Fprintln(ioctx.stdout, lsp.FormatSymbols(syms, cwd))
+	return err
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +334,8 @@ func setupLSPSession(ctx context.Context, args []string) (*lspSession, error) {
 	}, nil
 }
 
-func writeJSON(v any) error {
-	return json.NewEncoder(os.Stdout).Encode(v)
+func writeJSON(w io.Writer, v any) error {
+	return json.NewEncoder(w).Encode(v)
 }
 
 // parsePositionArgs extracts file, line (1-based), symbol, and cwd from args.

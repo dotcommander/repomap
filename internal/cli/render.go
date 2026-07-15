@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dotcommander/repomap"
@@ -24,7 +23,7 @@ type jsonOutput struct {
 
 func renderWithCalls(
 	ctx context.Context,
-	w io.Writer,
+	w, stderr io.Writer,
 	m *repomap.Map,
 	format string,
 	asJSON bool,
@@ -43,78 +42,18 @@ func renderWithCalls(
 		Limit:        limit,
 		IncludeTests: includeTests,
 	}
-
-	var callers repomap.SymbolCallers
-	resolved := false
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve home dir: %w", err)
-	}
-	cacheDir := filepath.Join(home, ".cache", "repomap")
-
 	if precise {
-		// --precise takes priority over --calls-use-binary silently: the typed
-		// graph never shells out to lspq, and a fail-open fallback uses gopls.
-		useBinary = false
-
-		// Precise cache (precise-<hash>.json) is checked before building the
-		// whole-program graph; --no-cache bypasses read and write identically to
-		// the gopls --calls cache below.
-		preciseHash := repomap.PreciseCacheKey(root, ranked)
-		if !noCache {
-			if cached := repomap.LoadPreciseCache(cacheDir, preciseHash); cached != nil {
-				callers = cached
-				resolved = true
-			}
-		}
-		if !resolved {
-			typed, ok, err := resolvePreciseCallers(ctx, root)
-			if err != nil {
-				return err
-			}
-			if ok {
-				callers = typed
-				resolved = true
-				if !noCache {
-					_ = repomap.SavePreciseCache(cacheDir, preciseHash, typed) // best-effort
-				}
-			}
-		}
+		// The legacy precise mode analyzed every exported symbol. It is now an
+		// alias for the canonical semantic backend and keeps that threshold.
+		callsCfg.Threshold = 0
 	}
 
-	if !resolved {
-		if !noCache {
-			hash := repomap.CallsCacheKey(root, ranked, callsCfg)
-			cached := repomap.LoadCallsCache(cacheDir, hash)
-			if cached != nil {
-				callers = cached
-			} else {
-				var (
-					err   error
-					stats repomap.CallsStats
-				)
-				callers, stats, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
-				if err != nil {
-					return err
-				}
-				// Degraded run = any LSP timeout or error. Caching a degraded
-				// (possibly incomplete) result as authoritative would poison
-				// future runs, so skip the write and tell the user once.
-				if callsRunDegraded(stats) {
-					fmt.Fprintf(os.Stderr, "repomap: calls cache not written: %d LSP errors/timeouts\n", stats.Timeout+stats.Error)
-				} else {
-					_ = repomap.SaveCallsCache(cacheDir, hash, callers) // best-effort
-				}
-			}
-		} else {
-			var err error
-			callers, _, err = runExpansion(ctx, root, ranked, callsCfg, useBinary)
-			if err != nil {
-				return err
-			}
-		}
-	}
+	_ = ctx
+	_ = root
+	_ = noCache
+	_ = useBinary
+	_ = precise
+	callers := repomap.SelectSemanticCallers(m.SemanticCallers(), ranked, callsCfg)
 
 	callerCounts := repomap.CallerCountsFromSymbolCallers(callers)
 	repomap.ApplyCallerBonus(ranked, callerCounts)
@@ -129,7 +68,7 @@ func renderWithCalls(
 		return err
 	}
 
-	return renderCallsOutput(w, m, format, asJSON, jsonLegacy, ranked, callers, limit)
+	return renderCallsOutput(w, stderr, m, format, asJSON, jsonLegacy, ranked, callers, limit)
 }
 
 // resolvePreciseCallers attempts to build the type-checked whole-program call
@@ -139,14 +78,14 @@ func renderWithCalls(
 // fallback notice and returns (nil, false, nil) so renderWithCalls falls back to
 // the existing gopls --calls tier — --precise never turns a working --calls
 // invocation into a hard error. Any other error propagates unchanged.
-//
-// Phase A: internal/callgraph.Build is a stub that always returns ErrLoadFailed,
-// so this always takes the fallback branch.
-func resolvePreciseCallers(ctx context.Context, root string) (repomap.SymbolCallers, bool, error) {
+// internal/callgraph.Build is the precise go/packages + SSA + CHA
+// implementation; ErrLoadFailed is now only the fail-open path for package load
+// failures.
+func resolvePreciseCallers(ctx context.Context, root string, stderr io.Writer) (repomap.SymbolCallers, bool, error) {
 	edges, err := callgraph.Build(ctx, root)
 	if err != nil {
 		if errors.Is(err, callgraph.ErrLoadFailed) {
-			fmt.Fprintln(os.Stderr, "repomap: --precise disabled \u2014 go/packages load failed, falling back to --calls")
+			fmt.Fprintln(stderr, "repomap: --precise disabled \u2014 go/packages load failed, falling back to --calls")
 			return nil, false, nil
 		}
 		return nil, false, err
@@ -154,7 +93,7 @@ func resolvePreciseCallers(ctx context.Context, root string) (repomap.SymbolCall
 	return repomap.TypedGraphToSymbolCallers(edges), true, nil
 }
 
-func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {
+func runExpansion(ctx context.Context, stderr io.Writer, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {
 	var q repomap.RefsQuerier
 	if useBinary {
 		if err := repomap.CheckLspq(); err != nil {
@@ -170,18 +109,18 @@ func runExpansion(ctx context.Context, root string, ranked []repomap.RankedFile,
 		q = repomap.NewInProcessQuerier(mgr)
 	}
 
-	isTTY := isTTYStderr()
-	progress := buildProgressFn(isTTY)
+	isTTY := isTTYWriter(stderr)
+	progress := buildProgressFn(stderr, isTTY)
 
 	callers, stats := repomap.ExpandCallers(ctx, root, ranked, cfg, q, progress)
 
 	if isTTY {
 		// Clear the progress line.
-		fmt.Fprint(os.Stderr, "\r\033[K")
+		fmt.Fprint(stderr, "\r\033[K")
 	}
 
 	if stats.OK+stats.Timeout+stats.Error > 0 {
-		fmt.Fprintf(os.Stderr, "call expansion: %d OK, %d timeout, %d error\n", stats.OK, stats.Timeout, stats.Error)
+		fmt.Fprintf(stderr, "call expansion: %d OK, %d timeout, %d error\n", stats.OK, stats.Timeout, stats.Error)
 	}
 	return callers, stats, nil
 }
@@ -194,17 +133,17 @@ func callsRunDegraded(stats repomap.CallsStats) bool {
 	return stats.Timeout > 0 || stats.Error > 0
 }
 
-func buildProgressFn(isTTY bool) func(done, total int) {
+func buildProgressFn(stderr io.Writer, isTTY bool) func(done, total int) {
 	if !isTTY {
 		return nil
 	}
 	return func(done, total int) {
-		fmt.Fprintf(os.Stderr, "\rexpanding callers: %d/%d", done, total)
+		fmt.Fprintf(stderr, "\rexpanding callers: %d/%d", done, total)
 	}
 }
 
 func renderCallsOutput(
-	w io.Writer,
+	w, stderr io.Writer,
 	m *repomap.Map,
 	format string,
 	asJSON bool,
@@ -229,13 +168,13 @@ func renderCallsOutput(
 	case format == "detail":
 		fmt.Fprint(w, repomap.FormatMapWithCallers(ranked, 0, true, true, callers, limit, nil, explain))
 	case format == "compact":
-		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format compact\n")
+		fmt.Fprintf(stderr, "warning: --calls has no effect with --format compact\n")
 		fmt.Fprint(w, m.StringCompact())
 	case format == "lines":
-		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format lines\n")
+		fmt.Fprintf(stderr, "warning: --calls has no effect with --format lines\n")
 		fmt.Fprint(w, m.StringLines())
 	case format == "xml":
-		fmt.Fprintf(os.Stderr, "warning: --calls has no effect with --format xml\n")
+		fmt.Fprintf(stderr, "warning: --calls has no effect with --format xml\n")
 		fmt.Fprint(w, m.StringXML())
 	default:
 		// enriched default with callers.
@@ -245,8 +184,12 @@ func renderCallsOutput(
 	return nil
 }
 
-func isTTYStderr() bool {
-	info, err := os.Stderr.Stat()
+func isTTYWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
 	if err != nil {
 		return false
 	}

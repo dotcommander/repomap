@@ -11,50 +11,41 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
-func newImpactCmd() *cobra.Command {
-	var (
-		jsonOut     bool
-		markdownOut bool
-	)
-	cmd := &cobra.Command{
-		Use:   "impact <file>",
-		Short: "Show deterministic local impact facts for a file",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if jsonOut && markdownOut {
-				return fmt.Errorf("--json and --markdown are mutually exclusive")
-			}
-			root, rel, err := impactRootAndPath(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			m := repomap.New(root, repomap.DefaultConfig())
-			if err := m.Build(cmd.Context()); err != nil {
-				return err
-			}
-			impact, err := m.Impact(rel)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(impact)
-			}
-			if markdownOut {
-				printImpactMarkdown(cmd.OutOrStdout(), impact)
-				return nil
-			}
-			printImpact(cmd.OutOrStdout(), impact)
-			return nil
-		},
+type impactCommand struct {
+	JSON     bool   `help:"Emit machine-readable impact JSON"`
+	Markdown bool   `help:"Emit compact Markdown impact handoff"`
+	File     string `arg:"" type:"path" help:"File to inspect"`
+}
+
+func (c *impactCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	if c.JSON && c.Markdown {
+		return fmt.Errorf("--json and --markdown are mutually exclusive")
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable impact JSON")
-	cmd.Flags().BoolVar(&markdownOut, "markdown", false, "Emit compact Markdown impact handoff")
-	return cmd
+	root, rel, err := impactRootAndPath(ctx, c.File)
+	if err != nil {
+		return err
+	}
+	m := repomap.New(root, repomap.DefaultConfig())
+	if err := m.Build(ctx); err != nil {
+		return err
+	}
+	impact, err := m.Impact(rel)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		enc := json.NewEncoder(ioctx.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(impact)
+	}
+	if c.Markdown {
+		printImpactMarkdown(ioctx.stdout, impact)
+		return nil
+	}
+	printImpact(ioctx.stdout, impact)
+	return nil
 }
 
 func impactRootAndPath(ctx context.Context, arg string) (root, rel string, err error) {

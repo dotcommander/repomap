@@ -41,22 +41,24 @@ func (c *outputCache) reset() {
 
 // diskCache is the on-disk format for a cached repomap build.
 type diskCache struct {
-	Version    int    `json:"version"`
-	Root       string `json:"root"`
-	ConfigHash string `json:"config_hash"`
-	BuiltAt       time.Time            `json:"built_at"`
-	Mtimes        map[string]time.Time `json:"mtimes"`
-	ContentHashes map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
-	ScanFP        string               `json:"scan_fp,omitempty"`
-	Coverage      ParseCoverage        `json:"coverage,omitempty"`
-	Output        string               `json:"output"`
-	OutputLines   string               `json:"output_lines"`
-	Ranked        []RankedFile         `json:"ranked"`
-	LastSHA       string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
-	GitRoot       bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
+	Version         int                  `json:"version"`
+	Root            string               `json:"root"`
+	ConfigHash      string               `json:"config_hash"`
+	BuiltAt         time.Time            `json:"built_at"`
+	Mtimes          map[string]time.Time `json:"mtimes"`
+	ContentHashes   map[string]string    `json:"content_hashes,omitempty"` // path → sha256 hex; absent in old caches (mtime fallback)
+	ScanFP          string               `json:"scan_fp,omitempty"`
+	Coverage        ParseCoverage        `json:"coverage,omitempty"`
+	Output          string               `json:"output"`
+	OutputLines     string               `json:"output_lines"`
+	Ranked          []RankedFile         `json:"ranked"`
+	SemanticCallers SymbolCallers        `json:"semantic_callers,omitempty"`
+	GoDiagnostics   []GoDiagnostic       `json:"go_diagnostics,omitempty"`
+	LastSHA         string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
+	GitRoot         bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
 }
 
-const cacheVersion = 12
+const cacheVersion = 13
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -79,17 +81,19 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		return FormatLines(m.ranked, m.config.MaxTokensNoCtx, m.root)
 	})
 	entry := diskCache{
-		Version:       cacheVersion,
-		Root:          m.root,
-		ConfigHash:    m.configHash(),
-		BuiltAt:       m.builtAt,
-		Mtimes:        m.mtimes,
-		ContentHashes: m.contentHashes,
-		ScanFP:        m.scanFP,
-		Coverage:      m.coverage,
-		Output:        compact,
-		OutputLines:   lines,
-		Ranked:        m.ranked,
+		Version:         cacheVersion,
+		Root:            m.root,
+		ConfigHash:      m.configHash(),
+		BuiltAt:         m.builtAt,
+		Mtimes:          m.mtimes,
+		ContentHashes:   m.contentHashes,
+		ScanFP:          m.scanFP,
+		Coverage:        m.coverage,
+		Output:          compact,
+		OutputLines:     lines,
+		Ranked:          m.ranked,
+		SemanticCallers: m.semanticCallers,
+		GoDiagnostics:   m.goDiagnostics,
 	}
 	if isInsideGitRepo(m.root) {
 		entry.GitRoot = true
@@ -137,6 +141,8 @@ func (m *Map) LoadCache(cacheDir string) bool {
 	m.contentHashes = entry.ContentHashes // nil for old caches → mtime-only fallback
 	m.scanFP = entry.ScanFP
 	m.coverage = entry.Coverage
+	m.semanticCallers = entry.SemanticCallers
+	m.goDiagnostics = entry.GoDiagnostics
 	m.mu.Unlock()
 
 	return true
@@ -154,9 +160,9 @@ func cachePath(cacheDir, root string) string {
 func (m *Map) configHash() string {
 	bl, _ := json.Marshal(m.blocklist)
 	c := m.config
-	s := fmt.Sprintf("%d|%d|%s|%s|%t|%t|%t|%d|%s",
+	s := fmt.Sprintf("%d|%d|%s|%s|%t|%t|%t|%t|%t|%t|%d|%s",
 		c.MaxTokens, c.MaxTokensNoCtx, c.Intent, strings.Join(c.ConsumedPaths, ","),
-		c.SymbolRefs, c.Explain, c.IncludeTests, c.MaxFileSize, bl)
+		c.SymbolRefs, c.Explain, c.IncludeTests, c.GoAnalysis, c.GoAnalysisCalls, c.GoAnalysisTests, c.MaxFileSize, bl)
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }

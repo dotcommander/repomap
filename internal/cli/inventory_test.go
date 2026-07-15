@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,12 +39,8 @@ func TestOpen(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "migrations", "001_schema.sql"), []byte("create table users(id int);\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "docs", "postgres.md"), []byte("PostgreSQL schema notes\n"), 0o644))
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"inventory", "--boundary", "Postgres", "--json", root})
-
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"inventory", "--boundary", "Postgres", "--json", root}, &out, io.Discard))
 
 	var report inventoryReport
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))

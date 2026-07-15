@@ -14,11 +14,7 @@ import (
 func runEndpointCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	cmd := newEndpointCmd()
-	cmd.SetOut(&buf)
-	cmd.SetErr(&buf)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := execute(t.Context(), append([]string{"endpoint"}, args...), &buf, &buf)
 	return buf.String(), err
 }
 

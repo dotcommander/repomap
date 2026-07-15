@@ -14,11 +14,7 @@ import (
 func runBriefCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	cmd := newBriefCmd()
-	cmd.SetOut(&buf)
-	cmd.SetErr(&buf)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := execute(t.Context(), append([]string{"brief"}, args...), &buf, &buf)
 	return buf.String(), err
 }
 

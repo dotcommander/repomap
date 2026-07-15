@@ -8,8 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/spf13/cobra"
 )
 
 // preflightProbeTimeout caps each git/gh probe so a stalled subprocess cannot
@@ -22,64 +20,59 @@ var preflightProbeTimeout = 10 * time.Second //nolint:gochecknoglobals // var no
 // It runs six independent git/gh probes and emits a column-aligned context
 // block identical to the cpt.md preflight header, so commit-agent can read
 // it via `!repomap commit-preflight` instead of six separate shell expansions.
-func newCommitPreflightCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "commit-preflight",
-		Short: "Emit git/gh context block for commit preflight",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			out := cmd.OutOrStdout()
-			ctx := cmd.Context()
+type commitPreflightCommand struct{}
 
-			// Each probe is independent — a failure (or timeout) in one must not
-			// abort the rest. runTrimmed/runLines/unpushedLines/ghAuthLine each
-			// derive their own bounded sub-context from ctx.
-			branch := runTrimmed(ctx, "git", "branch", "--show-current")
-			working := runLines(ctx, "git", "status", "--short", "--", ".") // cap at 20 lines
-			if len(working) > 20 {
-				working = working[:20]
-			}
-			remote := runTrimmed(ctx, "git", "remote")
-			if remote == "" {
-				remote = "(none)"
-			} else {
-				// take first line only (mirrors `| head -1`)
-				if idx := strings.IndexByte(remote, '\n'); idx >= 0 {
-					remote = remote[:idx]
-				}
-			}
-			unpushed := unpushedLines(ctx)
-			latestTag := runTrimmed(ctx, "git", "describe", "--tags", "--abbrev=0")
-			if latestTag == "" {
-				latestTag = "(none)"
-			}
-			ghAuth := ghAuthLine(ctx)
+func (c *commitPreflightCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	out := ioctx.stdout
 
-			// Column widths match cpt.md exactly:
-			//   Branch:      (6 spaces after colon)
-			//   Working:     (5 spaces)
-			//   Remote:      (6 spaces)
-			//   Unpushed:    (4 spaces)
-			//   Latest tag:  (2 spaces)
-			//   GH auth:     (5 spaces)
-			if _, err := fmt.Fprintf(out, "Branch:      %s\n", branch); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "Working:     %s\n", strings.Join(working, "\n             ")); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "Remote:      %s\n", remote); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "Unpushed:    %s\n", unpushed); err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(out, "Latest tag:  %s\n", latestTag); err != nil {
-				return err
-			}
-			_, err := fmt.Fprintf(out, "GH auth:     %s\n", ghAuth)
-			return err
-		},
+	// Each probe is independent — a failure (or timeout) in one must not
+	// abort the rest. runTrimmed/runLines/unpushedLines/ghAuthLine each
+	// derive their own bounded sub-context from ctx.
+	branch := runTrimmed(ctx, "git", "branch", "--show-current")
+	working := runLines(ctx, "git", "status", "--short", "--", ".") // cap at 20 lines
+	if len(working) > 20 {
+		working = working[:20]
 	}
+	remote := runTrimmed(ctx, "git", "remote")
+	if remote == "" {
+		remote = "(none)"
+	} else {
+		// take first line only (mirrors `| head -1`)
+		if idx := strings.IndexByte(remote, '\n'); idx >= 0 {
+			remote = remote[:idx]
+		}
+	}
+	unpushed := unpushedLines(ctx)
+	latestTag := runTrimmed(ctx, "git", "describe", "--tags", "--abbrev=0")
+	if latestTag == "" {
+		latestTag = "(none)"
+	}
+	ghAuth := ghAuthLine(ctx)
+
+	// Column widths match cpt.md exactly:
+	//   Branch:      (6 spaces after colon)
+	//   Working:     (5 spaces)
+	//   Remote:      (6 spaces)
+	//   Unpushed:    (4 spaces)
+	//   Latest tag:  (2 spaces)
+	//   GH auth:     (5 spaces)
+	if _, err := fmt.Fprintf(out, "Branch:      %s\n", branch); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Working:     %s\n", strings.Join(working, "\n             ")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Remote:      %s\n", remote); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Unpushed:    %s\n", unpushed); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Latest tag:  %s\n", latestTag); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(out, "GH auth:     %s\n", ghAuth)
+	return err
 }
 
 // probeCmd builds an exec.Cmd whose context is bounded by

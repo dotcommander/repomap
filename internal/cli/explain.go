@@ -1,45 +1,40 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
-func newExplainCmd() *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:   "explain <file>",
-		Short: "Show why a file ranked and rendered the way it did",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root, rel, err := impactRootAndPath(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			m := repomap.New(root, repomap.DefaultConfig())
-			if err := m.Build(cmd.Context()); err != nil {
-				return err
-			}
-			explain, err := m.Explain(rel)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(explain)
-			}
-			printExplain(cmd.OutOrStdout(), explain)
-			return nil
-		},
+type explainCommand struct {
+	File string `arg:"" type:"path" help:"File to explain"`
+	JSON bool   `help:"Emit machine-readable explain JSON"`
+}
+
+func (c *explainCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	root, rel, err := impactRootAndPath(ctx, c.File)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable explain JSON")
-	return cmd
+	m := repomap.New(root, repomap.DefaultConfig())
+	if err := m.Build(ctx); err != nil {
+		return err
+	}
+	explain, err := m.Explain(rel)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		enc := json.NewEncoder(ioctx.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(explain)
+	}
+	printExplain(ioctx.stdout, explain)
+	return nil
 }
 
 // tierAnnotation returns the short clarifying suffix for a tier label.

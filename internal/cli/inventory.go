@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
 type inventoryReport struct {
@@ -25,48 +25,36 @@ type inventoryReport struct {
 	Docs          []string `json:"docs,omitempty"`
 }
 
-func newInventoryCmd() *cobra.Command {
-	var (
-		boundary string
-		jsonOut  bool
-	)
-	cmd := &cobra.Command{
-		Use:   "inventory [directory]",
-		Short: "Answer ownership for a boundary such as Postgres",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-			root, err := filepath.Abs(dir)
-			if err != nil {
-				return fmt.Errorf("resolve path: %w", err)
-			}
-			report, err := buildInventoryReport(cmd, root, boundary)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(report)
-			}
-			return printInventory(cmd.OutOrStdout(), report)
-		},
-	}
-	cmd.Flags().StringVar(&boundary, "boundary", "", "Boundary to inventory (for example Postgres)")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable inventory JSON")
-	return cmd
+type inventoryCommand struct {
+	Boundary  string `required:"" help:"Boundary to inventory (for example Postgres)"`
+	JSON      bool   `help:"Emit machine-readable inventory JSON"`
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to inventory"`
 }
 
-func buildInventoryReport(cmd *cobra.Command, root, boundary string) (inventoryReport, error) {
+func (c *inventoryCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	root, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+	report, err := buildInventoryReport(ctx, root, c.Boundary)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		enc := json.NewEncoder(ioctx.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(report)
+	}
+	return printInventory(ioctx.stdout, report)
+}
+
+func buildInventoryReport(ctx context.Context, root, boundary string) (inventoryReport, error) {
 	if strings.TrimSpace(boundary) == "" {
 		return inventoryReport{}, fmt.Errorf("--boundary is required")
 	}
 	cfg := repomap.Config{MaxTokens: 0, MaxTokensNoCtx: 0, Intent: boundary + " database migrations schema queries"}
 	m := repomap.New(root, cfg)
-	if err := m.Build(cmd.Context()); err != nil {
+	if err := m.Build(ctx); err != nil {
 		return inventoryReport{}, err
 	}
 
@@ -84,7 +72,7 @@ func buildInventoryReport(cmd *cobra.Command, root, boundary string) (inventoryR
 		report.Constructors = append(report.Constructors, file.Path)
 	}
 
-	effects, err := m.AuditEffects(cmd.Context(), 0)
+	effects, err := m.AuditEffects(ctx, 0)
 	if err != nil {
 		return inventoryReport{}, err
 	}

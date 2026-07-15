@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,12 +25,8 @@ func TestAuditCommandHygieneJSON(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "ignored", "local.go"), []byte("package ignored\n\nfunc Local() {}\n"), 0o644))
 	runGitForCLIAuditTest(t, root, "add", ".gitignore", "main.go")
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"audit", "hygiene", "--json", root})
-
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "hygiene", "--json", root}, &out, io.Discard))
 
 	var report repomap.AuditHygieneReport
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
@@ -63,11 +60,8 @@ func main() {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"audit-fixture"}`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644))
 
-	cmd := newRootCmd()
 	var surfaceOut bytes.Buffer
-	cmd.SetOut(&surfaceOut)
-	cmd.SetArgs([]string{"audit", "surface", "--json", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "surface", "--json", root}, &surfaceOut, io.Discard))
 
 	var surface repomap.AuditSurfaceReport
 	require.NoError(t, json.Unmarshal(surfaceOut.Bytes(), &surface))
@@ -76,11 +70,8 @@ func main() {
 	assert.NotEmpty(t, surface.SchemaFields)
 	assert.NotEmpty(t, surface.DependencyManifests)
 
-	cmd = newRootCmd()
 	var effectsOut bytes.Buffer
-	cmd.SetOut(&effectsOut)
-	cmd.SetArgs([]string{"audit", "effects", "--json", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "effects", "--json", root}, &effectsOut, io.Discard))
 
 	var effects repomap.AuditEffectReport
 	require.NoError(t, json.Unmarshal(effectsOut.Bytes(), &effects))
@@ -88,11 +79,8 @@ func main() {
 	assert.Contains(t, effects.Files[0].Lanes, "data-integrity")
 	assert.Contains(t, effects.Files[0].Lanes, "error-handling")
 
-	cmd = newRootCmd()
 	var briefOut bytes.Buffer
-	cmd.SetOut(&briefOut)
-	cmd.SetArgs([]string{"audit", "brief", "--json", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "brief", "--json", root}, &briefOut, io.Discard))
 
 	var brief repomap.AuditBriefReport
 	require.NoError(t, json.Unmarshal(briefOut.Bytes(), &brief))
@@ -120,11 +108,8 @@ func main() {
 `
 	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o644))
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"audit", "effects", "--kind", "database", "--paths-only", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "effects", "--kind", "database", "--paths-only", root}, &out, io.Discard))
 
 	assert.Equal(t, "main.go\n", out.String())
 }
@@ -136,11 +121,8 @@ func TestAuditCommandTopFilesAlias(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.go"), []byte("package main\n\nfunc a() { panic(\"a\") }\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "b.go"), []byte("package main\n\nfunc b() { panic(\"b\") }\n"), 0o644))
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"audit", "effects", "--json", "--top-files", "1", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "effects", "--json", "--top-files", "1", root}, &out, io.Discard))
 
 	var report repomap.AuditEffectReport
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
@@ -151,16 +133,10 @@ func TestAuditCommandTopFilesAlias(t *testing.T) {
 func TestAuditCommandRegistered(t *testing.T) {
 	t.Parallel()
 
-	cmd := newRootCmd()
-	require.NotNil(t, cmd.Commands())
-	found := false
-	for _, sub := range cmd.Commands() {
-		if sub.Name() == "audit" {
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "audit command must be registered")
+	var out bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"audit", "--help"}, &out, io.Discard))
+	assert.Contains(t, out.String(), "repomap audit")
+	assert.Contains(t, out.String(), "hygiene")
 }
 
 func runGitForCLIAuditTest(t *testing.T, root string, args ...string) {
@@ -182,11 +158,8 @@ func TestAuditCommandSurfaceFilesNeverNull(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "noop.go"),
 		[]byte("package noop\n\nfunc helper() int { return 1 }\n"), 0o644))
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"audit", "surface", "--json", root})
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"audit", "surface", "--json", root}, &out, io.Discard))
 
 	raw := out.String()
 	assert.Contains(t, raw, `"files": []`, "empty surface must emit [] not null")

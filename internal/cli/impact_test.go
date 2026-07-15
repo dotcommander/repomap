@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,12 +47,8 @@ func Middleware() string {
 }
 `), 0o644))
 
-	cmd := newRootCmd()
 	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"impact", "--markdown", filepath.Join(root, "internal", "auth", "token.go")})
-
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, executeTest(t, []string{"impact", "--markdown", filepath.Join(root, "internal", "auth", "token.go")}, &out, io.Discard))
 
 	got := out.String()
 	assert.Contains(t, got, "# Impact: `internal/auth/token.go`")
@@ -72,10 +69,7 @@ func Middleware() string {
 func TestImpactCommandRejectsMultipleFormats(t *testing.T) {
 	t.Parallel()
 
-	cmd := newRootCmd()
-	cmd.SetArgs([]string{"impact", "--json", "--markdown", "file.go"})
-
-	err := cmd.Execute()
+	err := executeTest(t, []string{"impact", "--json", "--markdown", "file.go"}, io.Discard, io.Discard)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--json and --markdown are mutually exclusive")
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,196 +10,114 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
-func newAuditCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "audit",
-		Short: "Emit deterministic audit prepass facts",
-		Long: `Emit deterministic audit prepass facts for deep-review workflows.
-
-Audit commands produce leads and lane packets, not final findings. Promote a
-lead only after checking source, docs, runtime behavior, or another
-authoritative signal.`,
-	}
-	cmd.AddCommand(newAuditHygieneCmd())
-	cmd.AddCommand(newAuditBriefCmd())
-	cmd.AddCommand(newAuditRisksCmd())
-	cmd.AddCommand(newAuditSurfaceCmd())
-	cmd.AddCommand(newAuditEffectsCmd())
-	return cmd
+type auditCommand struct {
+	Hygiene auditHygieneCommand `cmd:"" help:"Report tracked, untracked, and ignored source-file hygiene"`
+	Brief   auditBriefCommand   `cmd:"" help:"Report risks, surfaces, effects, and first-read queue in one map build"`
+	Risks   auditRisksCommand   `cmd:"" help:"Report risk-ranked files and suggested deep-audit lanes"`
+	Surface auditSurfaceCommand `cmd:"" help:"Report deterministic command, flag, config, schema, route, and output surfaces"`
+	Effects auditEffectsCommand `cmd:"" help:"Report deterministic side-effect and trust-boundary packets"`
 }
 
-func newAuditHygieneCmd() *cobra.Command {
-	var jsonOut bool
-	cmd := &cobra.Command{
-		Use:   "hygiene [directory]",
-		Short: "Report tracked, untracked, and ignored source-file hygiene",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := auditRoot(args)
-			if err != nil {
-				return err
-			}
-			report, err := repomap.AuditHygiene(cmd.Context(), root)
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return encodeAuditJSON(cmd.OutOrStdout(), report)
-			}
-			return printAuditHygiene(cmd.OutOrStdout(), report)
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable audit hygiene JSON")
-	return cmd
+type auditHygieneCommand struct {
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to audit"`
+	JSON      bool   `help:"Emit machine-readable audit hygiene JSON"`
 }
 
-func newAuditBriefCmd() *cobra.Command {
-	var (
-		jsonOut  bool
-		limit    int
-		topFiles int
-		intent   string
-	)
-	cmd := &cobra.Command{
-		Use:   "brief [directory]",
-		Short: "Report risks, surfaces, effects, and first-read queue in one map build",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := buildAuditMap(cmd, args, intent)
-			if err != nil {
-				return err
-			}
-			report, err := m.AuditBrief(cmd.Context(), auditLimit(limit, topFiles))
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return encodeAuditJSON(cmd.OutOrStdout(), report)
-			}
-			return printAuditBrief(cmd.OutOrStdout(), report)
-		},
+func (c *auditHygieneCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	root, err := auditRoot(c.Directory)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable audit brief JSON")
-	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum risk/surface/effect files to emit (0 = all)")
-	cmd.Flags().IntVar(&topFiles, "top-files", 0, "Alias for --limit; maximum files to emit (0 = use --limit)")
-	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Optional audit intent used to rerank files before packet generation")
-	return cmd
+	report, err := repomap.AuditHygiene(ctx, root)
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		return encodeAuditJSON(ioctx.stdout, report)
+	}
+	return printAuditHygiene(ioctx.stdout, report)
 }
 
-func newAuditRisksCmd() *cobra.Command {
-	var (
-		jsonOut  bool
-		limit    int
-		topFiles int
-		intent   string
-	)
-	cmd := &cobra.Command{
-		Use:   "risks [directory]",
-		Short: "Report risk-ranked files and suggested deep-audit lanes",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := auditRoot(args)
-			if err != nil {
-				return err
-			}
-			cfg := repomap.Config{
-				MaxTokens:      0,
-				MaxTokensNoCtx: 0,
-				Intent:         intent,
-			}
-			m := repomap.New(root, cfg)
-			if err := m.Build(cmd.Context()); err != nil {
-				return err
-			}
-			report := m.AuditRisks(auditLimit(limit, topFiles))
-			if jsonOut {
-				return encodeAuditJSON(cmd.OutOrStdout(), report)
-			}
-			return printAuditRisks(cmd.OutOrStdout(), report)
-		},
-	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable audit risk JSON")
-	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum file risk packets to emit (0 = all)")
-	cmd.Flags().IntVar(&topFiles, "top-files", 0, "Alias for --limit; maximum files to emit (0 = use --limit)")
-	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Optional audit intent used to rerank files before risk packet generation")
-	return cmd
+type auditMapOptions struct {
+	Limit     int    `default:"20" help:"Maximum files to emit (0 = all)"`
+	TopFiles  int    `name:"top-files" help:"Alias for --limit; maximum files to emit (0 = use --limit)"`
+	Intent    string `short:"i" help:"Optional audit intent used to rerank files before packet generation"`
+	JSON      bool   `help:"Emit machine-readable audit JSON"`
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to audit"`
+}
+type auditBriefCommand struct {
+	auditMapOptions
+}
+type auditRisksCommand struct {
+	auditMapOptions
+}
+type auditSurfaceCommand struct {
+	auditMapOptions
+}
+type auditEffectsCommand struct {
+	auditMapOptions
+	Kind      string `help:"Filter effects by kind (for example database, subprocess, filesystem-write)"`
+	PathsOnly bool   `name:"paths-only" help:"Emit only matching file paths"`
 }
 
-func newAuditSurfaceCmd() *cobra.Command {
-	var (
-		jsonOut  bool
-		limit    int
-		topFiles int
-		intent   string
-	)
-	cmd := &cobra.Command{
-		Use:   "surface [directory]",
-		Short: "Report deterministic command, flag, config, schema, route, and output surfaces",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := buildAuditMap(cmd, args, intent)
-			if err != nil {
-				return err
-			}
-			report, err := m.AuditSurface(cmd.Context(), auditLimit(limit, topFiles))
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return encodeAuditJSON(cmd.OutOrStdout(), report)
-			}
-			return printAuditSurface(cmd.OutOrStdout(), report)
-		},
+func (c *auditBriefCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	m, err := buildAuditMap(ctx, c.Directory, c.Intent)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable audit surface JSON")
-	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum files to emit (0 = all)")
-	cmd.Flags().IntVar(&topFiles, "top-files", 0, "Alias for --limit; maximum files to emit (0 = use --limit)")
-	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Optional audit intent used to rerank files before surface extraction")
-	return cmd
+	report, err := m.AuditBrief(ctx, auditLimit(c.Limit, c.TopFiles))
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		return encodeAuditJSON(ioctx.stdout, report)
+	}
+	return printAuditBrief(ioctx.stdout, report)
 }
-
-func newAuditEffectsCmd() *cobra.Command {
-	var (
-		jsonOut   bool
-		limit     int
-		topFiles  int
-		intent    string
-		kind      string
-		pathsOnly bool
-	)
-	cmd := &cobra.Command{
-		Use:   "effects [directory]",
-		Short: "Report deterministic side-effect and trust-boundary packets",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := buildAuditMap(cmd, args, intent)
-			if err != nil {
-				return err
-			}
-			report, err := m.AuditEffects(cmd.Context(), auditLimit(limit, topFiles))
-			if err != nil {
-				return err
-			}
-			report = filterAuditEffects(report, kind)
-			if pathsOnly {
-				return printAuditEffectPaths(cmd.OutOrStdout(), report, jsonOut)
-			}
-			if jsonOut {
-				return encodeAuditJSON(cmd.OutOrStdout(), report)
-			}
-			return printAuditEffects(cmd.OutOrStdout(), report)
-		},
+func (c *auditRisksCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	m, err := buildAuditMap(ctx, c.Directory, c.Intent)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable audit effects JSON")
-	cmd.Flags().IntVar(&limit, "limit", 20, "Maximum files to emit (0 = all)")
-	cmd.Flags().IntVar(&topFiles, "top-files", 0, "Alias for --limit; maximum files to emit (0 = use --limit)")
-	cmd.Flags().StringVar(&kind, "kind", "", "Filter effects by kind (for example database, subprocess, filesystem-write)")
-	cmd.Flags().BoolVar(&pathsOnly, "paths-only", false, "Emit only matching file paths")
-	cmd.Flags().StringVarP(&intent, "intent", "i", "", "Optional audit intent used to rerank files before effect extraction")
-	return cmd
+	report := m.AuditRisks(auditLimit(c.Limit, c.TopFiles))
+	if c.JSON {
+		return encodeAuditJSON(ioctx.stdout, report)
+	}
+	return printAuditRisks(ioctx.stdout, report)
+}
+func (c *auditSurfaceCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	m, err := buildAuditMap(ctx, c.Directory, c.Intent)
+	if err != nil {
+		return err
+	}
+	report, err := m.AuditSurface(ctx, auditLimit(c.Limit, c.TopFiles))
+	if err != nil {
+		return err
+	}
+	if c.JSON {
+		return encodeAuditJSON(ioctx.stdout, report)
+	}
+	return printAuditSurface(ioctx.stdout, report)
+}
+func (c *auditEffectsCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	m, err := buildAuditMap(ctx, c.Directory, c.Intent)
+	if err != nil {
+		return err
+	}
+	report, err := m.AuditEffects(ctx, auditLimit(c.Limit, c.TopFiles))
+	if err != nil {
+		return err
+	}
+	report = filterAuditEffects(report, c.Kind)
+	if c.PathsOnly {
+		return printAuditEffectPaths(ioctx.stdout, report, c.JSON)
+	}
+	if c.JSON {
+		return encodeAuditJSON(ioctx.stdout, report)
+	}
+	return printAuditEffects(ioctx.stdout, report)
 }
 
 func auditLimit(limit, topFiles int) int {
@@ -353,8 +272,8 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func buildAuditMap(cmd *cobra.Command, args []string, intent string) (*repomap.Map, error) {
-	root, err := auditRoot(args)
+func buildAuditMap(ctx context.Context, directory, intent string) (*repomap.Map, error) {
+	root, err := auditRoot(directory)
 	if err != nil {
 		return nil, err
 	}
@@ -364,18 +283,17 @@ func buildAuditMap(cmd *cobra.Command, args []string, intent string) (*repomap.M
 		Intent:         intent,
 	}
 	m := repomap.New(root, cfg)
-	if err := m.Build(cmd.Context()); err != nil {
+	if err := m.Build(ctx); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func auditRoot(args []string) (string, error) {
-	dir := "."
-	if len(args) > 0 {
-		dir = args[0]
+func auditRoot(directory string) (string, error) {
+	if directory == "" {
+		directory = "."
 	}
-	root, err := filepath.Abs(dir)
+	root, err := filepath.Abs(directory)
 	if err != nil {
 		return "", fmt.Errorf("resolve path: %w", err)
 	}

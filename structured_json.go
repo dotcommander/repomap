@@ -40,6 +40,8 @@ type StructuredFile struct {
 	Package          string               `json:"package,omitempty"`
 	ImportPath       string               `json:"import_path,omitempty"`
 	ParseMethod      string               `json:"parse_method,omitempty"`
+	BuildActive      bool                 `json:"build_active,omitempty"`
+	AnalysisMode     string               `json:"analysis_mode,omitempty"`
 	Score            int                  `json:"score"`
 	ScoreComponents  map[string]int       `json:"score_components,omitempty"`
 	DetailLevel      int                  `json:"detail_level"`
@@ -179,6 +181,8 @@ func structuredFile(f RankedFile, omitted string) StructuredFile {
 		Package:          f.Package,
 		ImportPath:       f.ImportPath,
 		ParseMethod:      f.ParseMethod,
+		BuildActive:      f.BuildActive,
+		AnalysisMode:     f.AnalysisMode,
 		Score:            f.Score,
 		ScoreComponents:  cloneScoreComponents(f.ScoreComponents),
 		DetailLevel:      f.DetailLevel,

@@ -388,14 +388,14 @@ func TestFormatFileBlockDefault(t *testing.T) {
 }
 
 // makeRankedFileWithLang is like makeRankedFile but allows specifying the language.
-func makeRankedFileWithLang(path, lang string, detailLevel int, syms []Symbol) RankedFile {
+func makeRankedFileWithLang(path, lang string, syms []Symbol) RankedFile {
 	return RankedFile{
 		FileSymbols: &FileSymbols{
 			Path:     path,
 			Language: lang,
 			Symbols:  syms,
 		},
-		DetailLevel: detailLevel,
+		DetailLevel: 2,
 		Score:       10,
 	}
 }
@@ -421,7 +421,7 @@ func TestDocTag(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			f := makeRankedFileWithLang("file.ext", tc.lang, 2, nil)
+			f := makeRankedFileWithLang("file.ext", tc.lang, nil)
 			assert.Equal(t, tc.want, docTag(f))
 		})
 	}
@@ -436,7 +436,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("go file header: no doc n/a tag", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("server/handler.go", "go", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("server/handler.go", "go", []Symbol{sym})
 		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "server/handler.go")
 		assert.NotContains(t, out, "[doc: n/a]")
@@ -444,7 +444,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("php file header: no doc n/a tag (PHPDoc extraction supported)", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("src/Controller.php", "php", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("src/Controller.php", "php", []Symbol{sym})
 		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "src/Controller.php")
 		assert.NotContains(t, out, "[doc: n/a]")
@@ -452,7 +452,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("typescript file header: doc n/a tag present", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("lib/utils.ts", "typescript", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("lib/utils.ts", "typescript", []Symbol{sym})
 		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "lib/utils.ts")
 		assert.Contains(t, out, "[doc: n/a]")
@@ -460,7 +460,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("empty language: doc n/a tag present", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("misc/script", "", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("misc/script", "", []Symbol{sym})
 		out := formatFileBlockDefault(f, false)
 		assert.Contains(t, out, "misc/script")
 		assert.Contains(t, out, "[doc: n/a]")
@@ -468,7 +468,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("no doc n/a tag on php header line (PHPDoc supported)", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("app/router.php", "php", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("app/router.php", "php", []Symbol{sym})
 		// PHP now supports PHPDoc extraction — no [doc: n/a] tag on the header line.
 		line := formatFileLineDefault(f, false)
 		assert.Contains(t, line, "app/router.php", "header line should contain file path")
@@ -477,7 +477,7 @@ func TestFormatFileBlockDefault_DocNATag(t *testing.T) {
 
 	t.Run("doc n/a tag combined with imported-by badge", func(t *testing.T) {
 		t.Parallel()
-		f := makeRankedFileWithLang("lib/base.rb", "ruby", 2, []Symbol{sym})
+		f := makeRankedFileWithLang("lib/base.rb", "ruby", []Symbol{sym})
 		f.ImportedBy = 3
 		out := formatFileBlockDefault(f, false)
 		// Header should contain path, imported-by badge, and doc n/a tag.

@@ -14,11 +14,7 @@ func TestExplainCmdUsesConfiguredOutputWriter(t *testing.T) {
 
 	var buf bytes.Buffer
 	root := findRootTestRepo(t)
-	cmd := newExplainCmd()
-	cmd.SetOut(&buf)
-	cmd.SetArgs([]string{filepath.Join(root, "ranker.go"), "--json"})
-
-	require.NoError(t, cmd.Execute())
+	require.NoError(t, execute(t.Context(), []string{"explain", filepath.Join(root, "ranker.go"), "--json"}, &buf, &buf))
 	require.NotEmpty(t, buf.String())
 
 	var doc map[string]any

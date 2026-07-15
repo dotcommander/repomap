@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,55 +9,38 @@ import (
 	"path/filepath"
 
 	"github.com/dotcommander/repomap"
-	"github.com/spf13/cobra"
 )
 
-func newCacheCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "cache",
-		Short: "Inspect repomap disk cache state",
-	}
-	cmd.AddCommand(newCacheStatusCmd())
-	return cmd
+type cacheCommand struct {
+	Status cacheStatusCommand `cmd:"" help:"Show disk cache freshness and usability"`
 }
 
-func newCacheStatusCmd() *cobra.Command {
-	var (
-		cacheDir string
-		jsonOut  bool
-	)
-	cmd := &cobra.Command{
-		Use:   "status [directory]",
-		Short: "Show disk cache freshness and usability",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dir := "."
-			if len(args) > 0 {
-				dir = args[0]
-			}
-			root, err := filepath.Abs(dir)
-			if err != nil {
-				return fmt.Errorf("resolve path: %w", err)
-			}
-			if cacheDir == "" {
-				home, err := os.UserHomeDir()
-				if err != nil {
-					return fmt.Errorf("resolve home dir: %w", err)
-				}
-				cacheDir = filepath.Join(home, ".cache", "repomap")
-			}
-			status := repomap.InspectCache(cmd.Context(), root, cacheDir)
-			if jsonOut {
-				enc := json.NewEncoder(cmd.OutOrStdout())
-				enc.SetIndent("", "  ")
-				return enc.Encode(status)
-			}
-			return printCacheStatus(cmd.OutOrStdout(), status)
-		},
+type cacheStatusCommand struct {
+	CacheDir  string `name:"cache-dir" help:"Cache directory (default: $HOME/.cache/repomap)"`
+	JSON      bool   `help:"Emit machine-readable cache status JSON"`
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to inspect"`
+}
+
+func (c *cacheStatusCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	root, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
 	}
-	cmd.Flags().StringVar(&cacheDir, "cache-dir", "", "Cache directory (default: $HOME/.cache/repomap)")
-	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit machine-readable cache status JSON")
-	return cmd
+	cacheDir := c.CacheDir
+	if cacheDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home dir: %w", err)
+		}
+		cacheDir = filepath.Join(home, ".cache", "repomap")
+	}
+	status := repomap.InspectCache(ctx, root, cacheDir)
+	if c.JSON {
+		enc := json.NewEncoder(ioctx.stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(status)
+	}
+	return printCacheStatus(ioctx.stdout, status)
 }
 
 func printCacheStatus(w io.Writer, status repomap.CacheStatus) error {

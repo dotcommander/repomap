@@ -50,11 +50,11 @@ func parsePHP(lines []string, fs *FileSymbols) {
 			fs.Symbols = append(fs.Symbols, Symbol{Name: m[1], Kind: kind, Exported: true, Line: e.idx + 1})
 			return true
 		}
-		if tryAppendSymbol(phpClass, e, "class", true, fs) ||
-			tryAppendSymbol(phpInterface, e, "interface", true, fs) ||
-			tryAppendSymbol(phpTrait, e, "trait", true, fs) ||
-			tryAppendSymbol(phpEnum, e, "enum", true, fs) ||
-			tryAppendSymbol(phpConst, e, "constant", true, fs) {
+		if tryAppendSymbol(phpClass, e, "class", fs) ||
+			tryAppendSymbol(phpInterface, e, "interface", fs) ||
+			tryAppendSymbol(phpTrait, e, "trait", fs) ||
+			tryAppendSymbol(phpEnum, e, "enum", fs) ||
+			tryAppendSymbol(phpConst, e, "constant", fs) {
 			return true
 		}
 		return true

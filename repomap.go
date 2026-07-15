@@ -28,14 +28,17 @@ const (
 
 // Config holds repomap configuration.
 type Config struct {
-	MaxTokens      int      // token budget for output (default: 1024)
-	MaxTokensNoCtx int      // budget when no files in conversation (default: 2048)
-	Intent         string   // optional BM25 query for task-aware ranking
-	ConsumedPaths  []string // optional: paths the caller has already read — these are downranked
-	SymbolRefs     bool     // optional approximate cross-language symbol reference scoring
-	Explain        bool     // append per-file confidence-tier score breakdown to text output
-	IncludeTests   bool     // rank test files at full weight (default: demoted)
-	MaxFileSize    int      // max file size in bytes to scan (default: 50_000; negative disables the cap)
+	MaxTokens       int      // token budget for output (default: 1024)
+	MaxTokensNoCtx  int      // budget when no files in conversation (default: 2048)
+	Intent          string   // optional BM25 query for task-aware ranking
+	ConsumedPaths   []string // optional: paths the caller has already read — these are downranked
+	SymbolRefs      bool     // optional approximate cross-language symbol reference scoring
+	Explain         bool     // append per-file confidence-tier score breakdown to text output
+	IncludeTests    bool     // rank test files at full weight (default: demoted)
+	GoAnalysis      bool     // load active Go packages for semantic metadata and relationships
+	GoAnalysisCalls bool     // build the SSA/CHA caller graph during Go semantic analysis
+	GoAnalysisTests bool     // include Go test variants in semantic callers and type relationships
+	MaxFileSize     int      // max file size in bytes to scan (default: 50_000; negative disables the cap)
 }
 
 // DefaultConfig returns the default configuration.
@@ -48,25 +51,58 @@ func DefaultConfig() Config {
 
 // Map holds the built repository map state.
 type Map struct {
-	root          string
-	config        Config
-	blocklist     *BlocklistConfig
-	cacheDir      string // if set, Build saves cache here
-	mu            sync.RWMutex
-	ranked        []RankedFile
-	builtAt       time.Time
-	mtimes        map[string]time.Time // path → mtime at last build
-	contentHashes map[string]string    // path → sha256 hex at last build; nil on old cache loads
-	scanFP        string             // fingerprint of the scanned file set at last build; "" = mtime-only (legacy/tests)
-	coverage      ParseCoverage
-	outputs       outputCache
+	root            string
+	config          Config
+	blocklist       *BlocklistConfig
+	cacheDir        string // if set, Build saves cache here
+	buildMu         sync.Mutex
+	mu              sync.RWMutex
+	ranked          []RankedFile
+	builtAt         time.Time
+	mtimes          map[string]time.Time // path → mtime at last build
+	contentHashes   map[string]string    // path → sha256 hex at last build; nil on old cache loads
+	scanFP          string               // fingerprint of the scanned file set at last build; "" = mtime-only (legacy/tests)
+	coverage        ParseCoverage
+	semanticCallers SymbolCallers
+	goDiagnostics   []GoDiagnostic
+	outputs         outputCache
 
 	tsAvailable    bool // tree-sitter parsing available
 	ctagsAvailable bool // ctags binary available
 }
 
+// GoDiagnostic reports a package loader or type-checker diagnostic while
+// allowing successfully analyzed packages to remain usable.
+type GoDiagnostic struct {
+	PackagePath string `json:"package_path,omitempty"`
+	Position    string `json:"position,omitempty"`
+	Message     string `json:"message"`
+}
+
+// SemanticCallers returns the caller projection produced by the Map's single
+// module-aware Go analysis. The returned map is a defensive copy.
+func (m *Map) SemanticCallers() SymbolCallers {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(SymbolCallers, len(m.semanticCallers))
+	for key, locations := range m.semanticCallers {
+		out[key] = append([]Location(nil), locations...)
+	}
+	return out
+}
+
+// GoDiagnostics returns diagnostics from the latest semantic analysis.
+func (m *Map) GoDiagnostics() []GoDiagnostic {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return append([]GoDiagnostic(nil), m.goDiagnostics...)
+}
+
 // New creates a new Map for the given project root.
 func New(root string, cfg Config) *Map {
+	if cfg.GoAnalysisCalls || cfg.GoAnalysisTests {
+		cfg.GoAnalysis = true
+	}
 	if cfg.MaxTokens == 0 {
 		cfg.MaxTokens = defaultMaxTokens
 	}
@@ -100,6 +136,9 @@ func (m *Map) SetCacheDir(dir string) {
 // eligibility failure — correctness over speed.
 // Safe for concurrent use.
 func (m *Map) Build(ctx context.Context) error {
+	m.buildMu.Lock()
+	defer m.buildMu.Unlock()
+
 	if m.cacheDir != "" {
 		if ok, changed := m.LoadCacheIncremental(ctx, m.cacheDir); ok {
 			if err := m.applyIncremental(ctx, changed); err == nil {
