@@ -70,7 +70,7 @@ if err != nil {
 fmt.Println(ctx.Match.File, ctx.Match.Symbol.Line)
 ```
 
-`Context` resolves the best symbol match, extracts a bounded source span, includes ambiguity hints, and attaches the owning file's `Impact` result. Caller expansion is CLI-only today; library callers can use `ExpandCallers` directly when they need exact `gopls` references.
+`Context` resolves the best symbol match, extracts a bounded source span, includes ambiguity hints, and attaches the owning file's `Impact` result. Set `Config.GoAnalysisCalls`, call `Build`, then use `Map.SemanticCallers()` for receiver-qualified Go callers. `ExpandCallers` remains available for integrations that explicitly need an external `RefsQuerier` such as `gopls`.
 
 ## Staleness
 

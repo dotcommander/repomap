@@ -26,7 +26,7 @@ repomap.go [imported by 12]
   func (*Map) Build(ctx context.Context) error
 ```
 
-`repomap` is local static analysis: `git ls-files`, Go `go/ast`, tree-sitter, ctags/regex fallback, import graphs, BM25 intent ranking, and optional `gopls` caller expansion. It does not call an LLM.
+`repomap` is local static analysis: `git ls-files`, fast Go `go/ast` mapping with on-demand `go/packages`/`go/types` semantics, tree-sitter, ctags/regex fallback, import graphs, and BM25 intent ranking. It does not call an LLM.
 
 ## Install
 
@@ -147,7 +147,7 @@ ranker.go
   tests: ranker_test.go, ranker_callers_test.go
 ```
 
-`context` is a symbol-centered bundle: best match, bounded source span, ambiguity hints, and the owning file's impact facts. Use `--json` for structured output, or `--calls` to include exact Go callers through `gopls`.
+`context` is a symbol-centered bundle: best match, bounded source span, ambiguity hints, and the owning file's impact facts. Use `--json` for structured output, or `--calls` to include exact callers from the in-process Go semantic graph.
 
 ### Explain a Ranking Decision
 
@@ -203,15 +203,15 @@ repomap --json-structured -t 4096 > map.json
 
 Files excluded by the budget remain present with `detail_level: -1` and `omitted_reason`.
 
-### Expand Callers with gopls
+### Expand Go Callers
 
 ```bash
 repomap --calls --calls-threshold 2 --calls-limit 8
 ```
 
-`--calls` asks `gopls` for references to exported symbols in highly imported files, then boosts files with many caller sites. Caller data is cached under `~/.cache/repomap` unless `--no-cache` is set.
+`--calls` builds one type-checked, whole-program Go call graph with `go/packages`, SSA, and Class Hierarchy Analysis, then selects exported symbols in files meeting `--calls-threshold`. Receiver-qualified identities keep same-named methods distinct. Add `--calls-include-tests` to load test variants and include test callers.
 
-Add `--precise` (on `repomap --calls` or `repomap context --calls`) to build a type-checked, whole-program Go call graph via Class Hierarchy Analysis instead of per-symbol `gopls` queries. It resolves callers for every symbol in one pass — not just exported symbols above `--calls-threshold` — and falls back to the `gopls` `--calls` tier automatically when packages fail to load.
+`--precise` remains as a deprecated compatibility flag and includes callers regardless of `--calls-threshold`. `--no-cache` is also accepted for compatibility but has no effect because callers are built with the map instead of a separate caller cache. The standalone `refs`, `def`, `hover`, `symbols`, and `lsp status` commands still use installed language servers.
 
 ### Inspect Cache State
 
@@ -357,12 +357,12 @@ Supported file types:
 
 | Language | Parser path |
 | --- | --- |
-| Go | `go/ast` |
+| Go | `go/packages` + `go/types` for active packages; `go/ast` syntax fallback |
 | PHP | tree-sitter with signatures, visibility, constructor promotion, PHPDoc |
 | TypeScript, TSX, JavaScript, JSX, Python, Rust, C, C++, Java, Ruby | tree-sitter when available, ctags/regex fallback |
 | Lua, Zig, Swift, Kotlin | extension-only: ctags/regex fallback |
 
-Structured output includes `parse_method`: `go_ast`, `tree_sitter`, `ctags`, or `regex`.
+Structured output includes `parse_method`: `go_ast`, `tree_sitter`, `ctags`, or `regex`. Go files also report `build_active` and `analysis_mode`.
 
 ## Configuration
 

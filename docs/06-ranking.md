@@ -88,7 +88,7 @@ For tree-sitter-backed non-Go files, repomap extracts call-site expressions duri
 
 `--symbol-refs` adds a cheap approximate cross-language reference signal for non-Go symbols. It builds an exported symbol-name index, tokenizes each scanned file once, and boosts a non-Go file when other files mention its symbols.
 
-This is lexical, not semantic: it ignores same-file mentions and duplicate mentions within one source file, skips very short names, and caps the score so false positives cannot dominate import, intent, or LSP caller signals. Use `--calls` for exact Go caller data.
+This is lexical, not semantic: it ignores same-file mentions and duplicate mentions within one source file, skips very short names, and caps the score so false positives cannot dominate import, intent, or semantic caller signals. Use `--calls` for exact Go caller data.
 
 ## Stale detection
 

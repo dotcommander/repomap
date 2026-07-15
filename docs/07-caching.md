@@ -58,6 +58,7 @@ JSON. Contains:
 - The recorded mtimes for staleness checks
 - Content hashes for tracked files
 - The full `RankedFile` slice
+- Semantic Go callers and loader diagnostics when enabled
 - Pre-rendered `compact` and `lines` outputs
 - The saved git HEAD when the root is inside a git repo
 
@@ -102,7 +103,7 @@ The status command checks the cache entry for the selected root without rebuildi
 
 ## Cache versioning
 
-The disk format has a version number (`cacheVersion = 6`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. The v5→v6 bump (which added `LastSHA` and `GitRoot` fields) triggers a one-time full rebuild for existing users.
+The disk format has a version number (`cacheVersion = 13`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. Version 13 adds semantic caller and Go diagnostic state, so older entries trigger a one-time full rebuild.
 
 ## When caching hurts
 

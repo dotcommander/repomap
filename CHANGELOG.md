@@ -4,6 +4,19 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.21.0 — 2026-07-14
+
+### Features
+
+- **Canonical Go semantic analysis** — caller-dependent and structured-output commands load active Go packages in-process with `go/packages` and `go/types`, while ordinary maps and build-excluded or invalid files use the fast syntax-only `go/ast` path. Structured JSON now reports `build_active` and `analysis_mode`, and cache entries retain semantic callers and diagnostics.
+- **Semantic caller expansion by default** — top-level `--calls`, `context --calls`, and endpoint test discovery reuse one receiver-qualified SSA/CHA graph, removing their normal dependency on `gopls` and preventing same-named methods from sharing callers. Call-graph construction stays lazy and runs only for caller-dependent commands.
+
+### Changes
+
+- **CLI parsing now uses Kong instead of Cobra** while preserving repomap's owned command, flag, output-writer, artifact, help, and exit-code contracts. Cobra's generated `completion` command is no longer provided.
+- **`--precise` and `--no-cache` are compatibility flags** for existing invocations. `--precise` includes semantic callers regardless of `--calls-threshold`; `--no-cache` is ignored because callers are built with the map instead of a separate caller cache.
+- **Go test callers load independently from test ranking** — `--calls-include-tests` no longer requires the unrelated `--include-tests` ranking flag.
+
 ## v0.20.0 — 2026-07-02
 
 ### Features

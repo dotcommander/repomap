@@ -139,7 +139,7 @@ The tiers, from most to least trustworthy:
 
 | Tier | Means | Backed by |
 |------|-------|-----------|
-| `confirmed` | verified references | gopls / LSP (`--calls`) |
+| `confirmed` | verified references | semantic Go analysis (`--calls`) or LSP commands |
 | `structural` | parsed structure & import graph | always available |
 | `lexical` | by-name match, may be coincidental | `--symbol-refs` |
 | `contextual` | depends on your query / session | `--intent`, `--consumed` |
@@ -222,20 +222,18 @@ repomap context RankFiles --calls --max-source-lines 120
 
 ## 6. Trace callers and references
 
-With gopls available, `--calls` expands exported symbols with their real callers
-(verified references — the `confirmed` tier):
+`--calls` expands exported symbols with receiver-qualified callers from one
+in-process Go semantic graph (verified references — the `confirmed` tier):
 
 ```bash
 repomap --calls
 repomap --calls --calls-threshold 1 --calls-limit 20 --calls-include-tests
 ```
 
-Add `--precise` to swap the per-symbol gopls queries for an opt-in, type-checked
-whole-program Go call graph (go/packages + Class Hierarchy Analysis). It resolves
-callers for *every* symbol in one pass — not just exported symbols in files above
-`--calls-threshold` — and disambiguates same-named methods by receiver. If the
-packages fail to type-check it falls back to the gopls `--calls` tier
-automatically, so it never turns a working `--calls` run into an error:
+The graph uses `go/packages`, SSA, and Class Hierarchy Analysis and is built only
+for caller-dependent commands. Add `--calls-include-tests` to load test variants.
+The deprecated `--precise` compatibility flag includes callers regardless of
+`--calls-threshold`:
 
 ```bash
 repomap --calls --precise

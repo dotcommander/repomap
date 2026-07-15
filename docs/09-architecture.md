@@ -23,7 +23,7 @@ No parsing here. No I/O beyond `stat`. This stage is always fast.
 
 Two parallel groups via `errgroup.WithContext`:
 
-1. **Go group** — every Go file runs through `ParseGoFile` (`parser_go.go`), which uses the standard library's `go/ast` parser.
+1. **Go group** — every scanned Go file runs through syntax-only `ParseGoFile` (`parser_go.go`). For structured output and caller-dependent commands, `internal/goanalysis` additionally loads active packages once with `go/packages` and `go/types`; receiver-qualified callers use SSA/CHA only when requested.
 2. **Non-Go group** — tiered fallback in `parseNonGoFiles`:
    - Tree-sitter if `tsAvailable`; a build-scoped runtime caches language objects and reuses parser instances safely across the parallel parse pool.
    - ctags if the binary is on `$PATH`
@@ -31,7 +31,7 @@ Two parallel groups via `errgroup.WithContext`:
 
 Each parser returns a `*FileSymbols` with the file's symbols, imports, structural call sites when available, and parse method.
 
-After parsing, `DetectImplementations` walks Go structs and interfaces to link `impl: Writer` tags.
+Go implementation relationships come from `go/types`; non-Go parsing remains independent.
 
 ## Stage 3: Rank
 
@@ -83,7 +83,7 @@ Focused commands reuse the built map instead of adding separate indexing paths:
 
 - `find` searches the ranked symbol set by exact, case-insensitive, prefix, then contains score.
 - `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, score components, risk level, check-next guidance, likely Go test commands, and bounded read-next ranges.
-- `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path uses `gopls` through the existing LSP manager.
+- `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path reuses the map's semantic Go caller graph.
 - `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild.
 
 ## The `Map` type
@@ -96,6 +96,7 @@ Holds everything:
 - The ranked file slice (`ranked`)
 - Recorded mtimes for staleness (`mtimes`)
 - Recorded content hashes for cache diagnostics and incremental rebuilds (`contentHashes`)
+- Semantic Go callers and package diagnostics
 - Lazy-computed output cache (`outputs`)
 - Parser availability flags (`tsAvailable`, `ctagsAvailable`)
 

@@ -6,7 +6,7 @@ repomap parses source files in three tiers. It tries the best parser first and f
 
 | Tier | Parser | Fidelity |
 | --- | --- | --- |
-| 1 | `go/ast` for Go, tree-sitter for supported full languages | High |
+| 1 | `go/packages` + `go/types` for active Go packages, tree-sitter for supported full languages | High |
 | 2 | ctags (if installed) | Medium |
 | 3 | Regex | Low but always available |
 
@@ -14,7 +14,7 @@ A file never fails to parse. Worst case, regex finds function and type declarati
 
 ## Go
 
-Parsed with `go/ast` directly. No fallback needed — the standard library ships the parser.
+Semantic commands load active packages with `go/packages` and `go/types`. All scanned Go files are parsed with `go/ast`, which keeps ordinary maps fast and preserves build-excluded files and invalid workspace states.
 
 Extracts:
 
@@ -24,7 +24,7 @@ Extracts:
 - Imports (for the dependency graph)
 - Package name and import path (from `go.mod`)
 
-Every Go file gets `parsed="go_ast"` in XML and structured output.
+Every Go file gets `parsed="go_ast"`; structured JSON additionally reports `build_active` and `analysis_mode` (`semantic`, `syntax_only`, or `analysis_failed`).
 
 ## Tree-sitter supported
 

@@ -62,7 +62,7 @@ repomap context RankFiles
 repomap context RankFiles --json
 ```
 
-`context` returns the best symbol match, a bounded source span, ambiguity hints, and impact facts for the owning file. Add `--calls` when you want exact Go callers through `gopls`.
+`context` returns the best symbol match, a bounded source span, ambiguity hints, and impact facts for the owning file. Add `--calls` for exact callers from the in-process Go semantic graph.
 
 ## Change the format
 

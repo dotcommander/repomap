@@ -11,11 +11,12 @@ This page covers root map flags and the main subcommand flags.
 | `--json` | — | `false` | Emit verbose output as a JSON envelope of lines |
 | `--json-legacy` | — | `false` | Emit the legacy bare `[]string` JSON shape |
 | `--json-structured` | — | `false` | Emit schema-versioned file/symbol/call-site/ranking data |
-| `--calls` | — | `false` | Expand exported symbols with caller information via `gopls` |
+| `--calls` | — | `false` | Expand exported symbols with receiver-qualified semantic Go callers |
 | `--calls-threshold` | — | `2` | Only expand symbols in files with at least this many importers |
 | `--calls-limit` | — | `10` | Max callers shown per symbol |
 | `--calls-include-tests` | — | `false` | Include `_test.go` callers |
-| `--no-cache` | — | `false` | Bypass the `--calls` cache |
+| `--no-cache` | — | `false` | Deprecated compatibility flag; semantic callers use the map build |
+| `--precise` | — | `false` | Deprecated compatibility flag; ignore `--calls-threshold` |
 | `--intent` | `-i` | `""` | Natural language query for BM25 task-aware ranking |
 | `--consumed` | — | `[]` | File paths already read; these are downranked and their importers upranked |
 | `--symbol-refs` | — | `false` | Enable approximate cross-language symbol reference scoring |
@@ -99,7 +100,8 @@ repomap context kind:function:file:ranker:RankFiles --json
 | `--kind` | `""` | Filter by symbol kind |
 | `--file` | `""` | Filter to files matching this substring |
 | `--json` | `false` | Emit structured context JSON |
-| `--calls` | `false` | Include exact Go callers via `gopls` |
+| `--calls` | `false` | Include exact callers from the semantic Go graph |
+| `--precise` | `false` | Deprecated compatibility flag; semantic callers are already used |
 | `--calls-include-tests` | `false` | Include `_test.go` callers |
 | `--calls-limit` | `10` | Max callers to include with `--calls` |
 | `--max-source-lines` | `200` | Max source lines to include for the selected symbol |
@@ -159,7 +161,7 @@ Path globs use `path.Match` semantics. Patterns containing `**` match any path w
 
 ## What lives in `Config` (library)
 
-The library exposes four fields via `repomap.Config`:
+The library exposes these build and ranking controls via `repomap.Config`:
 
 | Field | Default | Purpose |
 | --- | --- | --- |
@@ -167,8 +169,15 @@ The library exposes four fields via `repomap.Config`:
 | `MaxTokensNoCtx` | `2048` | Budget for lines format |
 | `Intent` | `""` | BM25 query for task-aware ranking (omit for standard behavior) |
 | `ConsumedPaths` | `nil` | File paths the caller has already read; these are downranked in ranking |
+| `SymbolRefs` | `false` | Enable approximate cross-language symbol reference scoring |
+| `Explain` | `false` | Append rank-score explanations to text output |
+| `IncludeTests` | `false` | Rank test files at full weight |
+| `GoAnalysis` | `false` | Load active Go packages for semantic metadata and relationships |
+| `GoAnalysisCalls` | `false` | Build the Go SSA/CHA caller graph |
+| `GoAnalysisTests` | `false` | Load Go test variants for semantic relationships |
+| `MaxFileSize` | `50000` | Maximum scanned file size; negative disables the cap |
 
-The CLI wires both fields to the same `-t` value. Call the library directly if you want to set them independently — see [Library Usage](05-library-usage.md).
+The CLI wires both token-budget fields to the same `-t` value. Call the library directly if you want to set them independently — see [Library Usage](05-library-usage.md).
 
 ## Next
 
