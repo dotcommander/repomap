@@ -78,7 +78,13 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) error
 		kong.Writers(stdout, stderr),
 		kong.BindTo(ctx, (*context.Context)(nil)),
 		kong.Bind(ioctx),
-		kong.ConfigureHelp(kong.HelpOptions{NoExpandSubcommands: true}),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact:             true,
+			Tree:                true,
+			Summary:             true,
+			FlagsLast:           true,
+			NoExpandSubcommands: true,
+		}),
 		kong.Help(repomapHelp),
 	)
 	if err != nil {

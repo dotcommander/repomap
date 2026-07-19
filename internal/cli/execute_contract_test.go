@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,6 +44,31 @@ func TestExecuteHelpAliasAfterArtifactFlag(t *testing.T) {
 	assert.Contains(t, out.String(), "repomap find")
 	_, err := os.Stat(artifact)
 	assert.ErrorIs(t, err, os.ErrNotExist, "metadata help must not create an artifact")
+}
+
+func TestExecuteProductionHelpLayout(t *testing.T) {
+	t.Parallel()
+
+	var root bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"--help"}, &root, io.Discard))
+	rootHelp := root.String()
+	assert.Contains(t, rootHelp, "Commands:\n  audit")
+	assert.Less(t, strings.Index(rootHelp, "Commands:"), strings.Index(rootHelp, "Flags:"), "flags-last layout")
+
+	var audit bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"audit", "--help"}, &audit, io.Discard))
+	auditHelp := audit.String()
+	assert.Contains(t, auditHelp, "Usage: repomap audit <command> [flags]")
+	assert.Contains(t, auditHelp, "  surface")
+	assert.Contains(t, auditHelp, "    [<directory>]")
+	assert.Less(t, strings.Index(auditHelp, "Commands:"), strings.Index(auditHelp, "Flags:"), "nested flags-last layout")
+
+	var surface bytes.Buffer
+	require.NoError(t, executeTest(t, []string{"audit", "surface", "--help"}, &surface, io.Discard))
+	surfaceHelp := surface.String()
+	assert.Contains(t, surfaceHelp, "Usage: repomap audit surface [<directory>] [flags]")
+	assert.Contains(t, surfaceHelp, "Report deterministic command, flag, config, schema, route, and output surfaces")
+	assert.Less(t, strings.Index(surfaceHelp, "Arguments:"), strings.Index(surfaceHelp, "Flags:"), "leaf flags-last layout")
 }
 
 func TestExecuteCompactShorthand(t *testing.T) {
