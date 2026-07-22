@@ -4,6 +4,16 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.22.0 — 2026-07-22
+
+### Features
+
+- **Compact CLI help output** — Kong help now uses compact command trees and summaries, with commands listed before flags at root, nested, and leaf levels.
+
+### Changes
+
+- **Expanded high-level coverage** — added tests for the top-level CLI, repomap methods, Go analysis, LSP URI handling, and fallback parsers.
+
 ## v0.21.0 — 2026-07-14
 
 ### Features
