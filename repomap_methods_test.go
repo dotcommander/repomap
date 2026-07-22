@@ -45,9 +45,9 @@ func MainFunc() {
 
 	// Callers & Diagnostics getters
 	callers := m.SemanticCallers()
-	assert.True(t, callers == nil || len(callers) >= 0)
+	assert.NotNil(t, callers)
 	diags := m.GoDiagnostics()
-	assert.True(t, diags == nil || len(diags) >= 0)
+	assert.Empty(t, diags)
 
 	// Test string representation formatters
 	brief, total := m.StringBriefMap(1)
