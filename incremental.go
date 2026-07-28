@@ -3,7 +3,6 @@ package repomap
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -81,6 +80,9 @@ func (m *Map) LoadCacheIncremental(ctx context.Context, cacheDir string) (bool, 
 // is small enough, hydrates m from the cache with deletions already pruned.
 // Returns (true, changedRelPaths) where changedRel = added ∪ modified.
 func (m *Map) prepareIncremental(entry diskCache, added, modified, deleted []string) (bool, []string) {
+	if containsGoSemanticInput(added, modified, deleted) {
+		return false, nil
+	}
 	total := len(entry.Ranked)
 	changeCount := len(added) + len(modified) + len(deleted)
 	if total == 0 {
@@ -98,6 +100,21 @@ func (m *Map) prepareIncremental(entry diskCache, added, modified, deleted []str
 	changed = append(changed, modified...)
 	changed = dedupePaths(changed)
 	return true, changed
+}
+
+// containsGoSemanticInput reports changes that invalidate the whole-program Go
+// semantic graph. It runs before cache hydration so deleted callers cannot
+// survive in the cached semantic caller projection.
+func containsGoSemanticInput(changes ...[]string) bool {
+	for _, paths := range changes {
+		for _, path := range paths {
+			base := filepath.Base(path)
+			if filepath.Ext(path) == ".go" || base == "go.mod" || base == "go.sum" || base == "go.work" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // hydrateFromCache populates the Map from the deserialized disk entry.
@@ -126,13 +143,6 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 // set, re-ranks, and saves the cache. Returns an error if re-parsing fails
 // entirely; caller must fall through to a full rebuild.
 func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
-	for _, path := range changedRel {
-		ext := filepath.Ext(path)
-		base := filepath.Base(path)
-		if ext == ".go" || base == "go.mod" || base == "go.sum" || base == "go.work" {
-			return errors.New("Go semantic input changed; full analysis required")
-		}
-	}
 	if len(changedRel) == 0 {
 		// Nothing to re-parse — cache is authoritative. Still refresh builtAt
 		// and save so LastSHA advances if HEAD moved without touching tracked
@@ -192,8 +202,11 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	m.mu.Lock()
 	// Carry forward existing RankedFiles (modified paths were already dropped
 	// from m.ranked by LoadCacheIncremental.dropPaths; this is defensive).
+	// RankFiles mutates symbol metadata, so detach the carried-forward file
+	// symbols before releasing the lock rather than mutating published state.
+	cachedRanked := cloneRanked(m.ranked)
 	existing := make([]*FileSymbols, 0, len(m.ranked)+len(parsed))
-	for _, rf := range m.ranked {
+	for _, rf := range cachedRanked {
 		if rf.FileSymbols == nil {
 			continue
 		}

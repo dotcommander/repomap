@@ -218,9 +218,12 @@ repomap --calls --calls-threshold 2 --calls-limit 8
 ```bash
 repomap cache status
 repomap cache status --json
+repomap cache warm .
+repomap cache warm . --cache-dir /tmp/repomap-cache
 ```
 
 `cache status` reports whether the disk cache for the current root exists, is usable, and appears fresh. It checks the saved cache version, root, tracked file hashes/mtimes, and saved HEAD when present.
+`cache warm` builds the map, saves it, and prints the same fresh status only after the saved entry is usable and fresh.
 
 ### Seed a Deep Audit
 
@@ -288,6 +291,7 @@ repomap audit surface               # command/flag/config/schema/API/output surf
 repomap audit effects               # side-effect and trust-boundary packets
 repomap audit effects --kind database --paths-only # DB boundary paths
 repomap cache status                # inspect disk cache freshness
+repomap cache warm .                # build and save a fresh disk cache
 repomap lsp status                  # inspect LSP server coverage without starting servers
 repomap explain ranker.go           # ranking and budget evidence
 repomap init                        # scaffold .repomap.yaml and post-commit cache hook
@@ -402,6 +406,8 @@ repomap init
 repomap init --no-hook
 repomap init --force
 ```
+
+The installed post-commit hook runs `repomap cache warm .` in the background.
 
 ## Library Usage
 

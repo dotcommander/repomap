@@ -1,9 +1,13 @@
 package repomap
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dotcommander/repomap/internal/callgraph"
+	"github.com/dotcommander/repomap/internal/goanalysis"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,4 +44,70 @@ func TestTypedGraphToSymbolCallers_ShapeAndRenderDrop(t *testing.T) {
 	assert.Contains(t, out, "cmd/main.go:8", "matched callee renders its caller location")
 	assert.NotContains(t, out, "callers: callers:", "caller label renders exactly once")
 	assert.NotContains(t, out, "Ghost", "unmatched callee produces no rendered output")
+}
+
+func TestSemanticCallerLookupNormalizesGenericReceivers(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, callsKey("box.go", "Box.Value"), semanticCallsKey("box.go", "Box[T]", "Value"))
+	assert.Equal(t, callsKey("box.go", "*Box.Pointer"), semanticCallsKey("box.go", "*Box[T]", "Pointer"))
+
+	callers := semanticCallsToSymbolCallers([]goanalysis.CallEdge{
+		{CallerFile: "use.go", CallerLine: 12, CalleeFile: "box.go", CalleeSymbol: "Pointer", CalleeReceiver: "*Box"},
+		{CallerFile: "use.go", CallerLine: 12, CalleeFile: "box.go", CalleeSymbol: "Pointer", CalleeReceiver: "*Box[T]"},
+	})
+
+	lookedUp := callers.CallersForSymbol("box.go", Symbol{Name: "Pointer", Receiver: "*Box[T]"})
+	require.Equal(t, []Location{{File: "use.go", Line: 12}}, lookedUp)
+}
+
+func TestMapBuildResolvesGenericMethodCallers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/generic\n\ngo 1.26\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "box.go"), []byte(`package generic
+
+type Box[T any] struct{}
+
+func (Box[T]) Value() {}
+func (*Box[T]) Pointer() {}
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "use.go"), []byte(`package generic
+
+func Use() {
+	box := Box[int]{}
+	box.Value()
+	(&box).Pointer()
+}
+`), 0o644))
+
+	cfg := DefaultConfig()
+	cfg.GoAnalysisCalls = true
+	m := New(root, cfg)
+	require.NoError(t, m.Build(context.Background()))
+
+	var value, pointer *Symbol
+	for _, ranked := range m.Ranked() {
+		if ranked.Path != "box.go" {
+			continue
+		}
+		for i := range ranked.Symbols {
+			symbol := &ranked.Symbols[i]
+			switch symbol.Name {
+			case "Value":
+				value = symbol
+			case "Pointer":
+				pointer = symbol
+			}
+		}
+	}
+	require.NotNil(t, value)
+	require.NotNil(t, pointer)
+	require.Equal(t, "Box[T]", value.Receiver)
+	require.Equal(t, "*Box[T]", pointer.Receiver)
+
+	callers := m.SemanticCallers()
+	require.Equal(t, []Location{{File: "use.go", Line: 5}}, callers.CallersForSymbol("box.go", *value))
+	require.Equal(t, []Location{{File: "use.go", Line: 6}}, callers.CallersForSymbol("box.go", *pointer))
 }

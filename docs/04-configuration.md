@@ -115,12 +115,15 @@ The positional query accepts the same qualifiers as `find`: `kind:<kind>:`, `fil
 ```bash
 repomap cache status
 repomap cache status --cache-dir /tmp/repomap-cache --json
+repomap cache warm . --cache-dir /tmp/repomap-cache
 ```
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--cache-dir` | `$HOME/.cache/repomap` | Cache directory to inspect |
 | `--json` | `false` | Emit structured cache status JSON |
+
+`cache warm` accepts the same `--cache-dir` flag. It prints text cache status only after the written cache is usable and fresh.
 
 ## Environment
 

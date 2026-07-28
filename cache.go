@@ -58,7 +58,7 @@ type diskCache struct {
 	GitRoot         bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
 }
 
-const cacheVersion = 13
+const cacheVersion = 14
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {

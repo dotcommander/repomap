@@ -10,9 +10,8 @@ package repomap
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -57,9 +56,11 @@ func ApplyFixFindings(ctx context.Context, repoRoot string, findings []Finding) 
 	byFile := groupFindingsByFile(findings, ActionFix)
 
 	for path, group := range byFile {
-		abs := filepath.Join(repoRoot, path)
-		data, readErr := os.ReadFile(abs)
+		_, data, readErr := readRepositoryRegularFile(repoRoot, path)
 		if readErr != nil {
+			if errors.Is(readErr, errUnsafeRepositoryFile) {
+				return applied, skipped, fmt.Errorf("read %s: %w", path, readErr)
+			}
 			for _, f := range group {
 				skipped = append(skipped, f)
 			}
@@ -96,7 +97,7 @@ func ApplyFixFindings(ctx context.Context, repoRoot string, findings []Finding) 
 
 		if dirty {
 			newContent := []byte(strings.Join(lines, "\n"))
-			if writeErr := atomicWriteFile(abs, newContent, 0o644); writeErr != nil {
+			if writeErr := rewriteRepositoryRegularFile(repoRoot, path, newContent); writeErr != nil {
 				return applied, skipped, fmt.Errorf("write %s: %w", path, writeErr)
 			}
 		}
@@ -213,8 +214,7 @@ func ApplyReviewDecisions(ctx context.Context, repoRoot string, decisions []Revi
 	fileLines := make(map[string][]string, len(fileEdits))
 	var stale []string
 	for path, edits := range fileEdits {
-		abs := filepath.Join(repoRoot, path)
-		data, err := os.ReadFile(abs)
+		_, data, err := readRepositoryRegularFile(repoRoot, path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
@@ -251,8 +251,7 @@ func ApplyReviewDecisions(ctx context.Context, repoRoot string, decisions []Revi
 		if !dirty {
 			continue
 		}
-		abs := filepath.Join(repoRoot, path)
-		if err := atomicWriteFile(abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		if err := rewriteRepositoryRegularFile(repoRoot, path, []byte(strings.Join(lines, "\n"))); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
 	}

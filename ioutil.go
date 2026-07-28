@@ -1,13 +1,18 @@
 package repomap
 
 import (
+	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 )
+
+var errUnsafeRepositoryFile = errors.New("unsafe repository file")
 
 // atomicWriteFile writes data to path via a uniquely named temp file + rename.
 // Unique temp names keep concurrent writers to the same path from publishing
@@ -47,6 +52,68 @@ func atomicWriteFile(path string, data []byte, perm fs.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+// readRepositoryRegularFile reads a regular file contained by repoRoot. It
+// rejects absolute and escaping paths, directories, and symlinks so commit
+// rewrite flows never follow a target outside the repository.
+func readRepositoryRegularFile(repoRoot, path string) (string, []byte, error) {
+	abs, _, err := repositoryRegularFile(repoRoot, path)
+	if err != nil {
+		return "", nil, err
+	}
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return "", nil, err
+	}
+	return abs, data, nil
+}
+
+// rewriteRepositoryRegularFile atomically rewrites a regular repository file
+// while preserving its existing permission bits. It validates the target again
+// immediately before publishing the replacement.
+func rewriteRepositoryRegularFile(repoRoot, path string, data []byte) error {
+	abs, mode, err := repositoryRegularFile(repoRoot, path)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(abs, data, mode.Perm())
+}
+
+func repositoryRegularFile(repoRoot, path string) (string, fs.FileMode, error) {
+	if path == "" || filepath.IsAbs(path) {
+		return "", 0, fmt.Errorf("%w: invalid repository path %q", errUnsafeRepositoryFile, path)
+	}
+	clean := filepath.Clean(path)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", 0, fmt.Errorf("%w: repository path escapes root: %q", errUnsafeRepositoryFile, path)
+	}
+
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", 0, fmt.Errorf("resolve repository root: %w", err)
+	}
+
+	current := root
+	parts := strings.Split(clean, string(filepath.Separator))
+	for i, part := range parts {
+		current = filepath.Join(current, part)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return "", 0, err
+		}
+		if i < len(parts)-1 {
+			if !info.IsDir() {
+				return "", 0, fmt.Errorf("%w: repository path contains a non-directory: %q", errUnsafeRepositoryFile, path)
+			}
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			return "", 0, fmt.Errorf("%w: repository path is not a regular file: %q", errUnsafeRepositoryFile, path)
+		}
+		return current, info.Mode(), nil
+	}
+	return "", 0, fmt.Errorf("%w: invalid repository path %q", errUnsafeRepositoryFile, path)
 }
 
 // collectNonNil filters nil pointers from a slice.

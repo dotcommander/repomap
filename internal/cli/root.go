@@ -23,7 +23,7 @@ type rootCommand struct {
 	Map             mapCommand             `cmd:"" default:"withargs" hidden:""`
 	Brief           briefCommand           `cmd:"" help:"Print an agent boot digest (identity + verify + state) followed by the repo map"`
 	Audit           auditCommand           `cmd:"" help:"Emit deterministic audit prepass facts"`
-	Cache           cacheCommand           `cmd:"" help:"Inspect repomap disk cache state"`
+	Cache           cacheCommand           `cmd:"" help:"Inspect or warm repomap disk cache state"`
 	Find            findCommand            `cmd:"" help:"Locate a symbol by name with optional kind/file qualifiers"`
 	Impact          impactCommand          `cmd:"" help:"Show deterministic local impact facts for a file"`
 	Inventory       inventoryCommand       `cmd:"" help:"Answer ownership for a boundary such as Postgres"`

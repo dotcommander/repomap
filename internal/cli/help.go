@@ -39,7 +39,7 @@ Examples:
 Commands:
   audit             Emit deterministic audit prepass facts
   brief             Print an agent boot digest (identity + verify + state) followed by the repo map
-  cache             Inspect repomap disk cache state
+  cache             Inspect or warm repomap disk cache state
   commit            Commit-flow helpers (analyze changesets, emit group plans)
   commit-preflight  Emit git/gh context block for commit preflight
   context           Show bounded source and impact context for a symbol
@@ -96,9 +96,15 @@ Query syntax (positional):
   repomap find kind:struct:file:cli:Root    kind = struct, file = cli, name = Root
 
 Flags override or supplement query qualifiers.`,
+	"cache": `Inspect or create disk cache entries.
+
+  repomap cache status [directory] checks an entry without rebuilding.
+  repomap cache warm [directory] builds, saves, and verifies a fresh entry.
+  Both commands accept --cache-dir; the default is $HOME/.cache/repomap.`,
 	"init": `Creates .repomap.yaml at the project root (if absent) and installs a
-git post-commit hook that refreshes the repomap cache in the background.
-Idempotent: re-running without --force skips existing files.`,
+git post-commit hook that runs 'repomap cache warm .' in the background.
+Idempotent: re-running without --force skips identical owned files and upgrades
+older marker-owned hooks; foreign hooks require --force.`,
 	"refs": `Find all references to a symbol at FILE:LINE named SYMBOL.
 LINE is 1-based. SYMBOL is the identifier name on that line.`,
 	"orphans": `Lists exported symbols that have no inbound references within this repository.

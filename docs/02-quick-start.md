@@ -94,9 +94,11 @@ A token is roughly four bytes. `-t 2048` (the default) targets about 8KB of outp
 ```bash
 repomap cache status
 repomap cache status --json
+repomap cache warm .
 ```
 
 This inspects the optional disk cache for the current root and reports whether it is missing, fresh, stale, or unusable.
+Use `cache warm` to build, save, and verify a fresh entry.
 
 ## Next
 

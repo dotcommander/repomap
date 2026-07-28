@@ -89,6 +89,8 @@ Any git failure triggers a silent full rebuild — correctness is always preferr
 repomap cache status
 repomap cache status --json
 repomap cache status --cache-dir /tmp/repomap-cache
+repomap cache warm .
+repomap cache warm . --cache-dir /tmp/repomap-cache
 ```
 
 The status command checks the cache entry for the selected root without rebuilding it. It reports:
@@ -101,9 +103,11 @@ The status command checks the cache entry for the selected root without rebuildi
 - `content_changed`, `mtime_changed`, or `tracked_file_missing` — tracked files changed
 - `fresh` — the cache entry is usable and no stale signal was found
 
+`cache warm` uses the same cache-directory resolution as `cache status`. It builds the map, explicitly saves the entry, then inspects it; it emits text status only after the result is usable and fresh.
+
 ## Cache versioning
 
-The disk format has a version number (`cacheVersion = 13`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. Version 13 adds semantic caller and Go diagnostic state, so older entries trigger a one-time full rebuild.
+The disk format has a version number (`cacheVersion = 14`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. Version 14 invalidates older semantic caller projections so generic method callers are rebuilt with source receiver identity.
 
 ## When caching hurts
 

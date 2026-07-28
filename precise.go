@@ -2,6 +2,7 @@ package repomap
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/dotcommander/repomap/internal/callgraph"
 )
@@ -49,8 +50,25 @@ func (sc SymbolCallers) CallersForSymbol(file string, symbol Symbol) []Location 
 }
 
 func semanticCallsKey(file, receiver, symbol string) string {
+	receiver = semanticReceiverKey(receiver)
 	if receiver == "" {
 		return callsKey(file, symbol)
 	}
 	return callsKey(file, receiver+"."+symbol)
+}
+
+// semanticReceiverKey converts a displayed receiver to the SSA-compatible
+// caller lookup form. Displayed symbols retain their type arguments; only the
+// semantic map key drops them, while retaining pointer receivers.
+func semanticReceiverKey(receiver string) string {
+	receiver = strings.TrimSpace(receiver)
+	prefix := ""
+	if strings.HasPrefix(receiver, "*") {
+		prefix = "*"
+		receiver = strings.TrimSpace(strings.TrimPrefix(receiver, "*"))
+	}
+	if typeArgs := strings.IndexByte(receiver, '['); typeArgs >= 0 {
+		receiver = receiver[:typeArgs]
+	}
+	return prefix + receiver
 }

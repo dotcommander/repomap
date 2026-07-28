@@ -326,19 +326,41 @@ func buildCalls(root string, pkgs []*packages.Package) []CallEdge {
 	}
 	var out []CallEdge
 	for fn, node := range graph.Nodes {
-		if fn == nil {
+		caller := sourceFunction(fn)
+		if caller == nil {
 			continue
 		}
 		for _, edge := range node.Out {
-			if edge.Site == nil || !edge.Site.Pos().IsValid() || edge.Callee == nil || edge.Callee.Func == nil || edge.Callee.Func.Synthetic != "" {
+			if edge.Site == nil || !edge.Site.Pos().IsValid() || edge.Callee == nil {
+				continue
+			}
+			callee := sourceFunction(edge.Callee.Func)
+			if callee == nil {
 				continue
 			}
 			callerFile, callerLine := resolve(edge.Site.Pos())
-			calleeFile, _ := resolve(edge.Callee.Func.Pos())
-			out = append(out, CallEdge{CallerFile: callerFile, CallerSymbol: fn.Name(), CallerLine: callerLine, CalleeFile: calleeFile, CalleeSymbol: edge.Callee.Func.Name(), CalleeReceiver: receiverName(edge.Callee.Func.Signature)})
+			calleeFile, _ := resolve(callee.Pos())
+			out = append(out, CallEdge{CallerFile: callerFile, CallerSymbol: caller.Name(), CallerLine: callerLine, CalleeFile: calleeFile, CalleeSymbol: callee.Name(), CalleeReceiver: receiverName(callee.Signature)})
 		}
 	}
+	slices.SortFunc(out, compareCall)
+	out = slices.CompactFunc(out, sameCallLocation)
 	return out
+}
+
+// sourceFunction resolves generic instantiations to their source declaration.
+// Synthetic wrappers have no source-level call target and are excluded.
+func sourceFunction(fn *ssa.Function) *ssa.Function {
+	if fn == nil {
+		return nil
+	}
+	if origin := fn.Origin(); origin != nil {
+		fn = origin
+	}
+	if fn.Synthetic != "" {
+		return nil
+	}
+	return fn
 }
 
 func receiverName(signature *types.Signature) string {
@@ -361,7 +383,14 @@ func compareEdge(a, b Edge) int {
 	return strings.Compare(fmt.Sprint(a.Kind, "\x00", a.File, "\x00", a.Line, "\x00", a.From, "\x00", a.To), fmt.Sprint(b.Kind, "\x00", b.File, "\x00", b.Line, "\x00", b.From, "\x00", b.To))
 }
 func compareCall(a, b CallEdge) int {
-	return strings.Compare(fmt.Sprint(a.CalleeFile, "\x00", a.CalleeSymbol, "\x00", a.CallerFile, "\x00", a.CallerLine), fmt.Sprint(b.CalleeFile, "\x00", b.CalleeSymbol, "\x00", b.CallerFile, "\x00", b.CallerLine))
+	return strings.Compare(fmt.Sprint(a.CalleeFile, "\x00", a.CalleeReceiver, "\x00", a.CalleeSymbol, "\x00", a.CallerFile, "\x00", a.CallerLine, "\x00", a.CallerSymbol), fmt.Sprint(b.CalleeFile, "\x00", b.CalleeReceiver, "\x00", b.CalleeSymbol, "\x00", b.CallerFile, "\x00", b.CallerLine, "\x00", b.CallerSymbol))
+}
+func sameCallLocation(a, b CallEdge) bool {
+	return a.CalleeFile == b.CalleeFile &&
+		a.CalleeReceiver == b.CalleeReceiver &&
+		a.CalleeSymbol == b.CalleeSymbol &&
+		a.CallerFile == b.CallerFile &&
+		a.CallerLine == b.CallerLine
 }
 func compareImplementation(a, b Implementation) int {
 	return strings.Compare(fmt.Sprint(a.TypeFile, "\x00", a.TypeName, "\x00", a.InterfacePath, "\x00", a.InterfaceName), fmt.Sprint(b.TypeFile, "\x00", b.TypeName, "\x00", b.InterfacePath, "\x00", b.InterfaceName))

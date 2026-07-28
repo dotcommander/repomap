@@ -71,7 +71,10 @@ func (m *Map) FindSymbol(name, kind, file string) []SymbolMatch {
 		return out
 	}
 	m.mu.RLock()
-	ranked := m.ranked
+	// Incremental rebuilds compact m.ranked and re-rank shared FileSymbols.
+	// Clone the complete ranked state before releasing the lock so this search
+	// can safely finish against one immutable snapshot.
+	ranked := cloneRanked(m.ranked)
 	m.mu.RUnlock()
 
 	nameLower := strings.ToLower(name)
@@ -130,7 +133,8 @@ func (m *Map) FindSymbolHandle(file, name, kind string, line int) []SymbolMatch 
 		return out
 	}
 	m.mu.RLock()
-	ranked := m.ranked
+	// See FindSymbol: the snapshot must not share incremental ranking state.
+	ranked := cloneRanked(m.ranked)
 	m.mu.RUnlock()
 
 	for i := range ranked {

@@ -104,7 +104,7 @@ func defaultAction(f Finding, visibility string) string {
 }
 
 // filterScannable drops files that shouldn't be grep'd: deletions, binaries,
-// files larger than 1MB, or files outside the repo (symlinks).
+// files larger than 1MB, directories, symlinks, and other non-regular files.
 func filterScannable(root string, files []fileChange) []string {
 	var out []string
 	for _, f := range files {
@@ -114,9 +114,12 @@ func filterScannable(root string, files []fileChange) []string {
 		if f.IsArtifact {
 			continue
 		}
-		abs := filepath.Join(root, f.Path)
-		info, err := os.Stat(abs)
-		if err != nil || info.IsDir() {
+		abs, _, err := repositoryRegularFile(root, f.Path)
+		if err != nil {
+			continue
+		}
+		info, err := os.Lstat(abs)
+		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
 		if info.Size() > 1<<20 {

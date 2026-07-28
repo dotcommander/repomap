@@ -73,6 +73,48 @@ func TestAnalyzeSkipsCallGraphUnlessRequested(t *testing.T) {
 	}
 }
 
+func TestAnalyzeGenericCallsUseSourceOriginsAndReceivers(t *testing.T) {
+	t.Parallel()
+
+	root := writeModule(t, map[string]string{
+		"generic.go": `package fixture
+
+type Box[T any] struct{}
+
+func (Box[T]) Value() {}
+func (*Box[T]) Pointer() {}
+
+type NamedA struct{}
+func (NamedA) Get() {}
+
+type NamedB struct{}
+func (NamedB) Get() {}
+
+func callValue[T interface{ Value() }](value T) { value.Value() }
+
+func Use() {
+	callValue(Box[int]{})
+	callValue(Box[string]{})
+	(&Box[int]{}).Pointer()
+	NamedA{}.Get()
+	NamedB{}.Get()
+}
+`,
+	})
+
+	result, err := Analyze(context.Background(), Options{Root: root, IncludeCalls: true})
+	require.NoError(t, err)
+
+	assert.Len(t, matchingCalls(result.Calls, "Value", "Box"), 1,
+		"two generic instantiations at one source call must collapse to one caller coordinate")
+	assert.Len(t, matchingCalls(result.Calls, "Pointer", "*Box"), 1,
+		"pointer generic receivers retain their pointer marker")
+	assert.Len(t, matchingCalls(result.Calls, "Get", "NamedA"), 1)
+	assert.Len(t, matchingCalls(result.Calls, "Get", "NamedB"), 1)
+	assert.NotEqual(t, matchingCalls(result.Calls, "Get", "NamedA"), matchingCalls(result.Calls, "Get", "NamedB"),
+		"same-named methods remain receiver-disambiguated")
+}
+
 func TestAnalyzeReturnsDiagnosticsWithUsableResults(t *testing.T) {
 	t.Parallel()
 
@@ -142,4 +184,14 @@ func writeModule(t *testing.T, files map[string]string) string {
 		require.NoError(t, os.WriteFile(path, []byte(source), 0o644))
 	}
 	return root
+}
+
+func matchingCalls(calls []CallEdge, symbol, receiver string) []CallEdge {
+	var out []CallEdge
+	for _, call := range calls {
+		if call.CalleeSymbol == symbol && call.CalleeReceiver == receiver {
+			out = append(out, call)
+		}
+	}
+	return out
 }

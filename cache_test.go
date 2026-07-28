@@ -6,8 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCacheVersion(t *testing.T) {
+	assert.Equal(t, 14, cacheVersion)
+}
 
 func TestCacheConfigMismatchMiss(t *testing.T) {
 	t.Parallel()

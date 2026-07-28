@@ -84,7 +84,7 @@ Focused commands reuse the built map instead of adding separate indexing paths:
 - `find` searches the ranked symbol set by exact, case-insensitive, prefix, then contains score.
 - `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, score components, risk level, check-next guidance, likely Go test commands, and bounded read-next ranges.
 - `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path reuses the map's semantic Go caller graph.
-- `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild.
+- `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild. `cache warm` builds, saves, and verifies a fresh entry.
 
 ## The `Map` type
 

@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -133,9 +132,11 @@ func ApplyCandidates(ctx context.Context, repoRoot string, candidates []Candidat
 			continue
 		}
 
-		abs := filepath.Join(repoRoot, c.File)
-		data, readErr := os.ReadFile(abs)
+		_, data, readErr := readRepositoryRegularFile(repoRoot, c.File)
 		if readErr != nil {
+			if errors.Is(readErr, errUnsafeRepositoryFile) {
+				return applied, skipped, fmt.Errorf("read %s: %w", c.File, readErr)
+			}
 			skipped = append(skipped, c)
 			continue
 		}
@@ -155,7 +156,7 @@ func ApplyCandidates(ctx context.Context, repoRoot string, candidates []Candidat
 
 		lines[idx] = c.Replacement
 		newContent := []byte(strings.Join(lines, "\n"))
-		if writeErr := atomicWriteFile(abs, newContent, 0o644); writeErr != nil {
+		if writeErr := rewriteRepositoryRegularFile(repoRoot, c.File, newContent); writeErr != nil {
 			return applied, skipped, fmt.Errorf("write %s: %w", c.File, writeErr)
 		}
 		applied = append(applied, c)

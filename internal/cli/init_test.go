@@ -72,7 +72,22 @@ func TestInit_Force_Overwrites(t *testing.T) {
 	hook, err := os.ReadFile(hookPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(hook), hookMarker)
-	assert.Contains(t, string(hook), "repomap .")
+	assert.Contains(t, string(hook), "repomap cache warm .")
+}
+
+func TestInit_OlderOwnedHookUpgradesWithoutForce(t *testing.T) {
+	t.Parallel()
+	dir := mkGitDir(t)
+	hookPath := filepath.Join(dir, ".git", "hooks", "post-commit")
+	require.NoError(t, os.WriteFile(hookPath, []byte(hookMarker+"\nrepomap .\n"), 0o755))
+
+	var buf bytes.Buffer
+	require.NoError(t, runInit(&buf, dir, false, false, true))
+
+	hook, err := os.ReadFile(hookPath)
+	require.NoError(t, err)
+	assert.Equal(t, hookScript, string(hook))
+	assert.Contains(t, buf.String(), "write .git/hooks/post-commit")
 }
 
 func TestInit_NonGitDir_SkipsHook(t *testing.T) {

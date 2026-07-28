@@ -17,7 +17,7 @@ const hookMarker = "# repomap post-commit hook"
 const hookScript = `#!/bin/sh
 # repomap post-commit hook — refreshes cache in background.
 # Installed by ` + "`repomap init`" + `. Remove with ` + "`rm .git/hooks/post-commit`" + `.
-command -v repomap >/dev/null 2>&1 && (repomap . >/dev/null 2>&1 &) || true
+command -v repomap >/dev/null 2>&1 && (repomap cache warm . >/dev/null 2>&1 &) || true
 `
 
 const configTemplate = `# .repomap.yaml — repomap configuration
@@ -97,11 +97,11 @@ func writeHook(out io.Writer, root string, force bool) error {
 	case err != nil:
 		return fmt.Errorf("read %s: %w", p, err)
 	default:
-		// file exists
-		if bytes.Contains(existing, []byte(hookMarker)) && !force {
+		if bytes.Equal(existing, []byte(hookScript)) && !force {
 			fmt.Fprintf(out, "skip  .git/hooks/post-commit (exists)\n")
 			return nil
 		}
+		// Older marker-owned hooks are safe to upgrade without --force.
 		if !bytes.Contains(existing, []byte(hookMarker)) && !force {
 			return fmt.Errorf("%s exists and was not written by repomap; merge manually or re-run with --force", p)
 		}

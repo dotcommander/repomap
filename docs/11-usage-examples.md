@@ -352,6 +352,8 @@ repomap init --force          # overwrite existing
 
 The config file lets you blocklist noisy method names, restrict or exclude paths, and
 pin specific files to a detail level. See [Configuration](04-configuration.md).
+The post-commit hook runs `repomap cache warm .` in the background; re-running
+`init` upgrades older marker-owned hooks without `--force` and preserves foreign hooks.
 
 ---
 

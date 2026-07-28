@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,4 +110,29 @@ func TestScanFiles_NilConfig(t *testing.T) {
 
 	assert.Contains(t, paths, "cmd/main.go")
 	assert.Contains(t, paths, "internal/gen/gen.go")
+}
+
+func TestScanGitPreservesSpecialFilenames(t *testing.T) {
+	dir := t.TempDir()
+	paths := []string{
+		" leading.go",
+		"trailing .go",
+		"unicode-世界.go",
+		"newline\nname.go",
+	}
+	for _, path := range paths {
+		mkfile(t, filepath.Join(dir, path), "package special")
+	}
+	initGitRepo(t, dir)
+
+	files, err := scanGit(context.Background(), dir, nil, defaultMaxFileSize)
+	require.NoError(t, err)
+	got := make([]string, 0, len(files))
+	for _, file := range files {
+		got = append(got, file.Path)
+	}
+
+	slices.Sort(got)
+	slices.Sort(paths)
+	assert.Equal(t, paths, got)
 }

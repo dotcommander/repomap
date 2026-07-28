@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -225,6 +226,60 @@ func TestServeInvalidJSON(t *testing.T) {
 	_, hasError := resp["error"]
 	require.False(t, hasError)
 	require.Contains(t, resp, "result")
+}
+
+func TestServeInvalidRequestTypeRecovers(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	s := startServeSession(t)
+	_, err := s.stdin.Write([]byte(`{"jsonrpc":"2.0","id":1,"method":2}` + "\n"))
+	require.NoError(t, err)
+
+	var resp map[string]any
+	require.NoError(t, s.dec.Decode(&resp))
+	rpcErr := resp["error"].(map[string]any)
+	require.Equal(t, float64(-32700), rpcErr["code"])
+
+	require.NoError(t, s.enc.Encode(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "map/status", "params": map[string]any{}}))
+	resp = map[string]any{}
+	require.NoError(t, s.dec.Decode(&resp))
+	_, hasError := resp["error"]
+	require.False(t, hasError)
+}
+
+func TestServeOversizedFrameEmitsOneParseErrorAndStops(t *testing.T) {
+	t.Parallel()
+
+	var input bytes.Buffer
+	input.Write(bytes.Repeat([]byte("x"), 4*1024*1024+1))
+	input.WriteString("\n")
+	input.WriteString(`{"jsonrpc":"2.0","id":2,"method":"map/status","params":{}}` + "\n")
+	var output bytes.Buffer
+	s := &serveServer{
+		codec:  serve.NewCodec(&input, &output),
+		stderr: io.Discard,
+	}
+
+	require.NoError(t, s.Run(t.Context()))
+
+	var responses []map[string]any
+	dec := json.NewDecoder(&output)
+	for {
+		var resp map[string]any
+		if err := dec.Decode(&resp); err == io.EOF {
+			break
+		} else {
+			require.NoError(t, err)
+		}
+		responses = append(responses, resp)
+	}
+	require.Len(t, responses, 1)
+	rpcErr := responses[0]["error"].(map[string]any)
+	require.Equal(t, float64(-32700), rpcErr["code"])
 }
 
 func TestServeEOFShutdown(t *testing.T) {

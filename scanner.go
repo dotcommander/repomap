@@ -63,7 +63,7 @@ func scanFilesLimited(ctx context.Context, root string, cfg *BlocklistConfig, ma
 }
 
 func scanGit(ctx context.Context, root string, cfg *BlocklistConfig, maxSize int) ([]FileInfo, error) {
-	cmd := exec.CommandContext(ctx, "git", "ls-files", "--cached", "--others", "--exclude-standard")
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z")
 	cmd.Dir = root
 
 	var out bytes.Buffer
@@ -74,8 +74,7 @@ func scanGit(ctx context.Context, root string, cfg *BlocklistConfig, maxSize int
 	}
 
 	var files []FileInfo
-	for _, line := range strings.Split(out.String(), "\n") {
-		line = strings.TrimSpace(line)
+	for _, line := range splitNUL(out.String()) {
 		if line == "" {
 			continue
 		}

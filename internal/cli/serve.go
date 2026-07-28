@@ -100,6 +100,12 @@ func (s *serveServer) readLoop(requestCh chan<- rawRequest) {
 			switch {
 			case errors.Is(err, io.EOF):
 				return
+			case errors.Is(err, bufio.ErrTooLong):
+				// A Scanner cannot continue after an oversized token. Emit the
+				// protocol parse error once, then close the request channel so
+				// dispatch stops rather than repeatedly reporting the same frame.
+				s.respondErr(nil, errParse, "parse error")
+				return
 			case isParseError(err):
 				s.respondErr(nil, errParse, "parse error")
 				continue
@@ -114,7 +120,7 @@ func (s *serveServer) readLoop(requestCh chan<- rawRequest) {
 func isParseError(err error) bool {
 	var syntaxErr *json.SyntaxError
 	var typeErr *json.UnmarshalTypeError
-	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr) || errors.Is(err, bufio.ErrTooLong)
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
 }
 
 func (s *serveServer) dispatchLoop(ctx context.Context, requestCh <-chan rawRequest) {

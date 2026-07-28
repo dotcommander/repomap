@@ -2,9 +2,11 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -213,4 +215,57 @@ func TestFindSymbolHandle(t *testing.T) {
 	assert.Equal(t, "service.go", hits[0].File)
 	assert.Equal(t, "Run", hits[0].Symbol.Name)
 	assert.Equal(t, "symbol:service.go::Run#function@12", hits[0].Handle)
+}
+
+func TestFindSymbolConcurrentIncrementalBuild(t *testing.T) {
+	dir := newGitRepo(t)
+	cacheDir := t.TempDir()
+	for i := range 4 {
+		path := filepath.Join(dir, fmt.Sprintf("lib%d.py", i))
+		src := fmt.Sprintf("def helper_%d():\n    return %d\n", i, i)
+		require.NoError(t, os.WriteFile(path, []byte(src), 0o644))
+	}
+	gitCommitAll(t, dir, "add non-Go fixtures")
+	m := buildWithCache(t, dir, cacheDir)
+
+	done := make(chan struct{})
+	errCh := make(chan error, 1)
+	var readers sync.WaitGroup
+	for range 2 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+				}
+				m.FindSymbol("Hello", "", "")
+				m.FindSymbolHandle("main.go", "Hello", "function", 3)
+			}
+		}()
+	}
+
+	for i := range 20 {
+		src := fmt.Sprintf("def helper_0():\n    return %d\n", i)
+		if err := os.WriteFile(filepath.Join(dir, "lib0.py"), []byte(src), 0o644); err != nil {
+			errCh <- err
+			break
+		}
+		if err := m.Build(context.Background()); err != nil {
+			errCh <- err
+			break
+		}
+	}
+	close(done)
+	readers.Wait()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	default:
+	}
+
+	require.NotEmpty(t, m.FindSymbol("Hello", "", ""))
+	require.Len(t, m.FindSymbolHandle("main.go", "Hello", "function", 3), 1)
 }

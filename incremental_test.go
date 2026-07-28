@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"slices"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,6 +161,66 @@ func Extra() string { return "extra" }
 	for _, rf := range m2.Ranked() {
 		assert.NotEqual(t, "extra.go", rf.Path, "deleted file must not appear in ranked output")
 	}
+}
+
+func TestPrepareIncrementalRejectsGoSemanticInputsBeforeHydration(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"changed.go", "go.mod", "go.sum", "go.work"} {
+		for _, change := range []string{"added", "modified", "deleted"} {
+			t.Run(change+"_"+path, func(t *testing.T) {
+				m := New(t.TempDir(), DefaultConfig())
+				entry := diskCache{
+					Ranked:          []RankedFile{{FileSymbols: &FileSymbols{Path: "cached.go"}}},
+					SemanticCallers: SymbolCallers{callsKey("cached.go", "Target"): {{File: "caller.go", Line: 3}}},
+				}
+				var added, modified, deleted []string
+				switch change {
+				case "added":
+					added = []string{path}
+				case "modified":
+					modified = []string{path}
+				case "deleted":
+					deleted = []string{path}
+				}
+
+				ok, changed := m.prepareIncremental(entry, added, modified, deleted)
+				assert.False(t, ok)
+				assert.Nil(t, changed)
+				assert.Empty(t, m.Ranked(), "semantic changes must reject before cache hydration")
+				assert.Empty(t, m.SemanticCallers(), "semantic callers must not be restored from an invalid cache")
+			})
+		}
+	}
+}
+
+func TestIncrementalDeletedGoCallerRebuildsSemanticCallers(t *testing.T) {
+	t.Parallel()
+
+	dir := newGitRepo(t)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/incremental\n\ngo 1.26\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "target.go"), []byte("package main\n\nfunc Target() {}\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "caller.go"), []byte("package main\n\nfunc Call() { Target() }\n"), 0o644))
+	gitCommitAll(t, dir, "add semantic caller")
+
+	cacheDir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.GoAnalysisCalls = true
+	m1 := New(dir, cfg)
+	m1.SetCacheDir(cacheDir)
+	require.NoError(t, m1.Build(context.Background()))
+	require.NotEmpty(t, m1.SemanticCallers())
+
+	require.NoError(t, os.Remove(filepath.Join(dir, "caller.go")))
+	gitCommitAll(t, dir, "delete semantic caller")
+
+	m2 := New(dir, cfg)
+	m2.SetCacheDir(cacheDir)
+	ok, changed := m2.LoadCacheIncremental(context.Background(), cacheDir)
+	assert.False(t, ok, "deleted Go callers require a full semantic rebuild")
+	assert.Nil(t, changed)
+	require.NoError(t, m2.Build(context.Background()))
+	assert.Empty(t, m2.SemanticCallers(), "the deleted caller must disappear in the same build")
 }
 
 // TestIncrementalUntrackedFile verifies that an untracked file (not yet committed)

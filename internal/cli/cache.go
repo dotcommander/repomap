@@ -13,6 +13,7 @@ import (
 
 type cacheCommand struct {
 	Status cacheStatusCommand `cmd:"" help:"Show disk cache freshness and usability"`
+	Warm   cacheWarmCommand   `cmd:"" help:"Build and save a fresh disk cache"`
 }
 
 type cacheStatusCommand struct {
@@ -26,13 +27,9 @@ func (c *cacheStatusCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
-	cacheDir := c.CacheDir
-	if cacheDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve home dir: %w", err)
-		}
-		cacheDir = filepath.Join(home, ".cache", "repomap")
+	cacheDir, err := resolveCacheDir(c.CacheDir)
+	if err != nil {
+		return err
 	}
 	status := repomap.InspectCache(ctx, root, cacheDir)
 	if c.JSON {
@@ -41,6 +38,50 @@ func (c *cacheStatusCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return enc.Encode(status)
 	}
 	return printCacheStatus(ioctx.stdout, status)
+}
+
+type cacheWarmCommand struct {
+	CacheDir  string `name:"cache-dir" help:"Cache directory (default: $HOME/.cache/repomap)"`
+	Directory string `arg:"" optional:"" type:"path" default:"." help:"Directory to cache"`
+}
+
+func (c *cacheWarmCommand) Run(ctx context.Context, ioctx *commandIO) error {
+	root, err := filepath.Abs(c.Directory)
+	if err != nil {
+		return fmt.Errorf("resolve path: %w", err)
+	}
+	cacheDir, err := resolveCacheDir(c.CacheDir)
+	if err != nil {
+		return err
+	}
+
+	m := repomap.New(root, repomap.DefaultConfig())
+	m.SetCacheDir(cacheDir)
+	if err := m.Build(ctx); err != nil {
+		return fmt.Errorf("build map: %w", err)
+	}
+	// Build writes its configured cache best-effort. Save again here so this
+	// command can report disk failures instead of claiming a cache was warmed.
+	if err := m.SaveCacheContext(ctx, cacheDir); err != nil {
+		return fmt.Errorf("save cache: %w", err)
+	}
+
+	status := repomap.InspectCache(ctx, root, cacheDir)
+	if !status.Usable || status.Stale {
+		return fmt.Errorf("cache warm did not produce a fresh usable cache: %s", status.Reason)
+	}
+	return printCacheStatus(ioctx.stdout, status)
+}
+
+func resolveCacheDir(configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".cache", "repomap"), nil
 }
 
 func printCacheStatus(w io.Writer, status repomap.CacheStatus) error {
