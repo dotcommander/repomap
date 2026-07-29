@@ -1,0 +1,1 @@
+{"goal":"make outbound messages failure safe","language":"php","kind":"side_effect_test_sensitive","owner_doc":"makes outbound messages failure safe","distractor_doc":"formats outbound message templates","owners":["mailer.php"],"symbols":["Mailer"],"consumers":["service.php"],"tests":["mailerTest.php"],"evidence":["doc","effect"],"distractors":["template.php"]}

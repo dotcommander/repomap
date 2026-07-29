@@ -24,7 +24,7 @@ Examples:
   # Lean orientation — symbol NAMES only; fits more files in the same budget
   repomap -f compact ./src
 
-  # Every symbol with full signatures + struct fields, no budget limit
+  # Detailed signatures + struct fields; the complete CLI response still fits -t
   repomap -f detail ./src
 
   # Machine-readable XML — dependency graph + symbol attributes (line, span, params)
@@ -35,6 +35,9 @@ Examples:
 
   # Task-aware ranking; pair with --explain to see WHY each file ranked
   repomap --intent "auth middleware" --explain ./src
+
+  # Bounded implementation handoff; --tokens defaults to 4096 for task
+  repomap task --tokens=4096 --consumed internal/auth.go "fix auth middleware" ./src
 
 Commands:
   audit             Emit deterministic audit prepass facts
@@ -57,6 +60,7 @@ Commands:
   refs              Find all references to a symbol
   serve             Start a long-lived JSON-RPC 2.0 server on stdin/stdout
   symbols           List symbols defined in a file
+  task              Build a bounded implementation handoff for a goal
 
 Flags:
       --artifact=STRING       Write command output to this file instead of stdout
@@ -69,7 +73,7 @@ Flags:
   -f, --format=STRING         Output format: compact (orientation: names only), verbose, detail, lines, xml (default: enriched — signatures + godoc + fields)
       --include-tests         Rank _test.go files at full weight (default: demoted)
   -i, --intent=STRING         Natural-language query for task-aware ranking (BM25). Reranks files silently — add --explain to see the score breakdown.
-      --json                  Output as JSON array of lines
+      --json                  Output a schema-versioned JSON envelope containing rendered lines
       --json-legacy           Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release.
       --json-structured       Output a structured JSON repository map
       --no-cache              Deprecated compatibility flag; semantic callers are built with the map

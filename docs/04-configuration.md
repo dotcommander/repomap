@@ -6,7 +6,7 @@ This page covers root map flags and the main subcommand flags.
 
 | Flag | Short | Default | Description |
 | --- | --- | --- | --- |
-| `--tokens` | `-t` | `2048` | Approximate token budget for the output |
+| `--tokens` | `-t` | `2048` | Complete-output budget using `ceil(UTF-8 bytes / 4)` |
 | `--format` | `-f` | `enriched` | One of `enriched`, `compact`, `verbose`, `detail`, `lines`, `xml` |
 | `--json` | — | `false` | Emit verbose output as a JSON envelope of lines |
 | `--json-legacy` | — | `false` | Emit the legacy bare `[]string` JSON shape |
@@ -20,6 +20,10 @@ This page covers root map flags and the main subcommand flags.
 | `--intent` | `-i` | `""` | Natural language query for BM25 task-aware ranking |
 | `--consumed` | — | `[]` | File paths already read; these are downranked and their importers upranked |
 | `--symbol-refs` | — | `false` | Enable approximate cross-language symbol reference scoring |
+| `--explain` | — | `false` | Append rank-score evidence to text output |
+| `--include-tests` | — | `false` | Rank test files at full weight |
+| `--artifact` | — | `""` | Atomically write successful stdout to a regular file; existing permissions are preserved |
+| `--help` | `-h` | `false` | Show help without running the command or creating an artifact |
 
 ## Positional argument
 
@@ -43,7 +47,9 @@ repomap -t 4096    # default doubled
 repomap -t 16384   # practically uncapped
 ```
 
-Verbose and detail formats ignore the budget — they always emit everything.
+Every bounded format counts the complete encoded output, including headers and
+structured wrappers. Records are omitted whole when necessary; structured
+output is never cut mid-record.
 
 ## Format
 
@@ -124,6 +130,75 @@ repomap cache warm . --cache-dir /tmp/repomap-cache
 | `--json` | `false` | Emit structured cache status JSON |
 
 `cache warm` accepts the same `--cache-dir` flag. It prints text cache status only after the written cache is usable and fresh.
+
+## Complete command and flag reference
+
+The executable leaves are:
+
+`map` (the default command), `brief`, `task`, `audit hygiene`, `audit brief`,
+`audit risks`, `audit surface`, `audit effects`, `cache status`, `cache warm`,
+`find`, `impact`, `inventory`, `context`, `endpoint`, `explain`, `orphans`,
+`init`, `lsp status`, `refs`, `def`, `hover`, `symbols`, `serve`,
+`commit analyze`, `commit execute`, `commit prep`, `commit finish`,
+`commit auto`, and `commit-preflight`.
+
+All commands inherit `--artifact` and `--help`. The remaining visible flags are
+listed below. Empty string and `false` are the defaults unless stated otherwise.
+
+| Command | Flags, defaults, and accepted values |
+| --- | --- |
+| default map | `--tokens, -t=2048` (>0); `--format, -f=enriched` (`enriched`, `compact`, `verbose`, `detail`, `lines`, `xml`); `--json`; `--json-legacy`; `--json-structured`; `--calls`; `--precise`; `--calls-threshold=2` (>=0); `--calls-limit=10` (0 = unlimited); `--calls-include-tests`; `--no-cache`; `--intent, -i`; `--consumed`; `--symbol-refs`; `--explain`; `--include-tests` |
+| `task` | `--tokens, -t=4096` (>0); `--json`; `--consumed` |
+| `audit hygiene` | `--json` |
+| `audit brief`, `audit risks`, `audit surface` | `--limit=20` (0 = all); `--top-files=0` (0 = use `--limit`); `--intent, -i`; `--json` |
+| `audit effects` | audit packet flags plus `--kind` (`all`, `database`, `filesystem-write`, `filesystem-read`, `subprocess`, `process-exit`, `http`, `serialization`, `secret`, `crypto`, `time`, `randomness`, `context-background`, `goroutine`, `unbounded-read`) and `--paths-only` |
+| `cache status` | `--cache-dir=$HOME/.cache/repomap`; `--json` |
+| `cache warm` | `--cache-dir=$HOME/.cache/repomap` |
+| `find` | `--kind`; `--file`; `--limit=20` (0 = unlimited); `--format=text` (`text`, `json`) |
+| `impact` | `--json`; `--markdown` |
+| `inventory` | required `--boundary`; `--json` |
+| `context` | `--kind`; `--file`; `--max-source-lines=200` (>0); `--max-output-lines=400` (0 = unlimited); `--max-output-bytes=65536` (0 = unlimited); `--json`; `--calls`; `--precise`; `--calls-include-tests`; `--calls-limit=10` (0 = unlimited) |
+| `endpoint` | `--json`; `--max-output-lines=400` (0 = unlimited) |
+| `explain`, `orphans`, `lsp status`, `refs`, `def`, `hover`, `symbols` | `--json` |
+| `init` | `--force`; `--no-hook`; `--no-config` |
+| `commit analyze` | `--tag`; `--pretty`; `--tmpdir`; `--confidence=0.75` (0 through 1) |
+| `commit execute` | required `--plan-file`; `--push`; `--tag`; `--no-release`; `--release-notes-from`; `--dry-run`; `--json`; `--skip-fix` |
+| `commit prep` | `--json`; `--no-review`; `--tag`; `--allow-large` |
+| `commit finish` | required `--prep-token`; `--decisions`; `--push`; `--tag`; `--json=true` |
+| `commit auto` | `--no-review`; `--allow-large`; `--tag`; `--decisions` |
+| `brief`, `serve`, `commit-preflight` | no command-specific flags |
+
+`task` requires a nonblank positional goal and accepts an optional repository
+directory after it. Consumed paths are normalized relative to that repository;
+paths outside it are rejected. The library API uses 4096 tokens when
+`TaskOptions.MaxTokens` is zero and rejects negative values.
+
+Task JSON is schema version 1. Its top-level fields are `root`, `goal`,
+`budget`, `selection`, `rules`, `related_changes`, `targets`, `read_next`,
+`verify_commands`, `follow_up_commands`, `diagnostics`, and `truncations`.
+Selection confidence is deterministic match strength, not a correctness claim.
+Relationship provenance is `exact` for semantic evidence, `syntactic` for
+parsed structure, and `heuristic` for naming or adjacency. Every omitted
+bounded field records `{field, shown, total, reason}` in `truncations`.
+
+All bounded map and task formats count their complete encoded stdout, including
+headers, dependency flow, explanations, and JSON or XML wrappers. Structured
+output is reduced only at whole records and never byte-cut. A budget too small
+for the minimum valid envelope fails before stdout or an artifact is written.
+
+Precedence and compatibility rules:
+
+- `--json-legacy` requires `--json`. `--json-structured` is mutually exclusive
+  with both line-oriented JSON flags. JSON modes take precedence over `--format`.
+- `--top-files` overrides `--limit` when nonzero.
+- Explicit `find --kind` and `find --file` override qualifiers embedded in the
+  positional query.
+- `impact --json` and `impact --markdown` are mutually exclusive.
+- `--precise` only affects caller output with `--calls`; `--no-cache` remains a
+  no-op compatibility flag. The removed hidden `--calls-use-binary` flag fails
+  with a migration message.
+- Hidden `commit auto --force-mode` accepts only `FULL` or `LOCAL` and exists
+  for isolated tests; it is not a supported operator flag.
 
 ## Environment
 

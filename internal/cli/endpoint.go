@@ -19,6 +19,13 @@ type endpointCommand struct {
 	Args           []string `arg:"" optional:"" help:"Optional route pattern and directory"`
 }
 
+func (c *endpointCommand) Validate() error {
+	if c.MaxOutputLines < 0 {
+		return fmt.Errorf("--max-output-lines must be zero or greater")
+	}
+	return nil
+}
+
 func (c *endpointCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	if len(c.Args) > 2 {
 		return fmt.Errorf("accepts at most 2 arg(s), received %d", len(c.Args))
@@ -65,13 +72,17 @@ func (c *endpointCommand) Run(ctx context.Context, ioctx *commandIO) error {
 			return enc.Encode(routes)
 		}
 		if len(routes) == 0 {
-			fmt.Fprintln(ioctx.stdout, "no routes found")
-			return nil
+			_, err := fmt.Fprintln(ioctx.stdout, "no routes found")
+			return err
 		}
 		tw := tabwriter.NewWriter(ioctx.stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "METHOD\tPATTERN\tHANDLER\tFRAMEWORK\tFILE:LINE")
+		if _, err := fmt.Fprintln(tw, "METHOD\tPATTERN\tHANDLER\tFRAMEWORK\tFILE:LINE"); err != nil {
+			return err
+		}
 		for _, r := range routes {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s:%d\n", r.Method, r.Pattern, r.Handler, r.Framework, r.File, r.Line)
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s:%d\n", r.Method, r.Pattern, r.Handler, r.Framework, r.File, r.Line); err != nil {
+				return err
+			}
 		}
 		return tw.Flush()
 	}
@@ -91,7 +102,9 @@ func (c *endpointCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return enc.Encode(ec)
 	}
 	var b strings.Builder
-	printEndpointContext(&b, ec)
+	if err := printEndpointContext(&b, ec); err != nil {
+		return err
+	}
 	out := formatBoundedText(b.String(), c.MaxOutputLines, 0)
 	_, err = io.WriteString(ioctx.stdout, out.Text)
 	return err
@@ -113,32 +126,52 @@ func endpointTests(callers repomap.SymbolCallers, handler repomap.SymbolMatch, l
 // registration line (always carries the registered handler identifier), the
 // resolved handler symbol block, ambiguous alternatives, direct callee names,
 // touching tests, and the file-level impact summary.
-func printEndpointContext(w io.Writer, ec repomap.EndpointContext) {
+func printEndpointContext(w io.Writer, ec repomap.EndpointContext) error {
 	r := ec.Route
-	fmt.Fprintf(w, "%s:%d  %s %s  %s  [%s]\n", r.File, r.Line, r.Method, r.Pattern, r.Handler, r.Framework)
+	if _, err := fmt.Fprintf(w, "%s:%d  %s %s  %s  [%s]\n", r.File, r.Line, r.Method, r.Pattern, r.Handler, r.Framework); err != nil {
+		return err
+	}
 
 	if ec.Handler != nil {
-		fmt.Fprintf(w, "\nhandler: %s\n", symbolDisplay(ec.Handler.Symbol))
-		fmt.Fprintf(w, "  %s:%d\n", ec.Handler.File, ec.Handler.Symbol.Line)
+		if _, err := fmt.Fprintf(w, "\nhandler: %s\n", symbolDisplay(ec.Handler.Symbol)); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "  %s:%d\n", ec.Handler.File, ec.Handler.Symbol.Line); err != nil {
+			return err
+		}
 	}
 	if len(ec.Ambiguous) > 0 {
-		fmt.Fprintln(w, "\nalso matched:")
+		if _, err := fmt.Fprintln(w, "\nalso matched:"); err != nil {
+			return err
+		}
 		for _, mt := range ec.Ambiguous {
-			fmt.Fprintf(w, "  %s:%d  %s\n", mt.File, mt.Symbol.Line, symbolDisplay(mt.Symbol))
+			if _, err := fmt.Fprintf(w, "  %s:%d  %s\n", mt.File, mt.Symbol.Line, symbolDisplay(mt.Symbol)); err != nil {
+				return err
+			}
 		}
 	}
 	if len(ec.Callees) > 0 {
-		fmt.Fprintln(w, "\ncallees:")
+		if _, err := fmt.Fprintln(w, "\ncallees:"); err != nil {
+			return err
+		}
 		for _, c := range ec.Callees {
-			fmt.Fprintf(w, "  %s\n", c)
+			if _, err := fmt.Fprintf(w, "  %s\n", c); err != nil {
+				return err
+			}
 		}
 	}
 	if len(ec.Tests) > 0 {
-		fmt.Fprintln(w, "\ntests:")
+		if _, err := fmt.Fprintln(w, "\ntests:"); err != nil {
+			return err
+		}
 		for _, loc := range ec.Tests {
-			fmt.Fprintf(w, "  %s:%d:%d\n", loc.File, loc.Line, loc.Column)
+			if _, err := fmt.Fprintf(w, "  %s:%d:%d\n", loc.File, loc.Line, loc.Column); err != nil {
+				return err
+			}
 		}
 	}
-	fmt.Fprintln(w, "\nimpact:")
-	printImpact(w, ec.Impact)
+	if _, err := fmt.Fprintln(w, "\nimpact:"); err != nil {
+		return err
+	}
+	return printImpact(w, ec.Impact)
 }

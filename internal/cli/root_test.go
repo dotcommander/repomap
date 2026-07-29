@@ -160,6 +160,7 @@ func TestRootCmd_JSONFlagRegistered(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, executeTest(t, []string{"--help"}, &out, io.Discard))
 	assert.Contains(t, out.String(), "--json ")
+	assert.Contains(t, out.String(), "schema-versioned JSON envelope")
 	assert.Contains(t, out.String(), "--json-legacy")
 	assert.Contains(t, out.String(), "pre-v0.7.0")
 }
@@ -243,12 +244,16 @@ func TestDefaultModeContainsSymbols(t *testing.T) {
 		"default mode must include a start-line anchor for symbols")
 }
 
-// TestCompactModeFlagDefault verifies that the -f flag has empty default
-// so the default path falls through to enriched rendering.
-func TestCompactModeFlagDefault(t *testing.T) {
+// TestMapFormatDefault verifies the parser's explicit enriched default.
+func TestMapFormatDefault(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", (mapCommand{}).Format,
-		"-f flag default must be empty so default rendering is enriched")
+
+	var tree rootCommand
+	parser, err := newRootParser(&tree, t.Context(), &commandIO{stdout: io.Discard, stderr: io.Discard}, io.Discard, io.Discard)
+	require.NoError(t, err)
+	_, err = parser.Parse([]string{"."})
+	require.NoError(t, err)
+	assert.Equal(t, "enriched", tree.Map.Format)
 }
 
 // TestCompactModeVerboseUnaffected verifies that verbose output is richer than compact —

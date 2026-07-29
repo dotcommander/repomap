@@ -1,0 +1,1 @@
+{"goal":"preserve API response contract","language":"typescript","kind":"contract_refactor","owner_doc":"preserves API response contract","distractor_doc":"declares API timeout constants","owners":["api.ts"],"symbols":["Api"],"consumers":["client.ts"],"tests":["api.test.ts"],"evidence":["path","symbol"],"distractors":["constants.ts"]}

@@ -1,0 +1,1 @@
+{"goal":"preserve transport response contract","language":"php","kind":"contract_refactor","owner_doc":"preserves transport response contract","distractor_doc":"loads transport configuration","owners":["endpoint.php"],"symbols":["Endpoint"],"consumers":["router.php"],"tests":["endpointTest.php"],"evidence":["doc","signature"],"distractors":["config.php"]}

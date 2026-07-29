@@ -34,7 +34,7 @@ The budget clipped too much.
 ```bash
 repomap -t 8192       # double the default
 repomap -t 16384      # roughly 64 KB of output
-repomap -f verbose    # ignore the budget entirely
+repomap -f verbose -t 16384  # verbose detail with a larger complete-output budget
 ```
 
 ## Symbols are wrong or missing

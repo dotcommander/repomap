@@ -58,10 +58,29 @@ func InspectCache(ctx context.Context, root, cacheDir string) CacheStatus {
 	}
 
 	status.Usable = true
-	status.CurrentHead, _ = gitHeadSHA(ctx, root)
-	if entry.LastSHA != "" && status.CurrentHead != "" && entry.LastSHA != status.CurrentHead {
-		status.Stale = true
-		status.Reason = "head_changed"
+	if entry.GitRoot {
+		// Git cache entries are keyed by an exact worktree digest, not per-file
+		// mtimes. This keeps a saved dirty cache fresh when its contents have not
+		// changed, including after staging or unstaging those same bytes.
+		m := New(root, DefaultConfig())
+		snapshot, snapshotErr := m.gitStatusSnapshot(ctx)
+		if snapshotErr != nil {
+			status.Stale = true
+			status.Reason = "git_unavailable"
+			return status
+		}
+		status.CurrentHead = snapshot.headSHA
+		if entry.LastSHA != snapshot.headSHA {
+			status.Stale = true
+			status.Reason = "head_changed"
+			return status
+		}
+		if entry.WorktreeDigest != snapshot.digest {
+			status.Stale = true
+			status.Reason = "content_changed"
+			return status
+		}
+		status.Reason = "fresh"
 		return status
 	}
 

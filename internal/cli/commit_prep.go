@@ -236,12 +236,16 @@ func buildPrepPreflight(ctx context.Context, repoRoot string, a *repomap.CommitA
 // emitPrep writes the PrepPayload to w as JSON, or prints a terse summary.
 func emitPrep(w io.Writer, jsonOut bool, p *repomap.PrepPayload) error {
 	if !jsonOut {
-		fmt.Fprintf(w, "status: %s\n", p.Status)
-		if p.AbortReason != "" {
-			fmt.Fprintf(w, "abort_reason: %s\n", p.AbortReason)
+		if _, err := fmt.Fprintf(w, "status: %s\n", p.Status); err != nil {
+			return err
 		}
-		fmt.Fprintf(w, "groups: %d\n", len(p.Plan))
-		return nil
+		if p.AbortReason != "" {
+			if _, err := fmt.Fprintf(w, "abort_reason: %s\n", p.AbortReason); err != nil {
+				return err
+			}
+		}
+		_, err := fmt.Fprintf(w, "groups: %d\n", len(p.Plan))
+		return err
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -250,8 +254,8 @@ func emitPrep(w io.Writer, jsonOut bool, p *repomap.PrepPayload) error {
 	if _, err := w.Write(data); err != nil {
 		return err
 	}
-	fmt.Fprintln(w)
-	return nil
+	_, err = fmt.Fprintln(w)
+	return err
 }
 
 // capSlice returns lc[:max] when len > max.

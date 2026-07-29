@@ -35,7 +35,7 @@ func main() {
 
 ```go
 cfg := repomap.Config{
-    MaxTokens:      4096,  // compact + xml budget
+    MaxTokens:      4096,  // ranked map/detail-selection budget
     MaxTokensNoCtx: 8192,  // lines budget
     Intent:         "fix token refresh",  // BM25 task-aware ranking (optional)
 }
@@ -49,14 +49,75 @@ Zero values get defaults (`1024` and `2048`).
 Every format has a method. Call as many as you want; results are cached per format until the next `Build`.
 
 ```go
-m.String()         // compact, budget-trimmed
-m.StringVerbose()  // all symbols, no budget
+m.String()         // enriched, budget-trimmed
+m.StringVerbose()  // all symbols; unbounded direct-library rendering
 m.StringDetail()   // verbose + signatures + struct fields
 m.StringLines()    // actual source lines
 m.StringXML()      // structured XML
 ```
 
 Each returns an empty string if `Build` hasn't run or the project contains no symbols.
+`String()` and `StringCompact()` use the map configuration's render budget.
+`StringVerbose()` and `StringDetail()` are deliberately unbounded full-map
+renderings; they do not have the CLI's final encoded-output budget layer.
+
+## Build a task handoff
+
+Use `Map.Task` when an integration needs a bounded implementation packet rather
+than a general repository map. It derives a task-specific build from the map's
+root, ranks for the goal, adds semantic Go relationships and audit effects, and
+then packs a single report for either `FormatTask` or `MarshalTaskJSON`.
+
+```go
+report, err := m.Task(ctx, "fix token budget overshoot", repomap.TaskOptions{
+    MaxTokens:     4096,
+    ConsumedPaths: []string{"budget.go", "internal/cli/render.go"},
+})
+if err != nil {
+    return err
+}
+fmt.Print(repomap.FormatTask(report))
+```
+
+`TaskOptions.MaxTokens` defaults to `4096` when zero; a negative value returns
+`task max tokens must not be negative`. `ConsumedPaths` are normalized against
+the map root, mark those targets as consumed, downrank them, and prefer their
+importers. A blank goal returns `task goal must not be blank`; a consumed path
+outside the root also returns an error.
+
+`TaskReport` is schema version 1. Its compatibility keys cover `schema_version`,
+the root and goal, `budget` (`max_tokens` and `used_tokens`), selection strategy, applicable
+rule paths, related git changes, selected targets, read-next ranges, verification
+and follow-up commands, diagnostics, and explicit `truncations`. A target carries
+its symbols, task-match `evidence`, relationship and effect `provenance`, a
+`confidence` tier, package/risk/parse metadata, callers/consumers/tests/imports,
+and bounded source excerpts. The report reduces sources, relationship lists, and
+metadata before dropping targets; every reduction is recorded in `truncations`.
+The final report fits whichever is larger: its JSON encoding or its human
+`FormatTask` rendering, measured as `ceil(bytes / 4)` tokens.
+
+Selection confidence describes deterministic match strength:
+
+| Confidence | Meaning |
+| --- | --- |
+| `high` | Positive task evidence scored at least 16 |
+| `medium` | Positive task evidence scored from 8 through 15 |
+| `low` | Positive task evidence scored below 8 |
+| `fallback` | No file had positive task evidence; structural rank supplied the target |
+
+Confidence is not a correctness or preservation claim. Relationship provenance
+is `exact` for semantic Go evidence, `syntactic` for parsed source structure,
+and `heuristic` for naming or adjacency.
+
+To replay a private evaluation manifest without adding its paths or results to
+the repository or CI configuration:
+
+```bash
+REPOMAP_TASK_REPLAY_MANIFEST=/path/to/tasks.json \
+  go test . -run '^TestTaskManifestContractAndOptionalReplay$' -count=1
+```
+
+The manifest is a JSON array using the same task records as `testdata/task`.
 
 ## Symbol context
 
@@ -112,7 +173,7 @@ On the next run, `LoadCache` reads the saved state:
 
 ```go
 m := repomap.New(".", cfg)
-if err := m.LoadCache("/tmp/repomap-cache"); err == nil && !m.Stale() {
+if m.LoadCache("/tmp/repomap-cache") && !m.Stale() {
     fmt.Print(m.String())
     return
 }
@@ -148,7 +209,7 @@ func run(root string) error {
     m := repomap.New(root, repomap.Config{MaxTokens: 4096})
     m.SetCacheDir(os.TempDir() + "/repomap")
 
-    if err := m.LoadCache(os.TempDir() + "/repomap"); err == nil && !m.Stale() {
+    if m.LoadCache(os.TempDir() + "/repomap") && !m.Stale() {
         fmt.Print(m.String())
         return nil
     }

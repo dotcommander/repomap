@@ -7,13 +7,15 @@ import (
 
 // StructuredOutput is the machine-readable repository map format.
 type StructuredOutput struct {
-	SchemaVersion int              `json:"schema_version"`
-	Root          string           `json:"root"`
-	Totals        StructuredTotals `json:"totals"`
-	Config        StructuredConfig `json:"config"`
-	Coverage      ParseCoverage    `json:"coverage"`
-	Warnings      []string         `json:"warnings,omitempty"`
-	Files         []StructuredFile `json:"files"`
+	SchemaVersion      int              `json:"schema_version"`
+	Root               string           `json:"root"`
+	Totals             StructuredTotals `json:"totals"`
+	Config             StructuredConfig `json:"config"`
+	Coverage           ParseCoverage    `json:"coverage"`
+	Warnings           []string         `json:"warnings,omitempty"`
+	Files              []StructuredFile `json:"files"`
+	FilesOmitted       int              `json:"files_omitted,omitempty"`
+	FilesOmittedReason string           `json:"files_omitted_reason,omitempty"`
 }
 
 // StructuredTotals records unbudgeted repository totals.

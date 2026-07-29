@@ -1,6 +1,16 @@
 # Output Formats
 
-Five formats. Pick one with `-f` or `--format`.
+Six formats are available through `-f` or `--format`; enriched is the default.
+
+## Enriched
+
+```bash
+repomap
+repomap -f enriched
+```
+
+Ranks files and emits exported symbols, signatures, first-sentence
+documentation, and struct/interface fields within the complete CLI budget.
 
 ## Compact
 
@@ -8,7 +18,8 @@ Five formats. Pick one with `-f` or `--format`.
 repomap -f compact
 ```
 
-The default. Ranks files, fits them inside the token budget, collapses long symbol lists into counts.
+Ranks files, fits them inside the token budget, and collapses long symbol lists
+into counts.
 
 ```
 repomap.go [imported by 1]
@@ -24,7 +35,9 @@ Use this when you're pasting output into an LLM prompt. It respects `-t` and tri
 repomap -f verbose
 ```
 
-Every symbol from every file. No summarization. No budget trimming.
+Every symbol in each selected file. No per-file summarization. The CLI still
+applies `-t` to the complete encoded response and therefore omits whole files
+when necessary.
 
 ```
 repomap.go
@@ -33,7 +46,8 @@ repomap.go
   funcs: DefaultConfig, New
 ```
 
-Use this when you want the whole skeleton and you're not worried about size.
+Use this when you want the broadest symbol skeleton that fits the requested CLI
+budget. For an unbounded Go-library rendering, use `Map.StringVerbose()`.
 
 ## Detail
 
@@ -42,6 +56,7 @@ repomap -f detail
 ```
 
 Verbose, plus signatures for functions and methods and field lists for structs.
+As with verbose, the CLI preserves whole files and bounds the complete response.
 
 ```
 repomap.go
@@ -135,6 +150,7 @@ Emits schema-versioned file, symbol, call-site, rank, parser, and budget data:
 ```json
 {
   "schema_version": 1,
+  "totals": {"files": 41, "symbols": 119},
   "files": [
     {
       "path": "ranker.go",
@@ -145,11 +161,13 @@ Emits schema-versioned file, symbol, call-site, rank, parser, and budget data:
       "symbols": [{"name": "RankFiles", "kind": "function", "line": 48}],
       "call_sites": [{"name": "BudgetFiles", "line": 54}]
     }
-  ]
+  ],
+  "files_omitted": 12,
+  "files_omitted_reason": "complete-output token budget"
 }
 ```
 
-Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Files omitted by budget include `detail_level: -1` and `omitted_reason`. Parser-backed non-Go call sites appear when the language grammar supports call-expression extraction; they are structural, not type-resolved.
+Use this for coding-agent tooling, editor integrations, or scripts that need stable fields. Parser-backed non-Go call sites appear when the language grammar supports call-expression extraction; they are structural, not type-resolved.
 
 ## Command JSON
 
@@ -170,16 +188,24 @@ and tracked file count.
 
 ## Budget behavior
 
-| Format | Respects `-t` |
-| --- | --- |
-| compact | yes |
-| verbose | no |
-| detail | no |
-| lines | yes |
-| xml | yes |
-| --json-structured | yes |
+Every CLI map format respects `-t`: enriched, compact, verbose, detail, lines,
+XML, `--json`, `--json-legacy`, and `--json-structured`. The limit applies to
+the complete encoded stdout payload, not only to the map's detail-level
+selection. repomap measures encoded bytes as `ceil(bytes / 4)` tokens, renders
+whole files or records only, and writes only after a complete payload fits. If
+the requested budget cannot hold even that format's minimum valid envelope, the
+command returns an error and writes no partial stdout (or partial `--artifact`).
 
-Verbose and detail are for humans. Compact, lines, XML, and structured JSON are for prompts and tools.
+The structured JSON CLI returns only the selected `files` and keeps repository
+wide counts in `totals`. When selection omits files, `files_omitted` and
+`files_omitted_reason` account for them; omitted files do not remain inline as
+`detail_level: -1` records.
+
+This is a CLI boundary. Direct Go callers can choose unbounded rendering:
+`Map.StringVerbose()` returns the full verbose map and `Map.StringDetail()` the
+full detailed map. `BudgetFiles` is the renderer's detail-selection heuristic;
+it does not by itself prove that a serialized CLI response has an exact byte
+size.
 
 ## Next
 

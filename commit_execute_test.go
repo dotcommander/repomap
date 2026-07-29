@@ -170,19 +170,22 @@ func Test_Execute_DryRun(t *testing.T) {
 
 	// Count commits before dry-run.
 	beforeLog := gitLogCount(t, root)
-
 	var stdout bytes.Buffer
+
 	opts := ExecuteOptions{
 		Root:     root,
 		PlanFile: planFile,
 		DryRun:   true,
 		SkipFix:  true,
+		Output:   &stdout,
 	}
 	result, err := ExecuteCommit(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("ExecuteCommit dry-run: %v", err)
 	}
-	_ = stdout // ExecuteCommit dispatches printDryRun to os.Stdout; buffer-capture coverage lives in Test_printDryRun_Buffer
+	if !strings.Contains(stdout.String(), "DRY RUN") {
+		t.Fatalf("dry-run output missing header: %q", stdout.String())
+	}
 	_ = result
 
 	// No new commits should have landed.
@@ -198,13 +201,40 @@ func Test_Execute_DryRun(t *testing.T) {
 	}
 }
 
+func Test_Execute_DryRunJSONSuppressesHumanOutput(t *testing.T) {
+	t.Parallel()
+
+	root := initTestRepo(t,
+		map[string]string{"go.mod": "module fixture\ngo 1.22\n", "a.go": "package fixture\n"},
+		map[string]string{"a.go": "package fixture\n// changed\n"},
+	)
+	planFile := makePlanFile(t, []CommitGroup{{
+		ID: "g1", Files: []string{"a.go"}, SuggestedMsg: "feat: add a",
+	}})
+	var output bytes.Buffer
+	result, err := ExecuteCommit(context.Background(), ExecuteOptions{
+		Root: root, PlanFile: planFile, DryRun: true, JSON: true, SkipFix: true, Output: &output,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit dry-run JSON: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected dry-run result")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("JSON mode leaked human output: %q", output.String())
+	}
+}
+
 func Test_printDryRun_Buffer(t *testing.T) {
 	t.Parallel()
 	groups := []CommitGroup{
 		{ID: "g1", SuggestedMsg: "feat(x): hello", Files: []string{"a.go", "b.go"}},
 	}
 	var buf bytes.Buffer
-	printDryRun(&buf, groups, ExecuteOptions{Push: true, Tag: "v1.2.3"})
+	if err := printDryRun(&buf, groups, ExecuteOptions{Push: true, Tag: "v1.2.3"}); err != nil {
+		t.Fatalf("printDryRun: %v", err)
+	}
 	out := buf.String()
 	for _, want := range []string{
 		"DRY RUN",

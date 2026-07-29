@@ -1,0 +1,1 @@
+{"goal":"recognize class declarations","language":"php","kind":"extraction","owner_doc":"recognizes class declarations","distractor_doc":"renders class summaries","owners":["parser.php"],"symbols":["Parser"],"consumers":["cli.php"],"tests":["parserTest.php"],"evidence":["doc","signature"],"distractors":["render.php"]}

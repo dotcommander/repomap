@@ -1,0 +1,1 @@
+{"goal":"preserve dependency interface contract","language":"go","kind":"contract_refactor","owner_doc":"preserves dependency interface contract","distractor_doc":"loads dependency configuration","owners":["service.go"],"symbols":["Service"],"consumers":["handler.go"],"tests":["service_test.go"],"evidence":["doc","signature"],"distractors":["config.go"]}

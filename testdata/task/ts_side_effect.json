@@ -1,0 +1,1 @@
+{"goal":"make client network calls safe","language":"typescript","kind":"side_effect_test_sensitive","owner_doc":"makes client network calls safe","distractor_doc":"declares client response shapes","owners":["client.ts"],"symbols":["Client"],"consumers":["app.ts"],"tests":["client.test.ts"],"evidence":["path","symbol","effect"],"distractors":["types.ts"]}

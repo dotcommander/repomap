@@ -130,8 +130,8 @@ func buildHeader(mode string, files []RankedFile, totalFiles, totalSymbols int) 
 	return b.String()
 }
 
-// estimateTokens approximates token count from byte length (~4 bytes/token).
-func estimateTokens(s string) int { return len(s) / 4 }
+// estimateTokens approximates token count as ceil(UTF-8 bytes / 4).
+func estimateTokens(s string) int { return (len(s) + 3) / 4 }
 
 // buildHeaderWithTokens is buildHeader plus an estimated token count in the title,
 // used by the default map modes so orchestrating agents can scale their -t budget.

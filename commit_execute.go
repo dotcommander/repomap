@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -12,15 +13,16 @@ import (
 
 // ExecuteOptions configures a commit-execute run.
 type ExecuteOptions struct {
-	Root             string // repo root (default ".")
-	PlanFile         string // path to CommitAnalysis JSON (required)
-	Push             bool   // git push origin <branch> --follow-tags
-	Tag              string // annotated tag to create at HEAD (semver)
-	NoRelease        bool   // skip gh release create
-	ReleaseNotesFrom string // --notes-start-tag for gh release create
-	DryRun           bool   // print actions, mutate nothing
-	JSON             bool   // machine-readable result on stdout
-	SkipFix          bool   // bypass consolidation pass
+	Root             string    // repo root (default ".")
+	PlanFile         string    // path to CommitAnalysis JSON (required)
+	Push             bool      // git push origin <branch> --follow-tags
+	Tag              string    // annotated tag to create at HEAD (semver)
+	NoRelease        bool      // skip gh release create
+	ReleaseNotesFrom string    // --notes-start-tag for gh release create
+	DryRun           bool      // print actions, mutate nothing
+	JSON             bool      // machine-readable result on stdout
+	SkipFix          bool      // bypass consolidation pass
+	Output           io.Writer // human dry-run output (default os.Stdout)
 }
 
 // ExecuteResult is the JSON-serializable result of a successful execute run.
@@ -122,7 +124,15 @@ func executeGroups(ctx context.Context, root string, groups []CommitGroup, opts 
 		}
 	}
 	if opts.DryRun {
-		printDryRun(os.Stdout, groups, opts)
+		if !opts.JSON {
+			output := opts.Output
+			if output == nil {
+				output = os.Stdout
+			}
+			if err := printDryRun(output, groups, opts); err != nil {
+				return nil, fmt.Errorf("write dry run: %w", err)
+			}
+		}
 		return &ExecuteResult{Tag: tagPtr(opts.Tag)}, nil
 	}
 	if err := verifyWorkspaceClean(ctx, root, groups); err != nil {

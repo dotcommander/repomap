@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -62,6 +63,31 @@ type auditEffectsCommand struct {
 	PathsOnly bool   `name:"paths-only" help:"Emit only matching file paths"`
 }
 
+func (c *auditMapOptions) Validate() error {
+	for _, value := range []struct {
+		name  string
+		value int
+	}{
+		{"limit", c.Limit},
+		{"top-files", c.TopFiles},
+	} {
+		if value.value < 0 {
+			return fmt.Errorf("--%s must be zero or greater", value.name)
+		}
+	}
+	return nil
+}
+
+func (c *auditEffectsCommand) Validate() error {
+	if err := c.auditMapOptions.Validate(); err != nil {
+		return err
+	}
+	if err := validateAuditEffectKind(c.Kind); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *auditBriefCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	m, err := buildAuditMap(ctx, c.Directory, c.Intent)
 	if err != nil {
@@ -106,11 +132,12 @@ func (c *auditEffectsCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	if err != nil {
 		return err
 	}
-	report, err := m.AuditEffects(ctx, auditLimit(c.Limit, c.TopFiles))
+	report, err := m.AuditEffects(ctx, 0)
 	if err != nil {
 		return err
 	}
 	report = filterAuditEffects(report, c.Kind)
+	report = limitAuditEffects(report, auditLimit(c.Limit, c.TopFiles))
 	if c.PathsOnly {
 		return printAuditEffectPaths(ioctx.stdout, report, c.JSON)
 	}
@@ -134,9 +161,13 @@ func filterAuditEffects(report repomap.AuditEffectReport, kind string) repomap.A
 	}
 	files := make([]repomap.AuditEffectFile, 0, len(report.Files))
 	kindFiles := map[string][]string{}
+	report.Truncations = slices.DeleteFunc(report.Truncations, func(truncation repomap.AuditTruncation) bool {
+		return strings.HasSuffix(truncation.Field, "].effects")
+	})
 	for _, file := range report.Files {
-		effects := make([]repomap.AuditEffect, 0, len(file.Effects))
-		for _, effect := range file.Effects {
+		sourceEffects := file.AllEffects()
+		effects := make([]repomap.AuditEffect, 0, len(sourceEffects))
+		for _, effect := range sourceEffects {
 			if effect.Kind != kind {
 				continue
 			}
@@ -146,7 +177,16 @@ func filterAuditEffects(report repomap.AuditEffectReport, kind string) repomap.A
 		if len(effects) == 0 {
 			continue
 		}
+		total := len(effects)
 		file.Effects = effects
+		file.OmittedReason = ""
+		if total > 12 {
+			file.Effects = file.Effects[:12]
+			file.OmittedReason = fmt.Sprintf("showing 12 of %d effects; truncated by effects cap", total)
+			report.Truncations = append(report.Truncations, repomap.AuditTruncation{
+				Field: "files[" + file.Path + "].effects", Shown: 12, Total: total, Reason: "effects per-file cap",
+			})
+		}
 		file.Lanes = auditEffectLanes(effects)
 		files = append(files, file)
 	}
@@ -164,6 +204,21 @@ func filterAuditEffects(report repomap.AuditEffectReport, kind string) repomap.A
 	return report
 }
 
+func limitAuditEffects(report repomap.AuditEffectReport, limit int) repomap.AuditEffectReport {
+	report.Truncations = slices.DeleteFunc(report.Truncations, func(truncation repomap.AuditTruncation) bool {
+		return truncation.Field == "files" && truncation.Reason == "--limit"
+	})
+	total := len(report.Files)
+	if limit > 0 && total > limit {
+		report.Files = report.Files[:limit]
+		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d files; truncated by --limit", len(report.Files), total)
+		report.Truncations = append(report.Truncations, repomap.AuditTruncation{
+			Field: "files", Shown: len(report.Files), Total: total, Reason: "--limit",
+		})
+	}
+	return report
+}
+
 func normalizeAuditEffectKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "all":
@@ -173,6 +228,23 @@ func normalizeAuditEffectKind(kind string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(kind))
 	}
+}
+
+func validateAuditEffectKind(kind string) error {
+	normalized := normalizeAuditEffectKind(kind)
+	if normalized == "" {
+		return nil
+	}
+	if _, ok := auditEffectKindNames[normalized]; ok {
+		return nil
+	}
+	return fmt.Errorf("--kind must be one of all, database, filesystem-write, filesystem-read, subprocess, process-exit, http, serialization, secret, crypto, time, randomness, context-background, goroutine, or unbounded-read")
+}
+
+var auditEffectKindNames = map[string]struct{}{
+	"database": {}, "filesystem-write": {}, "filesystem-read": {}, "subprocess": {}, "process-exit": {},
+	"http": {}, "serialization": {}, "secret": {}, "crypto": {}, "time": {}, "randomness": {},
+	"context-background": {}, "goroutine": {}, "unbounded-read": {},
 }
 
 func auditEffectLanes(effects []repomap.AuditEffect) []string {

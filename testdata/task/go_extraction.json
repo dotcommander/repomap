@@ -1,0 +1,1 @@
+{"goal":"recognize declaration syntax","language":"go","kind":"extraction","owner_doc":"recognizes declaration syntax","distractor_doc":"renders declaration summaries","owners":["parser.go"],"symbols":["Parse"],"consumers":["main.go"],"tests":["parser_test.go"],"evidence":["doc","signature"],"distractors":["render.go"]}

@@ -26,6 +26,25 @@ type contextCommand struct {
 	Directory         string `arg:"" optional:"" type:"path" default:"." help:"Directory to inspect"`
 }
 
+func (c *contextCommand) Validate() error {
+	if c.MaxSourceLines <= 0 {
+		return fmt.Errorf("--max-source-lines must be greater than zero")
+	}
+	for _, value := range []struct {
+		name  string
+		value int
+	}{
+		{"max-output-lines", c.MaxOutputLines},
+		{"max-output-bytes", c.MaxOutputBytes},
+		{"calls-limit", c.CallsLimit},
+	} {
+		if value.value < 0 {
+			return fmt.Errorf("--%s must be zero or greater", value.name)
+		}
+	}
+	return nil
+}
+
 func (c *contextCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	absDir, err := filepath.Abs(c.Directory)
 	if err != nil {
@@ -56,7 +75,9 @@ func (c *contextCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return enc.Encode(result)
 	}
 	var b strings.Builder
-	printSymbolContext(&b, result)
+	if err := printSymbolContext(&b, result); err != nil {
+		return err
+	}
 	out := formatBoundedText(b.String(), c.MaxOutputLines, c.MaxOutputBytes)
 	_, err = io.WriteString(ioctx.stdout, out.Text)
 	return err
@@ -77,34 +98,52 @@ func contextCallers(callers repomap.SymbolCallers, match repomap.SymbolMatch, in
 	return out
 }
 
-func printSymbolContext(w io.Writer, ctx repomap.SymbolContext) {
+func printSymbolContext(w io.Writer, ctx repomap.SymbolContext) error {
 	sym := ctx.Match.Symbol
-	fmt.Fprintf(w, "%s:%d  %s  %s\n", ctx.Match.File, sym.Line, sym.Kind, symbolDisplay(sym))
+	if _, err := fmt.Fprintf(w, "%s:%d  %s  %s\n", ctx.Match.File, sym.Line, sym.Kind, symbolDisplay(sym)); err != nil {
+		return err
+	}
 	if ctx.SourceNote != "" {
-		fmt.Fprintf(w, "source: %s\n", ctx.SourceNote)
+		if _, err := fmt.Fprintf(w, "source: %s\n", ctx.SourceNote); err != nil {
+			return err
+		}
 	}
 	if len(ctx.Ambiguous) > 0 {
-		fmt.Fprintln(w, "also matched:")
+		if _, err := fmt.Fprintln(w, "also matched:"); err != nil {
+			return err
+		}
 		for _, mt := range ctx.Ambiguous {
-			fmt.Fprintf(w, "  %s:%d  %s  %s\n", mt.File, mt.Symbol.Line, mt.Symbol.Kind, symbolDisplay(mt.Symbol))
+			if _, err := fmt.Fprintf(w, "  %s:%d  %s  %s\n", mt.File, mt.Symbol.Line, mt.Symbol.Kind, symbolDisplay(mt.Symbol)); err != nil {
+				return err
+			}
 		}
 	}
 	if len(ctx.Source) > 0 {
-		fmt.Fprintln(w, "\nsource:")
+		if _, err := fmt.Fprintln(w, "\nsource:"); err != nil {
+			return err
+		}
 		for _, line := range ctx.Source {
-			fmt.Fprintf(w, "%4d | %s\n", line.Number, line.Text)
+			if _, err := fmt.Fprintf(w, "%4d | %s\n", line.Number, line.Text); err != nil {
+				return err
+			}
 		}
 		if ctx.Truncated {
-			fmt.Fprintln(w, "     ...")
+			if _, err := fmt.Fprintln(w, "     ..."); err != nil {
+				return err
+			}
 		}
 	}
 	if len(ctx.Callers) > 0 {
-		fmt.Fprintln(w, "\ncallers:")
+		if _, err := fmt.Fprintln(w, "\ncallers:"); err != nil {
+			return err
+		}
 		for _, loc := range ctx.Callers {
-			fmt.Fprintf(w, "  %s:%d:%d\n", loc.File, loc.Line, loc.Column)
+			if _, err := fmt.Fprintf(w, "  %s:%d:%d\n", loc.File, loc.Line, loc.Column); err != nil {
+				return err
+			}
 		}
 	}
-	printImpact(w, ctx.Impact)
+	return printImpact(w, ctx.Impact)
 }
 
 func symbolDisplay(sym repomap.Symbol) string {

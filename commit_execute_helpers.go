@@ -6,23 +6,36 @@ import (
 	"path/filepath"
 )
 
-func printDryRun(w io.Writer, groups []CommitGroup, opts ExecuteOptions) {
-	fmt.Fprintf(w, "DRY RUN — no changes will be made\n\n")
+func printDryRun(w io.Writer, groups []CommitGroup, opts ExecuteOptions) error {
+	if _, err := fmt.Fprintf(w, "DRY RUN — no changes will be made\n\n"); err != nil {
+		return err
+	}
 	for i, g := range groups {
-		fmt.Fprintf(w, "Commit %d: %s\n", i+1, g.SuggestedMsg)
+		if _, err := fmt.Fprintf(w, "Commit %d: %s\n", i+1, g.SuggestedMsg); err != nil {
+			return err
+		}
 		for _, f := range g.Files {
-			fmt.Fprintf(w, "  + %s\n", f)
+			if _, err := fmt.Fprintf(w, "  + %s\n", f); err != nil {
+				return err
+			}
 		}
 	}
 	if opts.Tag != "" {
-		fmt.Fprintf(w, "\nTag: %s\n", opts.Tag)
+		if _, err := fmt.Fprintf(w, "\nTag: %s\n", opts.Tag); err != nil {
+			return err
+		}
 	}
 	if opts.Push {
-		fmt.Fprintf(w, "Push: git push origin <branch> --follow-tags\n")
+		if _, err := fmt.Fprintf(w, "Push: git push origin <branch> --follow-tags\n"); err != nil {
+			return err
+		}
 	}
 	if opts.Push && opts.Tag != "" && !opts.NoRelease {
-		fmt.Fprintf(w, "Release: gh release create %s --generate-notes --latest\n", opts.Tag)
+		if _, err := fmt.Fprintf(w, "Release: gh release create %s --generate-notes --latest\n", opts.Tag); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // buildPartialResult constructs a partial result when commits landed but a later step failed.

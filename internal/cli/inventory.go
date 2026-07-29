@@ -219,22 +219,36 @@ func printInventory(w io.Writer, report inventoryReport) error {
 	if _, err := fmt.Fprintf(w, "inventory: %s\n", report.Boundary); err != nil {
 		return err
 	}
-	printInventoryList(w, "constructors", report.Constructors)
-	printInventoryList(w, "writers", report.Writers)
-	printInventoryList(w, "readers", report.Readers)
-	printInventoryList(w, "migrations", report.Migrations)
-	printInventoryList(w, "tests", report.Tests)
-	printInventoryList(w, "docs", report.Docs)
+	for _, list := range []struct {
+		label  string
+		values []string
+	}{
+		{"constructors", report.Constructors},
+		{"writers", report.Writers},
+		{"readers", report.Readers},
+		{"migrations", report.Migrations},
+		{"tests", report.Tests},
+		{"docs", report.Docs},
+	} {
+		if err := printInventoryList(w, list.label, list.values); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func printInventoryList(w io.Writer, label string, values []string) {
-	fmt.Fprintf(w, "%s:\n", label)
+func printInventoryList(w io.Writer, label string, values []string) error {
+	if _, err := fmt.Fprintf(w, "%s:\n", label); err != nil {
+		return err
+	}
 	if len(values) == 0 {
-		fmt.Fprintln(w, "  (none)")
-		return
+		_, err := fmt.Fprintln(w, "  (none)")
+		return err
 	}
 	for _, value := range values {
-		fmt.Fprintf(w, "  - %s\n", value)
+		if _, err := fmt.Fprintf(w, "  - %s\n", value); err != nil {
+			return err
+		}
 	}
+	return nil
 }

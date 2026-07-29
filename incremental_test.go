@@ -163,6 +163,27 @@ func Extra() string { return "extra" }
 	}
 }
 
+func TestIncrementalRenamedFile(t *testing.T) {
+	t.Parallel()
+
+	dir := newGitRepo(t)
+	cacheDir := t.TempDir()
+	buildWithCache(t, dir, cacheDir)
+
+	gitRun(t, dir, "mv", "main.go", "renamed.go")
+	gitCommitAll(t, dir, "rename main source")
+
+	m2 := buildWithCache(t, dir, cacheDir)
+	found := false
+	for _, rf := range m2.Ranked() {
+		assert.NotEqual(t, "main.go", rf.Path)
+		if rf.Path == "renamed.go" {
+			found = true
+		}
+	}
+	assert.True(t, found, "renamed source must replace its old cached path")
+}
+
 func TestPrepareIncrementalRejectsGoSemanticInputsBeforeHydration(t *testing.T) {
 	t.Parallel()
 

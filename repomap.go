@@ -140,8 +140,16 @@ func (m *Map) Build(ctx context.Context) error {
 	defer m.buildMu.Unlock()
 
 	if m.cacheDir != "" {
-		if ok, changed := m.LoadCacheIncremental(ctx, m.cacheDir); ok {
-			if err := m.applyIncremental(ctx, changed); err == nil {
+		if plan, ok := m.cacheLoadPlan(ctx, m.cacheDir); ok {
+			if plan.exactHit {
+				// Exact HEAD+worktree hits are intentionally memory-only. Rewriting
+				// the cache would churn its mtime on every unchanged Build.
+				m.mu.Lock()
+				m.builtAt = time.Now()
+				m.mu.Unlock()
+				return nil
+			}
+			if err := m.applyIncremental(ctx, plan.changed, plan.persistMetadata); err == nil {
 				return nil
 			}
 			// Incremental merge failed — clear state and fall through.

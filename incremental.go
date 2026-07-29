@@ -14,66 +14,102 @@ import (
 // importer-count re-scan) stops being cheaper than parsing everything.
 const incrementalThreshold = 0.30
 
-// LoadCacheIncremental attempts a fast-path rebuild. Returns (true, changedRel)
-// when the cache is valid for incremental use and the caller should merge
-// `changedRel` (relative paths of added+modified files; deletions handled via
-// side channel). Returns (false, nil) for any of:
+// cacheLoadPlan is the internal result used by Build. exactHit means the cache
+// already represents the precise HEAD+worktree contents and must not be
+// rewritten merely to refresh its timestamp.
+type cacheLoadPlan struct {
+	changed         []string
+	persistMetadata bool
+	exactHit        bool
+}
+
+// LoadCacheIncremental preserves the historical public fast-path API. Build
+// consumes cacheLoadPlan directly so it can distinguish exact cache hits from
+// incremental merges that need cache metadata persisted.
+func (m *Map) LoadCacheIncremental(ctx context.Context, cacheDir string) (bool, []string) {
+	plan, ok := m.cacheLoadPlan(ctx, cacheDir)
+	if !ok {
+		return false, nil
+	}
+	return true, plan.changed
+}
+
+// cacheLoadPlan attempts a fast-path rebuild. It returns false for any of:
 //   - cache missing / corrupt / wrong version / wrong root
 //   - cache was written for a non-git root (GitRoot=false)
-//   - `git rev-parse HEAD` fails or returns empty
+//   - Git status cannot produce a complete HEAD+worktree snapshot
 //   - diff between LastSHA and HEAD fails (e.g., SHA pruned by rebase)
 //   - change set exceeds incrementalThreshold of total files
 //
-// On (true, changedRel) the Map has been hydrated with the cached state and
-// its mtimes map is populated. Deleted paths have already been removed from
-// m.ranked. The caller is expected to re-parse changedRel, splice the results
-// back in, re-rank, re-budget, and SaveCache.
-func (m *Map) LoadCacheIncremental(ctx context.Context, cacheDir string) (bool, []string) {
+// On success the Map has been hydrated with cached state and deleted paths have
+// already been removed from m.ranked for non-exact plans.
+func (m *Map) cacheLoadPlan(ctx context.Context, cacheDir string) (cacheLoadPlan, bool) {
 	path := cachePath(cacheDir, m.root)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, nil
+		return cacheLoadPlan{}, false
 	}
 
 	var entry diskCache
 	if err := json.Unmarshal(data, &entry); err != nil {
-		return false, nil
+		return cacheLoadPlan{}, false
 	}
 	if !m.cacheEntryValid(&entry) {
-		return false, nil
+		return cacheLoadPlan{}, false
 	}
-	if !entry.GitRoot || entry.LastSHA == "" {
-		return false, nil
-	}
-	if !isInsideGitRepo(m.root) {
-		return false, nil
+	if !entry.GitRoot || entry.LastSHA == "" || entry.WorktreeDigest == "" {
+		return cacheLoadPlan{}, false
 	}
 
-	headSHA, err := gitHeadSHA(ctx, m.root)
-	if err != nil || headSHA == "" {
-		return false, nil
-	}
-
-	// Fast path: HEAD hasn't moved AND no worktree/untracked changes. Whole
-	// cache is authoritative.
-	if headSHA == entry.LastSHA {
-		added, modified, deleted, diffErr := gitChangedFiles(ctx, m.root, entry.LastSHA)
-		if diffErr != nil {
-			return false, nil
-		}
-		if len(added) == 0 && len(modified) == 0 && len(deleted) == 0 {
-			m.hydrateFromCache(entry)
-			return true, nil
-		}
-		// HEAD unchanged but worktree dirty — treat those as the change set.
-		return m.prepareIncremental(entry, added, modified, deleted)
-	}
-
-	added, modified, deleted, err := gitChangedFiles(ctx, m.root, entry.LastSHA)
+	snapshot, err := m.gitStatusSnapshot(ctx)
 	if err != nil {
-		return false, nil
+		return cacheLoadPlan{}, false
 	}
-	return m.prepareIncremental(entry, added, modified, deleted)
+
+	if snapshot.headSHA == entry.LastSHA && snapshot.digest == entry.WorktreeDigest {
+		m.hydrateFromCache(entry)
+		return cacheLoadPlan{exactHit: true}, true
+	}
+
+	// A dirty cache cannot safely be composed with a changed worktree or a new
+	// HEAD: its cached symbols came from an unknown overlay rather than LastSHA.
+	if entry.WorktreeDigest != cacheCleanWorktreeDigest() {
+		return cacheLoadPlan{}, false
+	}
+
+	added, modified, deleted, err := m.snapshotChangedFiles(snapshot)
+	if err != nil {
+		return cacheLoadPlan{}, false
+	}
+	if snapshot.headSHA != entry.LastSHA {
+		committedAdded, committedModified, committedDeleted, diffErr := gitCommittedChangedFiles(ctx, m.root, entry.LastSHA)
+		if diffErr != nil {
+			return cacheLoadPlan{}, false
+		}
+		committedAdded, committedModified, committedDeleted = m.filterCacheRelevantChanges(committedAdded, committedModified, committedDeleted)
+		added = append(added, committedAdded...)
+		modified = append(modified, committedModified...)
+		deleted = append(deleted, committedDeleted...)
+	}
+
+	ok, changed := m.prepareIncremental(entry, dedupePaths(added), dedupePaths(modified), dedupePaths(deleted))
+	if !ok {
+		return cacheLoadPlan{}, false
+	}
+	return cacheLoadPlan{changed: changed, persistMetadata: true}, true
+}
+
+func (m *Map) filterCacheRelevantChanges(added, modified, deleted []string) ([]string, []string, []string) {
+	filter := func(paths []string) []string {
+		out := make([]string, 0, len(paths))
+		for _, path := range paths {
+			if m.cacheRelevantPath(path) {
+				out = append(out, path)
+			}
+		}
+		return out
+	}
+	return filter(added), filter(modified), filter(deleted)
 }
 
 // prepareIncremental applies the eligibility threshold and, if the change set
@@ -142,7 +178,7 @@ func (m *Map) hydrateFromCache(entry diskCache) {
 // already-hydrated m.ranked, re-detects implementations over the full merged
 // set, re-ranks, and saves the cache. Returns an error if re-parsing fails
 // entirely; caller must fall through to a full rebuild.
-func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
+func (m *Map) applyIncremental(ctx context.Context, changedRel []string, persistMetadata bool) error {
 	if len(changedRel) == 0 {
 		// Nothing to re-parse — cache is authoritative. Still refresh builtAt
 		// and save so LastSHA advances if HEAD moved without touching tracked
@@ -151,7 +187,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 		m.mu.Lock()
 		m.builtAt = time.Now()
 		m.mu.Unlock()
-		if m.cacheDir != "" {
+		if persistMetadata && m.cacheDir != "" {
 			_ = m.SaveCacheContext(ctx, m.cacheDir)
 		}
 		return nil
@@ -261,7 +297,7 @@ func (m *Map) applyIncremental(ctx context.Context, changedRel []string) error {
 	m.outputs.reset()
 	m.mu.Unlock()
 
-	if m.cacheDir != "" {
+	if persistMetadata && m.cacheDir != "" {
 		_ = m.SaveCacheContext(ctx, m.cacheDir)
 	}
 	return nil

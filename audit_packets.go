@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 const maxAuditLineBytes = 1024 * 1024
@@ -20,6 +22,7 @@ type AuditSurfaceReport struct {
 	Root                string             `json:"root"`
 	Files               []AuditSurfaceFile `json:"files"`
 	FilesOmittedReason  string             `json:"files_omitted_reason,omitempty"`
+	Truncations         []AuditTruncation  `json:"truncations,omitempty"`
 	Commands            []AuditSurfaceHit  `json:"commands,omitempty"`
 	Flags               []AuditSurfaceHit  `json:"flags,omitempty"`
 	EnvVars             []AuditSurfaceHit  `json:"env_vars,omitempty"`
@@ -53,6 +56,15 @@ type AuditSurfaceHit struct {
 	Line     int    `json:"line"`
 	Lane     string `json:"lane"`
 	Evidence string `json:"evidence"`
+	Hidden   bool   `json:"hidden,omitempty"`
+}
+
+// AuditTruncation accounts for every deterministic packet cap.
+type AuditTruncation struct {
+	Field  string `json:"field"`
+	Shown  int    `json:"shown"`
+	Total  int    `json:"total"`
+	Reason string `json:"reason"`
 }
 
 // AuditEffectReport captures files with side effects and trust boundaries.
@@ -62,6 +74,7 @@ type AuditEffectReport struct {
 	Files              []AuditEffectFile `json:"files"`
 	FilesOmittedReason string            `json:"files_omitted_reason,omitempty"`
 	Kinds              []AuditEffectKind `json:"kinds"`
+	Truncations        []AuditTruncation `json:"truncations,omitempty"`
 }
 
 // AuditEffectFile groups side-effect leads by source file.
@@ -73,6 +86,18 @@ type AuditEffectFile struct {
 	Confidence    string        `json:"confidence,omitempty"`
 	Lanes         []string      `json:"lanes"`
 	Effects       []AuditEffect `json:"effects"`
+	OmittedReason string        `json:"omitted_reason,omitempty"`
+	allEffects    []AuditEffect
+}
+
+// AllEffects returns the uncapped effects used to derive this file packet.
+// Callers that apply an additional filter must filter this set before applying
+// the public per-file cap represented by Effects.
+func (f AuditEffectFile) AllEffects() []AuditEffect {
+	if f.allEffects != nil {
+		return f.allEffects
+	}
+	return f.Effects
 }
 
 // AuditEffect is one static side-effect lead.
@@ -159,7 +184,8 @@ var dependencyManifestNames = []string{
 // AuditSurface extracts command, flag, env, config, route, and output surfaces.
 func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, error) {
 	files := m.auditStaticFiles()
-	report := AuditSurfaceReport{SchemaVersion: 2, Root: m.root, Files: []AuditSurfaceFile{}}
+	report := AuditSurfaceReport{SchemaVersion: 3, Root: m.root, Files: []AuditSurfaceFile{}}
+	totals := map[string]int{}
 	for _, file := range files {
 		lines, err := readAuditLines(ctx, filepath.Join(m.root, filepath.FromSlash(file.path)))
 		if err != nil {
@@ -181,9 +207,13 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 		}
 		if len(hits) > 12 {
 			sf.OmittedReason = fmt.Sprintf("showing 12 of %d hits; truncated by surface cap", len(hits))
+			report.Truncations = append(report.Truncations, AuditTruncation{
+				Field: "files[" + file.path + "].hits", Shown: 12, Total: len(hits), Reason: "surface per-file cap",
+			})
 		}
 		report.Files = append(report.Files, sf)
 		for _, hit := range hits {
+			totals[hit.Kind]++
 			switch hit.Kind {
 			case "command":
 				report.Commands = appendCapped(report.Commands, hit, 80)
@@ -209,6 +239,8 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 		}
 	}
 	m.addDependencyManifestSurface(&report)
+	totals["dependency-manifest"] = len(report.DependencyManifests)
+	report.addSurfaceAggregateTruncations(totals)
 	sortSurfaceFiles(report.Files)
 	totalFiles := len(report.Files)
 	if limit > 0 && len(report.Files) > limit {
@@ -218,6 +250,9 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 		report.FilesOmittedReason = "no surface data extracted from scanned files"
 	} else if len(report.Files) < totalFiles {
 		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d files; truncated by --limit", len(report.Files), totalFiles)
+		report.Truncations = append(report.Truncations, AuditTruncation{
+			Field: "files", Shown: len(report.Files), Total: totalFiles, Reason: "--limit",
+		})
 	}
 	return report, nil
 }
@@ -225,7 +260,7 @@ func (m *Map) AuditSurface(ctx context.Context, limit int) (AuditSurfaceReport, 
 // AuditEffects extracts side-effect and trust-boundary packets from source.
 func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, error) {
 	files := m.auditStaticFiles()
-	report := AuditEffectReport{SchemaVersion: 2, Root: m.root, Files: []AuditEffectFile{}}
+	report := AuditEffectReport{SchemaVersion: 3, Root: m.root, Files: []AuditEffectFile{}}
 	kindFiles := map[string][]string{}
 	for _, file := range files {
 		lines, err := readAuditLines(ctx, filepath.Join(m.root, filepath.FromSlash(file.path)))
@@ -239,7 +274,7 @@ func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, e
 		}
 		lanes := effectLanes(effects)
 		ec := auditEvidenceForLanes(lanes)
-		report.Files = append(report.Files, AuditEffectFile{
+		effectFile := AuditEffectFile{
 			ID:            "repomap:effect:" + auditSlug(file.path),
 			Path:          file.path,
 			Score:         score,
@@ -247,7 +282,15 @@ func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, e
 			Confidence:    auditConfidence(ec, false),
 			Lanes:         lanes,
 			Effects:       capEffectHits(effects, 12),
-		})
+			allEffects:    effects,
+		}
+		if len(effects) > 12 {
+			effectFile.OmittedReason = fmt.Sprintf("showing 12 of %d effects; truncated by effects cap", len(effects))
+			report.Truncations = append(report.Truncations, AuditTruncation{
+				Field: "files[" + file.path + "].effects", Shown: 12, Total: len(effects), Reason: "effects per-file cap",
+			})
+		}
+		report.Files = append(report.Files, effectFile)
 		for _, effect := range effects {
 			kindFiles[effect.Kind] = append(kindFiles[effect.Kind], effect.Path)
 		}
@@ -262,6 +305,9 @@ func (m *Map) AuditEffects(ctx context.Context, limit int) (AuditEffectReport, e
 		report.FilesOmittedReason = "no side-effect data extracted from scanned files"
 	} else if len(report.Files) < totalFiles {
 		report.FilesOmittedReason = fmt.Sprintf("showing %d of %d files; truncated by --limit", len(report.Files), totalFiles)
+		report.Truncations = append(report.Truncations, AuditTruncation{
+			Field: "files", Shown: len(report.Files), Total: totalFiles, Reason: "--limit",
+		})
 	}
 	return report, nil
 }
@@ -311,6 +357,10 @@ func scanSurfaceFile(file auditStaticFile) ([]AuditSurfaceHit, int) {
 	var hits []AuditSurfaceHit
 	score := 0
 	for _, line := range file.lines {
+		if kongHit, ok := scanKongSurfaceLine(file.path, line); ok {
+			hits = append(hits, kongHit)
+			score += 7
+		}
 		for _, pattern := range surfacePatterns {
 			match := pattern.re.FindStringSubmatch(line.text)
 			if match == nil {
@@ -332,6 +382,81 @@ func scanSurfaceFile(file auditStaticFile) ([]AuditSurfaceHit, int) {
 		}
 	}
 	return hits, score + min(file.score/20, 10)
+}
+
+func scanKongSurfaceLine(path string, line auditLine) (AuditSurfaceHit, bool) {
+	tagStart := strings.IndexByte(line.text, '`')
+	tagEnd := strings.LastIndexByte(line.text, '`')
+	if tagStart < 0 || tagEnd <= tagStart {
+		return AuditSurfaceHit{}, false
+	}
+	fields := strings.Fields(strings.TrimSpace(line.text[:tagStart]))
+	if len(fields) < 2 || !unicode.IsUpper(rune(fields[0][0])) {
+		return AuditSurfaceHit{}, false
+	}
+	tag := reflect.StructTag(line.text[tagStart+1 : tagEnd])
+	_, command := tag.Lookup("cmd")
+	_, argument := tag.Lookup("arg")
+	_, documented := tag.Lookup("help")
+	_, hidden := tag.Lookup("hidden")
+	_, named := tag.Lookup("name")
+	_, shortened := tag.Lookup("short")
+	if !command && (argument || (!documented && !hidden && !named && !shortened)) {
+		return AuditSurfaceHit{}, false
+	}
+	name := tag.Get("name")
+	if name == "" {
+		name = kebabIdentifier(fields[0])
+	}
+	kind := "flag"
+	if command {
+		kind = "command"
+	}
+	return AuditSurfaceHit{
+		Kind: kind, Name: name, Path: path, Line: line.number, Lane: "cli-ux",
+		Evidence: auditEvidence(line.text), Hidden: hidden,
+	}, true
+}
+
+func kebabIdentifier(value string) string {
+	runes := []rune(value)
+	var b strings.Builder
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) &&
+			(unicode.IsLower(runes[i-1]) || unicode.IsDigit(runes[i-1]) ||
+				(i+1 < len(runes) && unicode.IsLower(runes[i+1]))) {
+			b.WriteByte('-')
+		}
+		b.WriteRune(unicode.ToLower(r))
+	}
+	return b.String()
+}
+
+func (r *AuditSurfaceReport) addSurfaceAggregateTruncations(totals map[string]int) {
+	fields := []struct {
+		kind  string
+		field string
+		shown int
+	}{
+		{"command", "commands", len(r.Commands)},
+		{"flag", "flags", len(r.Flags)},
+		{"env-var", "env_vars", len(r.EnvVars)},
+		{"config-key", "config_keys", len(r.ConfigKeys)},
+		{"schema-field", "schema_fields", len(r.SchemaFields)},
+		{"route", "routes", len(r.Routes)},
+		{"job", "jobs", len(r.Jobs)},
+		{"model-field", "model_fields", len(r.ModelFields)},
+		{"policy", "policies", len(r.Policies)},
+		{"output", "outputs", len(r.Outputs)},
+		{"dependency-manifest", "dependency_manifests", len(r.DependencyManifests)},
+	}
+	for _, entry := range fields {
+		if total := totals[entry.kind]; total > entry.shown {
+			r.Truncations = append(r.Truncations, AuditTruncation{
+				Field: entry.field, Shown: entry.shown, Total: total, Reason: "surface aggregate cap",
+			})
+		}
+	}
 }
 
 func scanEffectFile(file auditStaticFile) ([]AuditEffect, int) {

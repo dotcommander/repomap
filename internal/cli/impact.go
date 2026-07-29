@@ -41,11 +41,9 @@ func (c *impactCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return enc.Encode(impact)
 	}
 	if c.Markdown {
-		printImpactMarkdown(ioctx.stdout, impact)
-		return nil
+		return printImpactMarkdown(ioctx.stdout, impact)
 	}
-	printImpact(ioctx.stdout, impact)
-	return nil
+	return printImpact(ioctx.stdout, impact)
 }
 
 func impactRootAndPath(ctx context.Context, arg string) (root, rel string, err error) {
@@ -74,22 +72,34 @@ func impactRootAndPath(ctx context.Context, arg string) (root, rel string, err e
 	return root, filepath.ToSlash(rel), nil
 }
 
-func printImpact(w io.Writer, impact repomap.ImpactResult) {
-	fmt.Fprintf(w, "%s\n", impact.File.Path)
+func printImpact(w io.Writer, impact repomap.ImpactResult) error {
+	if _, err := fmt.Fprintf(w, "%s\n", impact.File.Path); err != nil {
+		return err
+	}
 	if impact.ParseMethod != "" {
-		fmt.Fprintf(w, "  parsed: %s\n", impact.ParseMethod)
+		if _, err := fmt.Fprintf(w, "  parsed: %s\n", impact.ParseMethod); err != nil {
+			return err
+		}
 	}
 	if len(impact.Boundaries) > 0 {
-		fmt.Fprintf(w, "  boundaries: %s\n", strings.Join(impact.Boundaries, ", "))
+		if _, err := fmt.Fprintf(w, "  boundaries: %s\n", strings.Join(impact.Boundaries, ", ")); err != nil {
+			return err
+		}
 	}
 	if len(impact.Imports) > 0 {
-		fmt.Fprintf(w, "  imports: %s\n", strings.Join(impact.Imports, ", "))
+		if _, err := fmt.Fprintf(w, "  imports: %s\n", strings.Join(impact.Imports, ", ")); err != nil {
+			return err
+		}
 	}
 	if len(impact.ImportedBy) > 0 {
-		fmt.Fprintf(w, "  imported by: %s\n", strings.Join(impact.ImportedBy, ", "))
+		if _, err := fmt.Fprintf(w, "  imported by: %s\n", strings.Join(impact.ImportedBy, ", ")); err != nil {
+			return err
+		}
 	}
 	if len(impact.Tests) > 0 {
-		fmt.Fprintf(w, "  tests: %s\n", strings.Join(impact.Tests, ", "))
+		if _, err := fmt.Fprintf(w, "  tests: %s\n", strings.Join(impact.Tests, ", ")); err != nil {
+			return err
+		}
 	}
 	if len(impact.ExportedSymbols) > 0 {
 		names := make([]string, 0, len(impact.ExportedSymbols))
@@ -97,73 +107,129 @@ func printImpact(w io.Writer, impact repomap.ImpactResult) {
 			names = append(names, s.Name)
 		}
 		sort.Strings(names)
-		fmt.Fprintf(w, "  exported: %s\n", strings.Join(names, ", "))
-	}
-	if len(impact.ScoreComponents) > 0 {
-		fmt.Fprintf(w, "  score: %d %v\n", impact.File.Score, impact.ScoreComponents)
-	}
-	if impact.RiskLevel != "" {
-		fmt.Fprintf(w, "  risk: %s\n", impact.RiskLevel)
-	}
-	if len(impact.AffectedPackages) > 0 {
-		fmt.Fprintf(w, "  affected packages: %s\n", strings.Join(impact.AffectedPackages, ", "))
-	}
-	if len(impact.CheckNext) > 0 {
-		fmt.Fprintf(w, "  check next: %s\n", strings.Join(impact.CheckNext, "; "))
-	}
-	if len(impact.LikelyTestCommands) > 0 {
-		fmt.Fprintf(w, "  likely test commands: %s\n", strings.Join(impact.LikelyTestCommands, "; "))
-	}
-	if len(impact.ReadNext) > 0 {
-		fmt.Fprintln(w, "  read next:")
-		for _, item := range impact.ReadNext {
-			fmt.Fprintf(w, "    - %s:%d-%d %s\n", item.File, item.StartLine, item.EndLine, item.Reason)
+		if _, err := fmt.Fprintf(w, "  exported: %s\n", strings.Join(names, ", ")); err != nil {
+			return err
 		}
 	}
+	if len(impact.ScoreComponents) > 0 {
+		if _, err := fmt.Fprintf(w, "  score: %d %v\n", impact.File.Score, impact.ScoreComponents); err != nil {
+			return err
+		}
+	}
+	if impact.RiskLevel != "" {
+		if _, err := fmt.Fprintf(w, "  risk: %s\n", impact.RiskLevel); err != nil {
+			return err
+		}
+	}
+	if len(impact.AffectedPackages) > 0 {
+		if _, err := fmt.Fprintf(w, "  affected packages: %s\n", strings.Join(impact.AffectedPackages, ", ")); err != nil {
+			return err
+		}
+	}
+	if len(impact.CheckNext) > 0 {
+		if _, err := fmt.Fprintf(w, "  check next: %s\n", strings.Join(impact.CheckNext, "; ")); err != nil {
+			return err
+		}
+	}
+	if len(impact.LikelyTestCommands) > 0 {
+		if _, err := fmt.Fprintf(w, "  likely test commands: %s\n", strings.Join(impact.LikelyTestCommands, "; ")); err != nil {
+			return err
+		}
+	}
+	if len(impact.ReadNext) > 0 {
+		if _, err := fmt.Fprintln(w, "  read next:"); err != nil {
+			return err
+		}
+		for _, item := range impact.ReadNext {
+			if _, err := fmt.Fprintf(w, "    - %s:%d-%d %s\n", item.File, item.StartLine, item.EndLine, item.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
-func printImpactMarkdown(w io.Writer, impact repomap.ImpactResult) {
-	fmt.Fprintf(w, "# Impact: `%s`\n\n", impact.File.Path)
-	printMarkdownField(w, "Risk", impact.RiskLevel)
+func printImpactMarkdown(w io.Writer, impact repomap.ImpactResult) error {
+	if _, err := fmt.Fprintf(w, "# Impact: `%s`\n\n", impact.File.Path); err != nil {
+		return err
+	}
+	if err := printMarkdownField(w, "Risk", impact.RiskLevel); err != nil {
+		return err
+	}
 	if impact.ParseMethod != "" {
-		printMarkdownField(w, "Parsed", impact.ParseMethod)
+		if err := printMarkdownField(w, "Parsed", impact.ParseMethod); err != nil {
+			return err
+		}
 	}
-	printMarkdownField(w, "Score", fmt.Sprintf("%d", impact.File.Score))
-	printMarkdownList(w, "Boundaries", impact.Boundaries)
-	printMarkdownList(w, "Affected Packages", impact.AffectedPackages)
-	printMarkdownList(w, "Imports", impact.Imports)
-	printMarkdownList(w, "Imported By", impact.ImportedBy)
-	printMarkdownList(w, "Tests", impact.Tests)
-	printMarkdownSymbols(w, impact.ExportedSymbols)
-	printMarkdownScoreComponents(w, impact.ScoreComponents)
-	printMarkdownList(w, "Check Next", impact.CheckNext)
-	printMarkdownList(w, "Likely Test Commands", impact.LikelyTestCommands)
-	printMarkdownReadNext(w, impact.ReadNext)
+	if err := printMarkdownField(w, "Score", fmt.Sprintf("%d", impact.File.Score)); err != nil {
+		return err
+	}
+	for _, list := range []struct {
+		title  string
+		values []string
+	}{
+		{"Boundaries", impact.Boundaries},
+		{"Affected Packages", impact.AffectedPackages},
+		{"Imports", impact.Imports},
+		{"Imported By", impact.ImportedBy},
+		{"Tests", impact.Tests},
+	} {
+		if err := printMarkdownList(w, list.title, list.values); err != nil {
+			return err
+		}
+	}
+	if err := printMarkdownSymbols(w, impact.ExportedSymbols); err != nil {
+		return err
+	}
+	if err := printMarkdownScoreComponents(w, impact.ScoreComponents); err != nil {
+		return err
+	}
+	for _, list := range []struct {
+		title  string
+		values []string
+	}{
+		{"Check Next", impact.CheckNext},
+		{"Likely Test Commands", impact.LikelyTestCommands},
+	} {
+		if err := printMarkdownList(w, list.title, list.values); err != nil {
+			return err
+		}
+	}
+	if err := printMarkdownReadNext(w, impact.ReadNext); err != nil {
+		return err
+	}
 	if impact.OmittedReason != "" {
-		printMarkdownField(w, "Omitted", impact.OmittedReason)
+		return printMarkdownField(w, "Omitted", impact.OmittedReason)
 	}
+	return nil
 }
 
-func printMarkdownField(w io.Writer, label, value string) {
+func printMarkdownField(w io.Writer, label, value string) error {
 	if value == "" {
-		return
+		return nil
 	}
-	fmt.Fprintf(w, "- **%s:** %s\n", label, value)
+	_, err := fmt.Fprintf(w, "- **%s:** %s\n", label, value)
+	return err
 }
 
-func printMarkdownList(w io.Writer, title string, values []string) {
+func printMarkdownList(w io.Writer, title string, values []string) error {
 	if len(values) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprintf(w, "\n## %s\n\n", title)
+	if _, err := fmt.Fprintf(w, "\n## %s\n\n", title); err != nil {
+		return err
+	}
 	for _, value := range values {
-		fmt.Fprintf(w, "- `%s`\n", value)
+		if _, err := fmt.Fprintf(w, "- `%s`\n", value); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func printMarkdownSymbols(w io.Writer, symbols []repomap.Symbol) {
+func printMarkdownSymbols(w io.Writer, symbols []repomap.Symbol) error {
 	if len(symbols) == 0 {
-		return
+		return nil
 	}
 	names := make([]string, 0, len(symbols))
 	for _, symbol := range symbols {
@@ -177,30 +243,40 @@ func printMarkdownSymbols(w io.Writer, symbols []repomap.Symbol) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	printMarkdownList(w, "Exported Symbols", names)
+	return printMarkdownList(w, "Exported Symbols", names)
 }
 
-func printMarkdownScoreComponents(w io.Writer, scores map[string]int) {
+func printMarkdownScoreComponents(w io.Writer, scores map[string]int) error {
 	if len(scores) == 0 {
-		return
+		return nil
 	}
 	keys := make([]string, 0, len(scores))
 	for key := range scores {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	fmt.Fprint(w, "\n## Score Components\n\n")
-	for _, key := range keys {
-		fmt.Fprintf(w, "- `%s`: %d\n", key, scores[key])
+	if _, err := fmt.Fprint(w, "\n## Score Components\n\n"); err != nil {
+		return err
 	}
+	for _, key := range keys {
+		if _, err := fmt.Fprintf(w, "- `%s`: %d\n", key, scores[key]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func printMarkdownReadNext(w io.Writer, items []repomap.ReadNextItem) {
+func printMarkdownReadNext(w io.Writer, items []repomap.ReadNextItem) error {
 	if len(items) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprint(w, "\n## Read Next\n\n")
+	if _, err := fmt.Fprint(w, "\n## Read Next\n\n"); err != nil {
+		return err
+	}
 	for _, item := range items {
-		fmt.Fprintf(w, "- `%s:%d-%d` - %s\n", item.File, item.StartLine, item.EndLine, item.Reason)
+		if _, err := fmt.Fprintf(w, "- `%s:%d-%d` - %s\n", item.File, item.StartLine, item.EndLine, item.Reason); err != nil {
+			return err
+		}
 	}
+	return nil
 }

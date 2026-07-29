@@ -73,7 +73,7 @@ func (m *Map) AuditBrief(ctx context.Context, limit int) (AuditBriefReport, erro
 		}
 	}
 	return AuditBriefReport{
-		SchemaVersion:  2,
+		SchemaVersion:  3,
 		Root:           risks.Root,
 		Risks:          compactBriefRisks(risks),
 		Surface:        compactBriefSurface(surface),
@@ -372,18 +372,44 @@ func compactBriefRisks(report AuditRiskReport) AuditRiskReport {
 }
 
 func compactBriefSurface(report AuditSurfaceReport) AuditSurfaceReport {
-	report.Commands = capBriefSurface(report.Commands, 24)
-	report.Flags = capBriefSurface(report.Flags, 32)
-	report.EnvVars = capBriefSurface(report.EnvVars, 32)
-	report.ConfigKeys = capBriefSurface(report.ConfigKeys, 40)
-	report.SchemaFields = capBriefSurface(report.SchemaFields, 40)
-	report.Routes = capBriefSurface(report.Routes, 32)
-	report.Outputs = capBriefSurface(report.Outputs, 32)
-	report.DependencyManifests = capBriefSurface(report.DependencyManifests, 16)
+	for i := range report.Files {
+		total := originalTruncationTotal(report.Truncations, "files["+report.Files[i].Path+"].hits", len(report.Files[i].Hits))
+		if len(report.Files[i].Hits) > 4 {
+			report.Files[i].Hits = report.Files[i].Hits[:4]
+		}
+		if total > len(report.Files[i].Hits) {
+			report.Files[i].OmittedReason = fmt.Sprintf("showing %d of %d hits; truncated by audit brief cap", len(report.Files[i].Hits), total)
+			report.Truncations = append(report.Truncations, AuditTruncation{
+				Field: "files[" + report.Files[i].Path + "].hits",
+				Shown: len(report.Files[i].Hits), Total: total, Reason: "audit brief per-file cap",
+			})
+		}
+	}
+	report.Commands = capBriefSurfaceField(&report, "commands", report.Commands, 24)
+	report.Flags = capBriefSurfaceField(&report, "flags", report.Flags, 32)
+	report.EnvVars = capBriefSurfaceField(&report, "env_vars", report.EnvVars, 32)
+	report.ConfigKeys = capBriefSurfaceField(&report, "config_keys", report.ConfigKeys, 40)
+	report.SchemaFields = capBriefSurfaceField(&report, "schema_fields", report.SchemaFields, 40)
+	report.Routes = capBriefSurfaceField(&report, "routes", report.Routes, 32)
+	report.Outputs = capBriefSurfaceField(&report, "outputs", report.Outputs, 32)
+	report.DependencyManifests = capBriefSurfaceField(&report, "dependency_manifests", report.DependencyManifests, 16)
 	return report
 }
 
 func compactBriefEffects(report AuditEffectReport) AuditEffectReport {
+	for i := range report.Files {
+		total := originalTruncationTotal(report.Truncations, "files["+report.Files[i].Path+"].effects", len(report.Files[i].Effects))
+		if len(report.Files[i].Effects) > 4 {
+			report.Files[i].Effects = report.Files[i].Effects[:4]
+		}
+		if total > len(report.Files[i].Effects) {
+			report.Files[i].OmittedReason = fmt.Sprintf("showing %d of %d effects; truncated by audit brief cap", len(report.Files[i].Effects), total)
+			report.Truncations = append(report.Truncations, AuditTruncation{
+				Field: "files[" + report.Files[i].Path + "].effects",
+				Shown: len(report.Files[i].Effects), Total: total, Reason: "audit brief per-file cap",
+			})
+		}
+	}
 	for i := range report.Kinds {
 		if total := len(report.Kinds[i].Files); total > 12 {
 			report.Kinds[i].Files = report.Kinds[i].Files[:12]
@@ -393,9 +419,25 @@ func compactBriefEffects(report AuditEffectReport) AuditEffectReport {
 	return report
 }
 
-func capBriefSurface(items []AuditSurfaceHit, limit int) []AuditSurfaceHit {
+func capBriefSurfaceField(report *AuditSurfaceReport, field string, items []AuditSurfaceHit, limit int) []AuditSurfaceHit {
+	total := originalTruncationTotal(report.Truncations, field, len(items))
 	if len(items) > limit {
-		return items[:limit]
+		items = items[:limit]
+	}
+	if total > len(items) {
+		report.Truncations = append(report.Truncations, AuditTruncation{
+			Field: field, Shown: len(items), Total: total, Reason: "audit brief aggregate cap",
+		})
 	}
 	return items
+}
+
+func originalTruncationTotal(truncations []AuditTruncation, field string, fallback int) int {
+	total := fallback
+	for _, truncation := range truncations {
+		if truncation.Field == field && truncation.Total > total {
+			total = truncation.Total
+		}
+	}
+	return total
 }

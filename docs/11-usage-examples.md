@@ -20,13 +20,13 @@ Every command assumes you're at the root of a git repository.
 |------|-----------|---------------|----------|
 | enriched (default) | _(no `-f`)_ | exported symbols + signatures + godoc first line + struct fields, budget-trimmed | the everyday "read me first" map |
 | compact | `-f compact` | exported symbol **names** only, no signatures/docs/fields | wide orientation — more files fit the same budget |
-| verbose | `-f verbose` | **all** files (no budget cut), all symbols incl. unexported, grouped by kind, names only | a full inventory of every symbol |
-| detail | `-f detail` | all files, full signatures + struct fields | the most verbose text mode |
+| verbose | `-f verbose` | all symbols in whole files selected by the CLI's complete-output budget, grouped by kind, names only | a broad CLI inventory |
+| detail | `-f detail` | selected whole files with full signatures + struct fields | the richest CLI text mode |
 | lines | `-f lines` | actual source lines read from disk, budget-trimmed | reading code, not summaries |
 | xml | `-f xml` | structured XML: dependency graph + `<file>`/`<symbols>`/`<sym>` (name, kind, line, span, params, implements) | machine consumption |
 | json-structured | `--json-structured` | structured JSON repository map (files, symbols, call sites, scores; tier breakdown after `explain`) | programmatic ranking/selection |
 
-**Gotchas.** The default (enriched) is **richer** than `-f compact` — compact is names only. `-f verbose` is *wider* but *shallower* per file than the default: it lists every file and symbol but drops signatures. And `--intent` reranks files **silently** — add `--explain` to see why files ranked.
+**Gotchas.** The default (enriched) is **richer** than `-f compact` — compact is names only. `-f verbose` is *wider* but *shallower* per selected file than the default: it drops signatures, while the CLI still omits whole files as needed to fit `-t`. And `--intent` reranks files **silently** — add `--explain` to see why files ranked.
 
 The header now reports `~T tokens` (e.g. `## Repository Map · enriched (168 files, 874 symbols, ~1496 tokens)`), so an orchestrating agent can scale `-t` from the estimate.
 
@@ -98,8 +98,9 @@ calls.go [imported by 17, imports: 1]
 ```
 
 The format ladder is `compact` → (default enriched) → `verbose` → `detail`, trading
-breadth for depth. `verbose` shows every symbol; `detail` adds full signatures and
-struct fields.
+breadth for depth. The CLI applies `-t` to the complete encoded response for every
+format, so a small budget may omit whole files even in verbose or detail; `detail`
+adds full signatures and struct fields for the files that fit.
 
 ---
 
@@ -186,9 +187,40 @@ adjacent context into the budget instead of repeating yourself.
 repomap --consumed ranker.go,budget.go -i "detail level assignment"
 ```
 
+## 5. Build a bounded implementation handoff
+
+When the next step is implementation rather than another general map, use `task`.
+It creates a goal-specific packet with selected targets, task-match evidence,
+relationship/effect provenance, confidence, source excerpts, read-next ranges,
+verification commands, diagnostics, and explicit truncation accounting.
+
+```bash
+repomap task --tokens=4096 --consumed budget.go,internal/cli/render.go \
+  "fix token budget overshoot" .
+```
+
+`GOAL` is required and `DIRECTORY` is optional (default `.`). `--tokens`/`-t`
+defaults to `4096` and must be greater than zero. `--json` emits the
+schema-versioned `TaskReport`; use the root `--artifact` flag to write that
+complete output atomically:
+
+```bash
+repomap --artifact task.json task --json --tokens=4096 \
+  --consumed budget.go,internal/cli/render.go \
+  "fix token budget overshoot" .
+```
+
+`--consumed` accepts comma-separated paths under the task root. They are
+downranked while their importers are upranked; a selected consumed target is
+marked `consumed: true` and does not receive a source excerpt, keeping the packet
+focused on unread code. Blank goals, non-positive CLI token limits, and consumed
+paths outside the root are errors. If the report must omit metadata, relationships,
+source, or targets to fit, its `truncations` records what was shown and why; a
+`follow_up_commands` entry suggests a larger rerun.
+
 ---
 
-## 5. Scope a change before you make it
+## 6. Scope a change before you make it
 
 Before editing a symbol, find out what leans on it. `impact` reports deterministic
 local facts and workflow guidance — importers, tests, risk, check-next files,
@@ -220,7 +252,7 @@ repomap context RankFiles --calls --max-source-lines 120
 
 ---
 
-## 6. Trace callers and references
+## 7. Trace callers and references
 
 `--calls` expands exported symbols with receiver-qualified callers from one
 in-process Go semantic graph (verified references — the `confirmed` tier):
@@ -251,7 +283,7 @@ repomap symbols ranker.go                # everything defined in a file
 
 ---
 
-## 7. Find a symbol by name
+## 8. Find a symbol by name
 
 When you know the name but not the file:
 
@@ -264,12 +296,12 @@ repomap find ExpandCallers --format json
 
 ---
 
-## 8. Output for machines
+## 9. Output for machines
 
 Agents usually want structured output, not prose. Three shapes:
 
 ```bash
-repomap --json              # JSON array of the rendered lines
+repomap --json              # schema-versioned envelope of rendered lines
 repomap --json-structured   # structured repository map (files, symbols, call sites, scores)
 repomap -f lines            # actual source lines instead of a symbol summary
 ```
@@ -277,11 +309,15 @@ repomap -f lines            # actual source lines instead of a symbol summary
 `--json-structured` is the richest: it carries per-file scores, structural
 call-site records when parser-backed extraction is available, and, after an
 `explain`, the tier breakdown — ideal for an agent that ranks and selects
-programmatically.
+programmatically. Under `-t`, its `files` array contains only whole selected
+records, while `totals` remains the full repository count and
+`files_omitted`/`files_omitted_reason` account for the rest. Every CLI format
+limits the complete encoded stdout response to `ceil(bytes / 4)` tokens; if its
+minimum valid envelope cannot fit, the command fails without a partial response.
 
 ---
 
-## 9. Prepare commits
+## 10. Prepare commits
 
 repomap can analyze a changeset, group related files, and flag breaking changes — a
 workflow built for an agent assembling a clean PR.
@@ -297,7 +333,7 @@ repomap commit auto                      # prep + finish when ready, else report
 
 ---
 
-## 10. Seed a deep audit
+## 11. Seed a deep audit
 
 Before a broad review, ask repomap for deterministic leads instead of loading
 the whole tree into a model:
@@ -330,7 +366,8 @@ time, and randomness. Treat these outputs as audit packets: promote a lead only
 after source, docs, runtime, or command corroboration.
 Use `--top-files N` as a clearer alias for `--limit N` on audit packets.
 
-Every audit packet is self-describing (`schema_version` 2): each carries a stable
+Risk packets remain at `schema_version` 2. Surface, effects, and brief packets
+use `schema_version` 3 with structured truncation accounting. Each carries a stable
 `id` (e.g. `repomap:risk:internal-cli-audit-go`) for citation, an `evidence_class`
 (`import_graph`, `ast`, `git_history`, or `heuristic`) with a derived `confidence`
 tier, and a per-file `verify_cmd` for Go targets. Signals blind to out-of-repo
@@ -340,7 +377,7 @@ confidence. Empty file lists serialize as `[]` (never `null`) with a
 
 ---
 
-## 11. Set up a project
+## 12. Set up a project
 
 Scaffold a `.repomap.yaml` and install a post-commit hook that keeps the cache warm:
 
@@ -357,7 +394,7 @@ The post-commit hook runs `repomap cache warm .` in the background; re-running
 
 ---
 
-## 12. Start a warm JSON-RPC server
+## 13. Start a warm JSON-RPC server
 
 For coding agents and editors that ask many small questions, `repomap serve` keeps
 one map warm per project root instead of rebuilding on every invocation. It starts a
@@ -392,7 +429,7 @@ stderr only; stdout stays JSON-RPC. JSON-RPC errors use `-32700` parse error,
 
 ---
 
-## 13. Trace a route to its handler, callees, and tests
+## 14. Trace a route to its handler, callees, and tests
 
 The `endpoint` verb answers a web-service question in a single call: **what
 handles this route, what does the handler call, and which tests touch it?** It

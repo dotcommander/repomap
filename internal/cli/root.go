@@ -27,6 +27,7 @@ type rootCommand struct {
 	Find            findCommand            `cmd:"" help:"Locate a symbol by name with optional kind/file qualifiers"`
 	Impact          impactCommand          `cmd:"" help:"Show deterministic local impact facts for a file"`
 	Inventory       inventoryCommand       `cmd:"" help:"Answer ownership for a boundary such as Postgres"`
+	Task            taskCommand            `cmd:"" help:"Build a bounded implementation handoff for a goal"`
 	Context         contextCommand         `cmd:"" help:"Show bounded source and impact context for a symbol"`
 	Endpoint        endpointCommand        `cmd:"" help:"Show route registration, handler, callee names, and touching tests"`
 	Explain         explainCommand         `cmd:"" help:"Show why a file ranked and rendered the way it did"`
@@ -45,8 +46,8 @@ type rootCommand struct {
 type mapCommand struct {
 	Directory         string   `arg:"" optional:"" type:"path" default:"." help:"Directory to map"`
 	Tokens            int      `short:"t" default:"2048" help:"Token budget"`
-	Format            string   `short:"f" help:"Output format: compact (orientation: names only), verbose, detail, lines, xml (default: enriched — signatures + godoc + fields)"`
-	JSON              bool     `help:"Output as JSON array of lines"`
+	Format            string   `short:"f" default:"enriched" enum:"enriched,compact,verbose,detail,lines,xml" help:"Output format: compact (orientation: names only), verbose, detail, lines, xml (default: enriched — signatures + godoc + fields)"`
+	JSON              bool     `help:"Output a schema-versioned JSON envelope containing rendered lines"`
 	JSONLegacy        bool     `help:"Emit --json output as a bare array (pre-v0.7.0 format). Use only for legacy scripts; will be removed in a future release."`
 	JSONStructured    bool     `help:"Output a structured JSON repository map"`
 	Calls             bool     `help:"Expand exported symbols with semantic caller information"`
@@ -63,6 +64,33 @@ type mapCommand struct {
 	IncludeTests      bool     `help:"Rank _test.go files at full weight (default: demoted)"`
 }
 
+func (c *mapCommand) Validate() error {
+	if c.Tokens <= 0 {
+		return fmt.Errorf("--tokens must be greater than zero")
+	}
+	if c.JSONLegacy && !c.JSON {
+		return fmt.Errorf("--json-legacy requires --json")
+	}
+	if c.JSONStructured && (c.JSON || c.JSONLegacy) {
+		return fmt.Errorf("--json-structured is mutually exclusive with --json and --json-legacy")
+	}
+	if c.CallsUseBinary {
+		return fmt.Errorf("--calls-use-binary is no longer supported; remove it and use the built-in semantic callers")
+	}
+	for _, value := range []struct {
+		name  string
+		value int
+	}{
+		{"calls-threshold", c.CallsThreshold},
+		{"calls-limit", c.CallsLimit},
+	} {
+		if value.value < 0 {
+			return fmt.Errorf("--%s must be zero or greater", value.name)
+		}
+	}
+	return nil
+}
+
 // Execute parses and runs one CLI invocation without terminating the process.
 func Execute(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	return execute(ctx, args, stdout, stderr)
@@ -72,21 +100,7 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	args = normalizeHelpArgs(args)
 	var tree rootCommand
 	ioctx := &commandIO{stdout: stdout, stderr: stderr}
-	parser, err := kong.New(&tree,
-		kong.Name("repomap"),
-		kong.Description(rootDescription),
-		kong.Writers(stdout, stderr),
-		kong.BindTo(ctx, (*context.Context)(nil)),
-		kong.Bind(ioctx),
-		kong.ConfigureHelp(kong.HelpOptions{
-			Compact:             true,
-			Tree:                true,
-			Summary:             true,
-			FlagsLast:           true,
-			NoExpandSubcommands: true,
-		}),
-		kong.Help(repomapHelp),
-	)
+	parser, err := newRootParser(&tree, ctx, ioctx, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -102,20 +116,85 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) error
 	if tree.Artifact == "" {
 		return parsed.Run()
 	}
-	f, err := os.Create(tree.Artifact)
+	return writeArtifact(tree.Artifact, &ioctx.stdout, func() error { return parsed.Run() })
+}
+
+// newRootParser constructs the live CLI model used for both execution and
+// command-surface inventory. Keeping it in one place prevents inventory from
+// drifting from the parser users actually invoke.
+func newRootParser(tree *rootCommand, ctx context.Context, ioctx *commandIO, stdout, stderr io.Writer) (*kong.Kong, error) {
+	return kong.New(tree,
+		kong.Name("repomap"),
+		kong.Description(rootDescription),
+		kong.Writers(stdout, stderr),
+		kong.BindTo(ctx, (*context.Context)(nil)),
+		kong.Bind(ioctx),
+		kong.ConfigureHelp(kong.HelpOptions{
+			Compact:             true,
+			Tree:                true,
+			Summary:             true,
+			FlagsLast:           true,
+			NoExpandSubcommands: true,
+		}),
+		kong.Help(repomapHelp),
+	)
+}
+
+func writeArtifact(target string, stdout *io.Writer, run func() error) (err error) {
+	mode, err := artifactMode(target)
 	if err != nil {
-		return fmt.Errorf("create artifact: %w", err)
+		return err
 	}
-	ioctx.stdout = f
-	runErr := parsed.Run()
-	closeErr := f.Close()
-	if runErr != nil {
-		return runErr
+	directory := filepath.Dir(target)
+	temp, err := os.CreateTemp(directory, "."+filepath.Base(target)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create artifact temp file: %w", err)
 	}
-	if closeErr != nil {
-		return fmt.Errorf("close artifact: %w", closeErr)
+	tempName := temp.Name()
+	defer func() {
+		if temp != nil {
+			_ = temp.Close()
+		}
+		if err != nil {
+			_ = os.Remove(tempName)
+		}
+	}()
+	if err := temp.Chmod(mode); err != nil {
+		return fmt.Errorf("set artifact permissions: %w", err)
+	}
+
+	*stdout = temp
+	if err := run(); err != nil {
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync artifact: %w", err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close artifact: %w", err)
+	}
+	temp = nil
+	if err := os.Rename(tempName, target); err != nil {
+		return fmt.Errorf("replace artifact: %w", err)
 	}
 	return nil
+}
+
+func artifactMode(target string) (os.FileMode, error) {
+	info, err := os.Lstat(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0o644, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("inspect artifact target: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return 0, fmt.Errorf("artifact target %q is a symlink; choose a regular file path", target)
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("artifact target %q is not a regular file", target)
+	}
+	return info.Mode().Perm(), nil
 }
 
 func normalizeHelpArgs(args []string) []string {
@@ -177,33 +256,8 @@ func (c *mapCommand) Run(ctx context.Context, ioctx *commandIO) error {
 }
 
 func renderStandard(w io.Writer, m *repomap.Map, format string, asJSON bool, jsonLegacy bool, jsonStructured bool) error {
-	if jsonStructured {
-		data, err := m.StructuredJSON()
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(append(data, '\n'))
-		return err
-	}
-	if asJSON {
-		return printJSON(w, m, jsonLegacy)
-	}
-
-	var out string
-	switch format {
-	case "compact":
-		out = m.StringCompact() // lean orientation: path + exported names only
-	case "verbose":
-		out = m.StringVerbose()
-	case "detail":
-		out = m.StringDetail()
-	case "lines":
-		out = m.StringLines()
-	case "xml":
-		out = m.StringXML()
-	default:
-		out = m.String() // enriched default: signatures + godoc + fields
-	}
-	_, err := fmt.Fprint(w, out)
-	return err
+	ranked := m.Ranked()
+	return writeRankedWithinBudget(w, m.Config().MaxTokens, ranked, func(selected []repomap.RankedFile) ([]byte, error) {
+		return encodeStandard(m, selected, format, asJSON, jsonLegacy, jsonStructured)
+	})
 }

@@ -61,6 +61,26 @@ func TestInspectCache_Corrupt(t *testing.T) {
 	assert.Equal(t, "corrupt_cache", got.Reason)
 }
 
+func TestInspectCache_DirtyGitDigestFreshness(t *testing.T) {
+	t.Parallel()
+
+	repo := newGitRepo(t)
+	cacheDir := t.TempDir()
+	path := filepath.Join(repo, "feature.py")
+	require.NoError(t, os.WriteFile(path, []byte("def feature():\n    return 1\n"), 0o644))
+	buildWithCache(t, repo, cacheDir)
+
+	fresh := InspectCache(context.Background(), repo, cacheDir)
+	assert.True(t, fresh.Usable)
+	assert.False(t, fresh.Stale)
+	assert.Equal(t, "fresh", fresh.Reason)
+
+	require.NoError(t, os.WriteFile(path, []byte("def feature():\n    return 2\n"), 0o644))
+	stale := InspectCache(context.Background(), repo, cacheDir)
+	assert.True(t, stale.Stale)
+	assert.Equal(t, "content_changed", stale.Reason)
+}
+
 func TestSaveCacheLegacySignature(t *testing.T) {
 	t.Parallel()
 

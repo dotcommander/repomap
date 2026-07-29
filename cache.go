@@ -54,11 +54,12 @@ type diskCache struct {
 	Ranked          []RankedFile         `json:"ranked"`
 	SemanticCallers SymbolCallers        `json:"semantic_callers,omitempty"`
 	GoDiagnostics   []GoDiagnostic       `json:"go_diagnostics,omitempty"`
-	LastSHA         string               `json:"last_sha,omitempty"` // HEAD sha at write time; "" when not a git repo
-	GitRoot         bool                 `json:"git_root,omitempty"` // true if root was inside a git repo at write time
+	LastSHA         string               `json:"last_sha,omitempty"`        // HEAD sha at write time; "" when not a git repo
+	WorktreeDigest  string               `json:"worktree_digest,omitempty"` // cache-relevant worktree contents at write time
+	GitRoot         bool                 `json:"git_root,omitempty"`        // true if root was inside a git repo at write time
 }
 
-const cacheVersion = 14
+const cacheVersion = 15
 
 // SaveCache writes the current map state to disk.
 func (m *Map) SaveCache(cacheDir string) error {
@@ -95,13 +96,16 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 		SemanticCallers: m.semanticCallers,
 		GoDiagnostics:   m.goDiagnostics,
 	}
-	if isInsideGitRepo(m.root) {
-		entry.GitRoot = true
-		if sha, err := gitHeadSHA(ctx, m.root); err == nil {
-			entry.LastSHA = sha
-		}
-	}
 	m.mu.Unlock()
+
+	// A status snapshot contains both HEAD and the worktree identity. If Git is
+	// unavailable, retain the existing non-Git cache behavior; incremental reuse
+	// will fail closed on the next build.
+	if snapshot, err := m.gitStatusSnapshot(ctx); err == nil {
+		entry.GitRoot = true
+		entry.LastSHA = snapshot.headSHA
+		entry.WorktreeDigest = snapshot.digest
+	}
 
 	data, err := json.Marshal(&entry)
 	if err != nil {

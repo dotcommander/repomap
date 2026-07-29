@@ -28,7 +28,7 @@ After `Build`, the cache file is written automatically (best-effort — errors a
 
 ```go
 m := repomap.New(".", repomap.DefaultConfig())
-if err := m.LoadCache("/tmp/repomap-cache"); err != nil {
+if !m.LoadCache("/tmp/repomap-cache") {
     // no cache or corrupt; fall through
 }
 
@@ -74,7 +74,7 @@ Staleness is debounced at 30 seconds. If you call `Stale` twice inside that wind
 
 ## Incremental rebuild
 
-When the disk cache contains a saved HEAD commit SHA (`LastSHA`), `Build` re-parses only the files changed between that commit and HEAD (via `git diff --name-status`), plus any untracked files respecting `.gitignore`. This makes repeated builds on large repos nearly instantaneous when few files changed.
+Git caches also persist a deterministic digest of cache-relevant worktree contents alongside the saved HEAD (`LastSHA`). An exact HEAD+digest hit hydrates the cache without rewriting it, so staging or unstaging identical contents does not invalidate the cache. From a saved clean worktree, `Build` re-parses only committed and current worktree changes (including untracked files respecting `.gitignore`); a changed dirty baseline falls back to a full rebuild.
 
 Falls through to a full rebuild if:
 - The cached SHA is unreachable (e.g., after a rebase or force-push)
@@ -107,7 +107,7 @@ The status command checks the cache entry for the selected root without rebuildi
 
 ## Cache versioning
 
-The disk format has a version number (`cacheVersion = 14`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. Version 14 invalidates older semantic caller projections so generic method callers are rebuilt with source receiver identity.
+The disk format has a version number (`cacheVersion = 15`). A mismatched version causes `LoadCache` to discard the cache and fall back to a full `Build`. Version 15 adds the worktree-content digest required to safely reuse dirty Git worktrees.
 
 ## When caching hurts
 

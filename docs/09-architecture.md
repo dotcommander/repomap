@@ -3,7 +3,9 @@
 Five stages. One package. No magic.
 
 ```
-scan → parse → rank → budget → format
+scan → parse → rank → detail selection → format
+                         ├─ focused queries
+                         └─ task report composition
 ```
 
 ## Stage 1: Scan
@@ -47,11 +49,11 @@ See [Ranking](06-ranking.md) for the weights. The output is files sorted by scor
 - `Tag` — e.g. `entry`
 - `Untested` — true if it has no sibling `_test` file
 
-## Stage 4: Budget
+## Stage 4: Detail selection
 
 `budget.go` → `BudgetFiles(ranked, maxTokens) []RankedFile`
 
-Assigns a `DetailLevel` to each file so the rendered output fits the token budget:
+Assigns a `DetailLevel` to each file from a rendering-cost estimate:
 
 ```
 -1: omitted
@@ -61,13 +63,17 @@ Assigns a `DetailLevel` to each file so the rendered output fits the token budge
  3: symbols + field expansion
 ```
 
-Walk rank order, promote each file to the highest level the remaining budget allows. Reserved 70% budget goes to headers and symbols; 30% to field expansion on top-ranked types.
+Walk rank order, promote each file to the highest level the remaining estimate
+allows. Reserved 70% goes to headers and symbols; 30% to field expansion on
+top-ranked types. This is a selection heuristic, not a serialization guarantee:
+it does not account for every byte added by a JSON envelope, indentation, XML,
+or Markdown framing.
 
 When `maxTokens == 0`, everything gets level 2 (used by verbose and detail formats).
 
 ## Stage 5: Format
 
-Four renderers, chosen by the caller:
+Three renderers, chosen by the caller:
 
 | Renderer | File | Output |
 | --- | --- | --- |
@@ -77,6 +83,19 @@ Four renderers, chosen by the caller:
 
 Each renderer consumes `RankedFile.DetailLevel` and shapes output accordingly. Renderers are pure functions — no state, no I/O.
 
+### Final CLI encoding budget
+
+`internal/cli/output_budget.go` owns the public CLI limit after formatting. It
+encodes each candidate complete response, counts `ceil(bytes / 4)`, and selects
+the largest ranked prefix that fits. It never splits a file or structured record.
+The payload is encoded before stdout or `--artifact` is written, so a budget that
+cannot fit the minimum valid envelope fails atomically. This final layer applies
+to every CLI map format, including verbose, detail, JSON, and structured JSON.
+
+For structured JSON, the final layer constructs the selected `files` slice,
+retains unbudgeted repository `totals`, and accounts for excluded files with
+`files_omitted` and `files_omitted_reason`.
+
 ## Focused Queries
 
 Focused commands reuse the built map instead of adding separate indexing paths:
@@ -85,6 +104,11 @@ Focused commands reuse the built map instead of adding separate indexing paths:
 - `impact` reports file-level imports, importers, nearby tests, exported symbols, boundaries, parser method, score components, risk level, check-next guidance, likely Go test commands, and bounded read-next ranges.
 - `context` composes `find` + bounded source extraction + `impact` into a symbol-centered bundle. Its optional `--calls` path reuses the map's semantic Go caller graph.
 - `cache status` reads the disk cache entry directly and reports usability/freshness; it does not trigger a rebuild. `cache warm` builds, saves, and verifies a fresh entry.
+- `task` derives a fresh goal-specific map, enables semantic Go relationship and
+  caller analysis, collects audit-effect and git-change evidence, then composes
+  a bounded `TaskReport`. It prioritizes positive task evidence, structural
+  score, then path; caps targets and source excerpts; and records every packing
+  reduction in `truncations`. Human and JSON task output render the same report.
 
 ## The `Map` type
 

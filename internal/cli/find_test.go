@@ -92,7 +92,28 @@ func TestFindCmd_NoResults(t *testing.T) {
 	root := findCLITestRoot(t)
 	out, err := runFindCmd(t, "NoSuchSymbolFoo99999", root)
 	require.NoError(t, err)
-	assert.Empty(t, strings.TrimSpace(out))
+	assert.Equal(t, "no symbols found", strings.TrimSpace(out))
+}
+
+func TestFindCmd_JSONNoResultsRemainsEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	root := findCLITestRoot(t)
+	out, err := runFindCmd(t, "NoSuchSymbolFoo99999", root, "--format=json")
+	require.NoError(t, err)
+	assert.Equal(t, "[]", strings.TrimSpace(out))
+}
+
+type failingFindWriter struct{ err error }
+
+func (w failingFindWriter) Write([]byte) (int, error) { return 0, w.err }
+
+func TestFindCmd_PropagatesTextWriterError(t *testing.T) {
+	t.Parallel()
+
+	want := assert.AnError
+	err := (&findCommand{Query: "FindSymbol", Directory: findCLITestRoot(t)}).Run(t.Context(), &commandIO{stdout: failingFindWriter{err: want}})
+	assert.ErrorIs(t, err, want)
 }
 
 // nonEmptyLines splits output into non-blank lines.

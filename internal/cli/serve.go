@@ -87,30 +87,33 @@ func (c *serveCommand) Run(ctx context.Context, ioctx *commandIO) error {
 //   - dispatch  — requestCh closed and drained, or ctx cancelled
 func (s *serveServer) Run(ctx context.Context) error {
 	requestCh := make(chan rawRequest, 8)
-	go s.readLoop(requestCh)
-	s.dispatchLoop(ctx, requestCh)
-	return nil
+	readDone := make(chan error, 1)
+	go func() {
+		readDone <- s.readLoop(requestCh)
+	}()
+	return s.dispatchLoop(ctx, requestCh, readDone)
 }
 
-func (s *serveServer) readLoop(requestCh chan<- rawRequest) {
+func (s *serveServer) readLoop(requestCh chan<- rawRequest) error {
 	defer close(requestCh)
 	for {
 		var req rawRequest
 		if err := s.codec.ReadMessage(&req); err != nil {
 			switch {
 			case errors.Is(err, io.EOF):
-				return
+				return nil
 			case errors.Is(err, bufio.ErrTooLong):
 				// A Scanner cannot continue after an oversized token. Emit the
 				// protocol parse error once, then close the request channel so
 				// dispatch stops rather than repeatedly reporting the same frame.
-				s.respondErr(nil, errParse, "parse error")
-				return
+				return s.respondErr(nil, errParse, "parse error")
 			case isParseError(err):
-				s.respondErr(nil, errParse, "parse error")
+				if err := s.respondErr(nil, errParse, "parse error"); err != nil {
+					return err
+				}
 				continue
 			default:
-				return
+				return nil
 			}
 		}
 		requestCh <- req
@@ -123,7 +126,7 @@ func isParseError(err error) bool {
 	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr)
 }
 
-func (s *serveServer) dispatchLoop(ctx context.Context, requestCh <-chan rawRequest) {
+func (s *serveServer) dispatchLoop(ctx context.Context, requestCh <-chan rawRequest, readDone <-chan error) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -131,28 +134,31 @@ func (s *serveServer) dispatchLoop(ctx context.Context, requestCh <-chan rawRequ
 				select {
 				case req, ok := <-requestCh:
 					if !ok {
-						return
+						return <-readDone
 					}
-					s.respondErr(req.ID, errServer, "shutting down")
+					if err := s.respondErr(req.ID, errServer, "shutting down"); err != nil {
+						return err
+					}
 				default:
-					return
+					return nil
 				}
 			}
 		case req, ok := <-requestCh:
 			if !ok {
-				return
+				return <-readDone
 			}
-			s.handle(ctx, req)
+			if err := s.handle(ctx, req); err != nil {
+				return err
+			}
 		}
 	}
 }
 
-func (s *serveServer) handle(ctx context.Context, req rawRequest) {
+func (s *serveServer) handle(ctx context.Context, req rawRequest) error {
 	if s.m.Stale() {
 		fmt.Fprintf(s.stderr, "repomap serve: rebuilding (stale)\n")
 		if err := s.m.Build(ctx); err != nil {
-			s.respondErr(req.ID, errServer, err.Error())
-			return
+			return s.respondErr(req.ID, errServer, err.Error())
 		}
 	}
 
@@ -172,22 +178,20 @@ func (s *serveServer) handle(ctx context.Context, req rawRequest) {
 	case "file/context":
 		result, rpcErr = s.rpcFileContext(req)
 	default:
-		s.respondErr(req.ID, errMethodNotFound, "method not found")
-		return
+		return s.respondErr(req.ID, errMethodNotFound, "method not found")
 	}
 	if rpcErr != nil {
-		s.respondErr(req.ID, rpcErr.Code, rpcErr.Message)
-		return
+		return s.respondErr(req.ID, rpcErr.Code, rpcErr.Message)
 	}
-	s.respond(req.ID, result)
+	return s.respond(req.ID, result)
 }
 
-func (s *serveServer) respond(id json.RawMessage, result any) {
-	_ = s.codec.WriteMessage(rpcResponse{JSONRPC: "2.0", ID: normalizeID(id), Result: result})
+func (s *serveServer) respond(id json.RawMessage, result any) error {
+	return s.codec.WriteMessage(rpcResponse{JSONRPC: "2.0", ID: normalizeID(id), Result: result})
 }
 
-func (s *serveServer) respondErr(id json.RawMessage, code int, msg string) {
-	_ = s.codec.WriteMessage(rpcErrorResponse{JSONRPC: "2.0", ID: normalizeID(id), Error: rpcErrObj{Code: code, Message: msg}})
+func (s *serveServer) respondErr(id json.RawMessage, code int, msg string) error {
+	return s.codec.WriteMessage(rpcErrorResponse{JSONRPC: "2.0", ID: normalizeID(id), Error: rpcErrObj{Code: code, Message: msg}})
 }
 
 func normalizeID(id json.RawMessage) json.RawMessage {

@@ -1,0 +1,1 @@
+{"goal":"change request dispatch behavior","language":"php","kind":"behavior","owner_doc":"dispatches request behavior","distractor_doc":"formats request views","owners":["controller.php"],"symbols":["Controller"],"consumers":["routes.php"],"tests":["controllerTest.php"],"evidence":["doc","signature"],"distractors":["view.php"]}

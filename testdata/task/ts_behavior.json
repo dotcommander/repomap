@@ -1,0 +1,1 @@
+{"goal":"change component rendering behavior","language":"typescript","kind":"behavior","owner_doc":"renders interactive component behavior","distractor_doc":"declares component data shapes","owners":["component.ts"],"symbols":["Component"],"consumers":["app.ts"],"tests":["component.test.ts"],"evidence":["path","symbol"],"distractors":["types.ts"]}

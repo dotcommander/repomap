@@ -20,3 +20,9 @@ coverage.*
 
 # Working files
 .work/
+!.work/
+.work/*
+!.work/qa/
+!.work/qa/repomap-cli-improvements.json
+!.work/qa/repomap-cli-audit.html
+!.work/qa/run-cli-matrix.sh

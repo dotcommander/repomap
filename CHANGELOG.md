@@ -4,6 +4,40 @@ All notable changes to repomap are documented here.
 
 ---
 
+## Unreleased
+
+### Features
+
+- **`repomap task "<goal>" [directory]`** — composes task-relevant owners,
+  symbols, bounded source, consumers, callers, tests, side effects, applicable
+  rules, dirty overlap, and verification commands into one schema-versioned
+  implementation packet. Supports `--tokens`, `--json`, `--consumed`, and the
+  global atomic `--artifact` output.
+- **`repomap cache warm [directory]`** — builds, persists, and verifies a fresh
+  cache entry. Generated post-commit hooks now use the same command.
+
+### Fixed
+
+- **Complete-output token budgets** — bounded text, JSON, structured JSON, XML,
+  verbose, detail, lines, caller, and task output now count the fully encoded
+  stdout using `ceil(UTF-8 bytes / 4)`. Structured values are never byte-cut,
+  and an undersized minimum envelope fails before output is written.
+- **CLI output and validation contracts** — invalid enums, bounds, and
+  conflicting modes fail before execution; `--artifact` replaces regular files
+  atomically; output and flush failures propagate; JSON modes stay prose-free;
+  and human searches report an explicit no-result state.
+- **Audit packet completeness** — Kong commands and flags are inventoried,
+  schema-v3 packets account for every aggregate and per-file truncation, and
+  filtered effects retain correct kind, lane, and omission totals.
+- **Dirty-worktree cache safety** — cache version 15 binds entries to a strict
+  Git worktree-content digest, handles renames and unusual filenames, and
+  fails closed on malformed, conflicted, deleted, or semantically changed
+  inputs.
+- **Repository analysis safety** — repository rewrites reject traversal,
+  symlink, directory, and non-regular targets while preserving permissions;
+  generic Go callers, deletion invalidation, concurrent symbol lookup, and
+  oversized JSON-RPC frame handling now retain their intended invariants.
+
 ## v0.22.0 — 2026-07-22
 
 ### Features

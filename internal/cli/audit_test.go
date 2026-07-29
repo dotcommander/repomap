@@ -114,6 +114,48 @@ func main() {
 	assert.Equal(t, "main.go\n", out.String())
 }
 
+func TestAuditCommandEffectsFiltersBeforePerFileCap(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	var source bytes.Buffer
+	source.WriteString("package main\n\nimport (\n\t\"encoding/json\"\n\t\"os\"\n)\n\nfunc main() {\n")
+	for range 13 {
+		source.WriteString("\t_, _ = json.Marshal(nil)\n")
+	}
+	source.WriteString("\t_ = os.WriteFile(\"out\", nil, 0o644)\n}\n")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), source.Bytes(), 0o644))
+
+	var filesystemOut bytes.Buffer
+	require.NoError(t, executeTest(t, []string{
+		"audit", "effects", "--json", "--kind", "filesystem-write", "--limit", "0", root,
+	}, &filesystemOut, io.Discard))
+
+	var filesystem repomap.AuditEffectReport
+	require.NoError(t, json.Unmarshal(filesystemOut.Bytes(), &filesystem))
+	require.Len(t, filesystem.Files, 1)
+	require.Len(t, filesystem.Files[0].Effects, 1)
+	assert.Equal(t, "filesystem-write", filesystem.Files[0].Effects[0].Kind)
+	assert.Empty(t, filesystem.Files[0].OmittedReason)
+	assert.NotContains(t, filesystem.Truncations, repomap.AuditTruncation{
+		Field: "files[main.go].effects", Shown: 12, Total: 14, Reason: "effects per-file cap",
+	})
+
+	var serializationOut bytes.Buffer
+	require.NoError(t, executeTest(t, []string{
+		"audit", "effects", "--json", "--kind", "serialization", "--limit", "0", root,
+	}, &serializationOut, io.Discard))
+
+	var serialization repomap.AuditEffectReport
+	require.NoError(t, json.Unmarshal(serializationOut.Bytes(), &serialization))
+	require.Len(t, serialization.Files, 1)
+	assert.Len(t, serialization.Files[0].Effects, 12)
+	assert.Contains(t, serialization.Files[0].OmittedReason, "13")
+	assert.Contains(t, serialization.Truncations, repomap.AuditTruncation{
+		Field: "files[main.go].effects", Shown: 12, Total: 13, Reason: "effects per-file cap",
+	})
+}
+
 func TestAuditCommandTopFilesAlias(t *testing.T) {
 	t.Parallel()
 
@@ -167,6 +209,6 @@ func TestAuditCommandSurfaceFilesNeverNull(t *testing.T) {
 
 	var surface repomap.AuditSurfaceReport
 	require.NoError(t, json.Unmarshal(out.Bytes(), &surface))
-	assert.Equal(t, 2, surface.SchemaVersion)
+	assert.Equal(t, 3, surface.SchemaVersion)
 	assert.NotEmpty(t, surface.FilesOmittedReason)
 }

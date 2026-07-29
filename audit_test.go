@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -439,13 +440,99 @@ func TestAuditSurfaceEmptyFilesSerializeAsArray(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, surface.Files)
 	assert.Empty(t, surface.Files)
-	assert.Equal(t, 2, surface.SchemaVersion)
+	assert.Equal(t, 3, surface.SchemaVersion)
 	assert.NotEmpty(t, surface.FilesOmittedReason)
 
 	data, err := json.Marshal(surface)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), `"files":[]`)
 	assert.NotContains(t, string(data), `"files":null`)
+}
+
+func TestAuditSurfaceRecognizesKongCommandsFlagsAndHiddenTags(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := "package cli\n\n" +
+		"type rootCommand struct {\n" +
+		"\tServe serveCommand `cmd:\"\" help:\"Serve requests\"`\n" +
+		"\tLSP lspCommand `cmd:\"\" help:\"Inspect language servers\"`\n" +
+		"\tCommitPreflight preflightCommand `cmd:\"\" name:\"commit-preflight\" help:\"Inspect git\"`\n" +
+		"\tArtifact string `help:\"Write output\"`\n" +
+		"\tJSON bool `help:\"Emit JSON\"`\n" +
+		"\tJSONLegacy bool `help:\"Emit legacy JSON\"`\n" +
+		"\tForceMode string `name:\"force-mode\" hidden:\"\" help:\"Test hook\"`\n" +
+		"\tCallsUseBinary bool `hidden:\"\"`\n" +
+		"\tDirectory string `arg:\"\" help:\"Directory\"`\n" +
+		"}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cli.go"), []byte(source), 0o644))
+
+	m := New(root, DefaultConfig())
+	m.ranked = []RankedFile{{
+		FileSymbols: &FileSymbols{Path: "cli.go", Language: "go", Package: "cli"},
+		Score:       100,
+	}}
+	report, err := m.AuditSurface(context.Background(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, 3, report.SchemaVersion)
+
+	commands := surfaceHitNames(report.Commands)
+	assert.Contains(t, commands, "serve")
+	assert.Contains(t, commands, "lsp")
+	assert.Contains(t, commands, "commit-preflight")
+	assert.NotContains(t, commands, "l-s-p")
+	flags := surfaceHitNames(report.Flags)
+	assert.Contains(t, flags, "artifact")
+	assert.Contains(t, flags, "json")
+	assert.Contains(t, flags, "json-legacy")
+	assert.Contains(t, flags, "force-mode")
+	assert.Contains(t, flags, "calls-use-binary")
+	assert.NotContains(t, flags, "j-s-o-n")
+	assert.NotContains(t, flags, "j-s-o-n-legacy")
+	for _, hit := range report.Flags {
+		if hit.Name == "force-mode" || hit.Name == "calls-use-binary" {
+			assert.True(t, hit.Hidden)
+		}
+		assert.NotEqual(t, "directory", hit.Name, "arguments are not flags")
+	}
+}
+
+func TestAuditPacketsAccountForPerFileAndBriefTruncation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	var source strings.Builder
+	source.WriteString("package main\n\nimport \"os\"\n\nfunc many() {\n")
+	for i := 0; i < 15; i++ {
+		fmt.Fprintf(&source, "\t_ = os.WriteFile(\"out%d\", nil, 0o644)\n", i)
+	}
+	source.WriteString("}\n")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "main.go"), []byte(source.String()), 0o644))
+
+	m := New(root, DefaultConfig())
+	m.ranked = []RankedFile{{
+		FileSymbols: &FileSymbols{Path: "main.go", Language: "go", Package: "main"},
+		Score:       100,
+	}}
+	effects, err := m.AuditEffects(context.Background(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, 3, effects.SchemaVersion)
+	require.Len(t, effects.Files, 1)
+	assert.Len(t, effects.Files[0].Effects, 12)
+	assert.Contains(t, effects.Files[0].OmittedReason, "15")
+	assert.Contains(t, effects.Truncations, AuditTruncation{
+		Field: "files[main.go].effects", Shown: 12, Total: 15, Reason: "effects per-file cap",
+	})
+
+	brief, err := m.AuditBrief(context.Background(), 0)
+	require.NoError(t, err)
+	assert.Equal(t, 3, brief.SchemaVersion)
+	require.Len(t, brief.Effects.Files, 1)
+	assert.Len(t, brief.Effects.Files[0].Effects, 4)
+	assert.Contains(t, brief.Effects.Files[0].OmittedReason, "15")
+	assert.Contains(t, brief.Effects.Truncations, AuditTruncation{
+		Field: "files[main.go].effects", Shown: 4, Total: 15, Reason: "audit brief per-file cap",
+	})
 }
 
 func TestAuditReviewPlanRecordsTruncation(t *testing.T) {

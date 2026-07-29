@@ -1,0 +1,1 @@
+{"goal":"make persistence writes failure safe","language":"go","kind":"side_effect_test_sensitive","owner_doc":"makes persistence writes failure safe","distractor_doc":"describes persistence records","owners":["store.go"],"symbols":["Store"],"consumers":["service.go"],"tests":["store_test.go"],"evidence":["doc","effect"],"distractors":["model.go"]}

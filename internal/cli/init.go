@@ -63,24 +63,24 @@ func runInit(out io.Writer, dir string, force, noHook, noConfig bool) error {
 func writeConfig(out io.Writer, root string, force bool) error {
 	p := filepath.Join(root, ".repomap.yaml")
 	if _, err := os.Stat(p); err == nil && !force {
-		fmt.Fprintf(out, "skip  %s (exists)\n", ".repomap.yaml")
-		return nil
+		_, err := fmt.Fprintf(out, "skip  %s (exists)\n", ".repomap.yaml")
+		return err
 	} else if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("stat %s: %w", p, err)
 	}
 	if err := os.WriteFile(p, []byte(configTemplate), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", p, err)
 	}
-	fmt.Fprintf(out, "write %s\n", ".repomap.yaml")
-	return nil
+	_, err := fmt.Fprintf(out, "write %s\n", ".repomap.yaml")
+	return err
 }
 
 func writeHook(out io.Writer, root string, force bool) error {
 	gitDir := filepath.Join(root, ".git")
 	info, err := os.Stat(gitDir)
 	if os.IsNotExist(err) || (err == nil && !info.IsDir()) {
-		fmt.Fprintf(out, "skip  .git/hooks/post-commit (not a git repo)\n")
-		return nil
+		_, err := fmt.Fprintf(out, "skip  .git/hooks/post-commit (not a git repo)\n")
+		return err
 	}
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", gitDir, err)
@@ -98,8 +98,8 @@ func writeHook(out io.Writer, root string, force bool) error {
 		return fmt.Errorf("read %s: %w", p, err)
 	default:
 		if bytes.Equal(existing, []byte(hookScript)) && !force {
-			fmt.Fprintf(out, "skip  .git/hooks/post-commit (exists)\n")
-			return nil
+			_, err := fmt.Fprintf(out, "skip  .git/hooks/post-commit (exists)\n")
+			return err
 		}
 		// Older marker-owned hooks are safe to upgrade without --force.
 		if !bytes.Contains(existing, []byte(hookMarker)) && !force {
@@ -109,6 +109,6 @@ func writeHook(out io.Writer, root string, force bool) error {
 	if err := os.WriteFile(p, []byte(hookScript), 0o755); err != nil {
 		return fmt.Errorf("write %s: %w", p, err)
 	}
-	fmt.Fprintf(out, "write .git/hooks/post-commit (chmod 0755)\n")
-	return nil
+	_, err = fmt.Fprintf(out, "write .git/hooks/post-commit (chmod 0755)\n")
+	return err
 }

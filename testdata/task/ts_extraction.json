@@ -1,0 +1,1 @@
+{"goal":"recognize parser imports","language":"typescript","kind":"extraction","owner_doc":"recognizes parser imports","distractor_doc":"renders parser diagnostics","owners":["parser.ts"],"symbols":["parse"],"consumers":["cli.ts"],"tests":["parser.test.ts"],"evidence":["path","import"],"distractors":["render.ts"]}

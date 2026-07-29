@@ -38,11 +38,17 @@ func emitFinishResult(w io.Writer, jsonOut bool, exitCode int, fr *finishResult)
 		if _, err := w.Write(data); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintln(w)
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
 	} else {
-		fmt.Fprintf(w, "status: %s\n", fr.Status)
+		if _, err := fmt.Fprintf(w, "status: %s\n", fr.Status); err != nil {
+			return err
+		}
 		if fr.FailureDetail != "" {
-			fmt.Fprintf(w, "failure: %s\n", fr.FailureDetail)
+			if _, err := fmt.Fprintf(w, "failure: %s\n", fr.FailureDetail); err != nil {
+				return err
+			}
 		}
 	}
 	if exitCode != 0 {

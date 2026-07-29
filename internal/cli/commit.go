@@ -23,6 +23,13 @@ type commitAnalyzeCommand struct {
 	Confidence float64 `default:"0.75" help:"Clustering confidence cutoff (0.0–1.0)"`
 }
 
+func (c *commitAnalyzeCommand) Validate() error {
+	if c.Confidence < 0 || c.Confidence > 1 {
+		return fmt.Errorf("--confidence must be between 0 and 1")
+	}
+	return nil
+}
+
 func (c *commitAnalyzeCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	analysis, err := repomap.AnalyzeCommit(ctx, repomap.AnalyzeOptions{Root: c.Directory, Tag: c.Tag, ConfidenceCutoff: c.Confidence, Tmpdir: c.Tmpdir})
 	if err != nil {
@@ -51,12 +58,18 @@ type commitExecuteCommand struct {
 }
 
 func (c *commitExecuteCommand) Run(ctx context.Context, ioctx *commandIO) error {
-	result, err := repomap.ExecuteCommit(ctx, repomap.ExecuteOptions{PlanFile: c.PlanFile, Push: c.Push, Tag: c.Tag, NoRelease: c.NoRelease, ReleaseNotesFrom: c.ReleaseNotesFrom, DryRun: c.DryRun, JSON: c.JSON, SkipFix: c.SkipFix})
+	result, err := repomap.ExecuteCommit(ctx, repomap.ExecuteOptions{PlanFile: c.PlanFile, Push: c.Push, Tag: c.Tag, NoRelease: c.NoRelease, ReleaseNotesFrom: c.ReleaseNotesFrom, DryRun: c.DryRun, JSON: c.JSON, SkipFix: c.SkipFix, Output: ioctx.stdout})
 	if err != nil {
 		if result != nil && c.JSON {
-			if data, encErr := repomap.EncodeExecuteResult(result, false); encErr == nil {
-				_, _ = ioctx.stdout.Write(data)
-				_, _ = fmt.Fprintln(ioctx.stdout)
+			data, encErr := repomap.EncodeExecuteResult(result, false)
+			if encErr != nil {
+				return fmt.Errorf("encode partial result: %w", encErr)
+			}
+			if _, writeErr := ioctx.stdout.Write(data); writeErr != nil {
+				return writeErr
+			}
+			if _, writeErr := fmt.Fprintln(ioctx.stdout); writeErr != nil {
+				return writeErr
 			}
 		}
 		return commandExitError{code: repomap.ExecExitCode(err), err: err}

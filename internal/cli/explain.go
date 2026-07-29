@@ -33,8 +33,7 @@ func (c *explainCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(explain)
 	}
-	printExplain(ioctx.stdout, explain)
-	return nil
+	return printExplain(ioctx.stdout, explain)
 }
 
 // tierAnnotation returns the short clarifying suffix for a tier label.
@@ -44,27 +43,41 @@ var tierAnnotation = map[string]string{
 	"contextual": " (query-dependent)",
 }
 
-func printExplain(w io.Writer, explain repomap.ExplainResult) {
-	fmt.Fprintf(w, "%s\n", explain.File.Path)
-	fmt.Fprintf(w, "  score: %d\n", explain.Score)
+func printExplain(w io.Writer, explain repomap.ExplainResult) error {
+	if _, err := fmt.Fprintf(w, "%s\n", explain.File.Path); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  score: %d\n", explain.Score); err != nil {
+		return err
+	}
 	if explain.DetailLevel >= 0 {
-		fmt.Fprintf(w, "  detail: %d\n", explain.DetailLevel)
-	} else {
-		fmt.Fprintf(w, "  detail: omitted")
-		if explain.OmittedReason != "" {
-			fmt.Fprintf(w, " (%s)", explain.OmittedReason)
+		if _, err := fmt.Fprintf(w, "  detail: %d\n", explain.DetailLevel); err != nil {
+			return err
 		}
-		fmt.Fprintln(w)
+	} else {
+		if _, err := fmt.Fprintf(w, "  detail: omitted"); err != nil {
+			return err
+		}
+		if explain.OmittedReason != "" {
+			if _, err := fmt.Fprintf(w, " (%s)", explain.OmittedReason); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
 	}
 	if explain.ParseMethod != "" {
 		marker := ""
 		if explain.ParseMethod == "regex" || explain.ParseMethod == "ctags" {
 			marker = " ⚠ low-fidelity symbols"
 		}
-		fmt.Fprintf(w, "  parsed: %s (%s-confidence)%s\n", explain.ParseMethod, explain.ParseConfidence, marker)
+		if _, err := fmt.Fprintf(w, "  parsed: %s (%s-confidence)%s\n", explain.ParseMethod, explain.ParseConfidence, marker); err != nil {
+			return err
+		}
 	}
 	if len(explain.ScoreComponents) == 0 {
-		return
+		return nil
 	}
 
 	// Group components by tier in canonical order.
@@ -81,9 +94,14 @@ func printExplain(w io.Writer, explain repomap.ExplainResult) {
 		}
 		slices.Sort(keys)
 		annotation := tierAnnotation[tier]
-		fmt.Fprintf(w, "  %s%s\n", tier, annotation)
+		if _, err := fmt.Fprintf(w, "  %s%s\n", tier, annotation); err != nil {
+			return err
+		}
 		for _, k := range keys {
-			fmt.Fprintf(w, "    %-12s %+d\n", k, explain.ScoreComponents[k])
+			if _, err := fmt.Fprintf(w, "    %-12s %+d\n", k, explain.ScoreComponents[k]); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }

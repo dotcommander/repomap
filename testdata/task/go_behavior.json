@@ -1,0 +1,1 @@
+{"goal":"change request dispatch behavior","language":"go","kind":"behavior","owner_doc":"dispatches request behavior","distractor_doc":"formats request metadata","owners":["handler.go"],"symbols":["Handler"],"consumers":["consumer.go"],"tests":["handler_test.go"],"evidence":["doc","signature"],"distractors":["unrelated.go"]}

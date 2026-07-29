@@ -112,6 +112,23 @@ repomap --intent "fix token refresh" .
 
 No external dependencies. No configuration. Omit the flag and behavior is identical to before.
 
+## Task selection
+
+```bash
+repomap task "fix token refresh" .
+```
+
+`task` uses its own bounded selector without changing the global ranker. It
+matches goal terms against paths, packages, symbols, signatures, documentation,
+and imports, then orders positive matches by task relevance, structural score,
+and path. Structural centrality only breaks relevance ties.
+
+The report selects at most six primary targets. If nothing has positive task
+evidence, it returns structurally important non-test files with
+`confidence=fallback`; it does not imply a goal match. Tests normally remain
+relationships beneath their owners and become primary only when the goal
+directly names their path or symbol or explicitly targets tests.
+
 ## Tuning
 
 You can't tune ranking from the CLI. The weights are constants in `ranker.go` and `budget.go`. If you need different weights:

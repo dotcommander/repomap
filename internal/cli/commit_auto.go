@@ -29,6 +29,13 @@ type commitAutoCommand struct {
 	ForceMode  string `hidden:"" help:"Test hook: FULL|LOCAL"`
 }
 
+func (c *commitAutoCommand) Validate() error {
+	if c.ForceMode != "" && c.ForceMode != "FULL" && c.ForceMode != "LOCAL" {
+		return fmt.Errorf("--force-mode must be FULL or LOCAL")
+	}
+	return nil
+}
+
 func (c *commitAutoCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	abs, err := filepath.Abs(c.Directory)
 	if err != nil {

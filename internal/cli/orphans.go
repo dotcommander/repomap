@@ -34,8 +34,7 @@ func (c *orphansCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	}
-	printOrphans(ioctx.stdout, report)
-	return nil
+	return printOrphans(ioctx.stdout, report)
 }
 
 func runOrphans(ctx context.Context, m *repomap.Map, root string) (repomap.OrphanReport, error) {
@@ -47,15 +46,23 @@ func runOrphans(ctx context.Context, m *repomap.Map, root string) (repomap.Orpha
 	return m.OrphanCandidates(ctx, q)
 }
 
-func printOrphans(w io.Writer, r repomap.OrphanReport) {
-	fmt.Fprintf(w, "# %s\n\n", r.Caveat)
-	fmt.Fprintf(w, "zero references (incl. tests): %d\n", len(r.ZeroRefs))
-	printOrphanBucket(w, r.ZeroRefs)
-	fmt.Fprintf(w, "\ntest-only references: %d\n", len(r.TestOnlyRefs))
-	printOrphanBucket(w, r.TestOnlyRefs)
+func printOrphans(w io.Writer, r repomap.OrphanReport) error {
+	if _, err := fmt.Fprintf(w, "# %s\n\n", r.Caveat); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "zero references (incl. tests): %d\n", len(r.ZeroRefs)); err != nil {
+		return err
+	}
+	if err := printOrphanBucket(w, r.ZeroRefs); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\ntest-only references: %d\n", len(r.TestOnlyRefs)); err != nil {
+		return err
+	}
+	return printOrphanBucket(w, r.TestOnlyRefs)
 }
 
-func printOrphanBucket(w io.Writer, cands []repomap.OrphanCandidate) {
+func printOrphanBucket(w io.Writer, cands []repomap.OrphanCandidate) error {
 	lines := make([]string, 0, len(cands))
 	for _, c := range cands {
 		name := c.Name
@@ -66,6 +73,9 @@ func printOrphanBucket(w io.Writer, cands []repomap.OrphanCandidate) {
 	}
 	sort.Strings(lines)
 	for _, l := range lines {
-		fmt.Fprintln(w, l)
+		if _, err := fmt.Fprintln(w, l); err != nil {
+			return err
+		}
 	}
+	return nil
 }

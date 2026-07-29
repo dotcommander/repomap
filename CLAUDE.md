@@ -5,56 +5,83 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test
 
 ```bash
-go build ./...
-go test ./...                          # all tests
-go test -run TestParseGoFile ./...     # single test
-go test -short ./...                   # skip integration tests
-go test -bench=. -benchmem ./...       # benchmarks
-go vet ./...
+just check                              # build, test, vet, lint, module verification
+go test -run TestParseGoFile ./...      # focused test
+go test -short ./...                    # skip integration tests
+go test -bench=. -benchmem ./...        # benchmarks
 ```
 
-No Makefile or Taskfile — standard Go tooling only.
+Run `just --list` for the repository-owned build recipes. Standard Go commands
+remain valid for focused checks.
 
 ## Architecture
 
-Single Go package (`repomap`) with a Cobra CLI in `internal/cli/`. Entry point: `cmd/repomap/main.go`.
+The public `repomap` package owns repository analysis. The Kong CLI lives in
+`internal/cli/`; its entry point is `cmd/repomap/main.go`.
 
-### Pipeline: Scan → Parse → Rank → Budget → Format
+### Pipeline: Scan → Parse → Rank → Detail Selection → Format
 
-1. **ScanFiles** (`scanner.go`) — discovers source files via `git ls-files` (fallback: directory walk). Skips vendor, node_modules, build artifacts, files >50KB. Language detection via `LanguageFor()` in `language.go`.
+1. **ScanFiles** (`scanner.go`) — discovers source files via `git ls-files`
+   (fallback: directory walk). Skips vendor, node_modules, build artifacts,
+   files over 50 KB, and binary files. Language detection uses
+   `LanguageFor()` in `language.go`.
 
 2. **parseFiles** (`parse_dispatch.go`) — parallel Go + non-Go parsing:
-   - **Go**: `ParseGoFile` (`parser_go.go`) uses `go/ast` — always available, highest fidelity
+   - **Go**: `ParseGoFile` (`parser_go.go`) always uses `go/ast`; commands that
+     need semantic relationships additionally use `internal/goanalysis`
    - **Non-Go**: tiered fallback: **tree-sitter** → **ctags** → **regex**
      - Tree-sitter grammars: `parser_ts_*.go` (C/C++, Java, Python, Rust, TypeScript/JS, Web)
      - Regex fallback: `parser_generic.go`, `parser_cfamily.go`, `parser_web.go`
-     - Availability checked at init: `TreeSitterAvailable()`, `CtagsAvailable()`
+     - Availability is reported by `TreeSitterAvailable()` and
+       `CtagsAvailable()`
 
-3. **RankFiles** (`ranker.go`) — scores files by: entry boosts (main.go +50, index.ts +30), exported symbol count (+1 each), depth penalty, import-reference counts (+10 per importer via Go import paths or basename matching)
+3. **RankFiles** (`ranker.go`) — combines structural score, dependency
+   relationships, and optional task-intent evidence without changing the
+   structural ranker's global ordering contract.
 
-4. **BudgetFiles** (`budget.go`) — assigns detail levels within token budget: -1 (omit), 0 (header), 1 (summary), 2 (full symbols), 3 (symbols + struct field expansion)
+4. **BudgetFiles** (`budget.go`) — assigns detail levels within the selection
+   estimate: -1 (omit), 0 (header), 1 (summary), 2 (full symbols), 3 (symbols +
+   struct field expansion). `internal/cli/output_budget.go` then enforces the
+   public token limit against the complete encoded response.
 
-5. **Format** — four output modes:
-   - `String()` → compact, budget-trimmed (`render.go`)
-   - `StringVerbose()` → all symbols, no budget limit
-   - `StringDetail()` → verbose + signatures/fields
-   - `StringLines()` → actual source lines (`render_lines.go`)
+5. **Format** — enriched Markdown is the default. Compact, verbose, detail,
+   source lines, XML, JSON line envelopes, and structured JSON are also
+   available. Bounded CLI output is encoded atomically; structured records are
+   never byte-cut.
+
+`Map.Task` (`task.go`, `task_select.go`, `task_render.go`) composes a separate
+bounded implementation handoff from goal evidence, source excerpts,
+relationships, repository rules, related changes, verification commands, and
+explicit truncation accounting.
 
 ### Key Types
 
 - `Map` (`repomap.go`) — main orchestrator. Thread-safe (`sync.RWMutex`). Lazy output caching. Stale-checking via mtime polling with 30s debounce.
-- `Symbol` (`types.go`) — name, kind, signature, receiver, exported, line
+- `Symbol` (`types.go`) — name, kind, signature, receiver, exported, span, and
+  documentation
 - `FileSymbols` — symbols + imports from one file
 - `RankedFile` — FileSymbols + Score, DetailLevel, ImportedBy
+- `TaskReport` (`task.go`) — schema-versioned task evidence packet shared by
+  human and JSON rendering
 
 ### Intent Ranking
 
-Optional BM25 re-ranking before budget allocation, activated by `--intent`. Field-weighted keywords are extracted from symbols, file paths, and imports — no external dependencies. Files scoring high against the query get promoted to higher detail levels within the same token budget.
+Optional BM25 re-ranking before detail selection is activated by `--intent`.
+Field-level evidence covers paths, packages, symbols, signatures,
+documentation, and imports. The `task` command uses the same evidence but
+selects at most six primary targets by positive relevance first, structural
+score second, and path last; structural fallbacks are labeled when the goal has
+no positive match.
 
 ### Caching
 
-- `cache.go` — disk cache via `SaveCache`/`LoadCache` (JSON, keyed by SHA-256 of root path). Output strings are lazily computed and cached in `outputCache`.
-- `inventory_*.go` — file metrics persistence for the inventory/scan subsystem.
+- `cache.go` — disk cache via `SaveCache`/`LoadCache` (JSON, keyed by SHA-256 of
+  the absolute root path). Version 15 includes content hashes, saved Git HEAD,
+  and a deterministic cache-relevant worktree digest so dirty-worktree reuse is
+  safe.
+- `outputCache` — lazy in-memory render cache owned by `Map`.
+- `cache status` inspects an entry without rebuilding; `cache warm` builds,
+  saves, and verifies a fresh entry.
 
 ### Language Support
 
@@ -75,20 +102,25 @@ Optional `.repomap.yaml` at project root. Loader in `config.go`; filters applied
 
 ## Testing Patterns
 
-- `testify` (assert/require), `t.Parallel()` on all tests
-- Integration tests create temp dirs with git repos and real source files
-- `testing.Short()` gates integration tests (`TestBuildIntegration`)
-- Benchmarks: `BenchmarkBuild`, `BenchmarkStale` — use `findBenchRoot` to locate repo root
+- Tests use the standard library plus `testify` assertions.
+- Integration tests create temporary Git repositories and real source files.
+- `testing.Short()` gates expensive integration coverage.
+- `testdata/task/` contains twelve deterministic Go, TypeScript, and PHP task
+  manifests.
+- `.work/qa/run-cli-matrix.sh` exercises the complete CLI surface against a
+  built binary and temporary checkout.
 
 ## CLI
 
 ```
 repomap [directory]                    # default: enriched, 2048 tokens
-repomap -t 4096 -f verbose ./src      # more tokens, verbose
-repomap -f lines ./src                # source-line format
-repomap --json                         # JSON array of lines
+repomap -t 4096 -f verbose ./src       # bounded verbose map
+repomap -f lines ./src                 # bounded source-line format
+repomap --json-structured ./src        # structured repository schema
+repomap task "fix auth middleware" .   # bounded implementation handoff
 ```
 
-Flags: `-t/--tokens`, `-f/--format` (compact|verbose|detail|lines|xml — default with no `-f` is the **enriched** mode: richer per file than compact), `--json`, `-i/--intent` (BM25 task-aware ranking; pair with `--explain` to see why files ranked), `--include-tests` (rank `_test.go` at full weight; demoted by default)
-
-For the full flag and subcommand surface (`--explain` confidence tiers, `--calls`, `--consumed`, `--symbol-refs`, plus `explain`/`impact`/`context`/`find`/`commit`/LSP subcommands) with worked examples, see [docs/11-usage-examples.md](docs/11-usage-examples.md).
+For the current flags, commands, task-report schema, confidence/provenance
+meanings, and worked examples, see
+[docs/11-usage-examples.md](docs/11-usage-examples.md) and
+[docs/03-output-formats.md](docs/03-output-formats.md).

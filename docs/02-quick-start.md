@@ -47,6 +47,19 @@ repomap --json-structured > map-data.json   # structured file/symbol/call-site/r
 repomap --artifact map.md                    # write output without shell redirection
 ```
 
+## Build an implementation packet
+
+```bash
+repomap task "harden CLI output" .
+repomap task "harden CLI output" --json --consumed=internal/cli/render.go .
+```
+
+`task` selects up to six goal-relevant targets and composes selection evidence,
+source excerpts, callers, consumers, tests, effects, applicable instructions,
+dirty overlap, and verification commands. It uses a 4096-token complete-output
+budget by default. Consumed files retain their identity and relationships, but
+source space goes to files that are not already in context.
+
 ## Inventory a Boundary
 
 ```bash
@@ -87,7 +100,9 @@ repomap -t 8192       # generous — roughly 8K tokens
 repomap -t 32000      # no real limit
 ```
 
-A token is roughly four bytes. `-t 2048` (the default) targets about 8KB of output. `verbose` and `detail` formats ignore the budget — they're meant for humans, not prompts.
+A token is roughly four bytes. `-t 2048` (the default) limits the complete
+encoded output to about 8KB. This applies to every bounded format, including
+`verbose` and `detail`.
 
 ## Check cache status
 
@@ -105,3 +120,4 @@ Use `cache warm` to build, save, and verify a fresh entry.
 - [Output Formats](03-output-formats.md) — what each format looks like
 - [Configuration](04-configuration.md) — every flag, what it does
 - [Library Usage](05-library-usage.md) — call repomap from Go code
+- [Usage Examples](11-usage-examples.md) — task packets and focused workflows
