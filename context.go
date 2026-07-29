@@ -120,7 +120,7 @@ func readSymbolSource(path string, sym Symbol, maxLines int) ([]SourceLine, bool
 	if err != nil {
 		return nil, false, fmt.Sprintf("read source: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), maxContextLineBytes)

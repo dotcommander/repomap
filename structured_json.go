@@ -247,7 +247,7 @@ func structuredCallSites(callSites []CallSite) []StructuredCallSite {
 	}
 	out := make([]StructuredCallSite, 0, len(callSites))
 	for _, site := range callSites {
-		out = append(out, StructuredCallSite{Name: site.Name, Line: site.Line})
+		out = append(out, StructuredCallSite(site))
 	}
 	return out
 }

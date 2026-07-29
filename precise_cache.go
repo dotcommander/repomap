@@ -33,8 +33,8 @@ func PreciseCacheKey(root string, ranked []RankedFile) string {
 	h := fnv.New64a()
 
 	// Repo root.
-	fmt.Fprint(h, root)
-	fmt.Fprint(h, "\x00")
+	_, _ = fmt.Fprint(h, root)
+	_, _ = fmt.Fprint(h, "\x00")
 
 	// Sorted file paths and their content hashes.
 	type entry struct {
@@ -52,12 +52,12 @@ func PreciseCacheKey(root string, ranked []RankedFile) string {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 	for _, e := range entries {
-		fmt.Fprintf(h, "%s\x00%s\x00", e.path, e.hash)
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", e.path, e.hash)
 	}
 
 	// Toolchain version + fixed algorithm tag (invalidates on Go upgrade or a
 	// future --precise=rta variant).
-	fmt.Fprintf(h, "toolchain=%s,precise=cha", runtime.Version())
+	_, _ = fmt.Fprintf(h, "toolchain=%s,precise=cha", runtime.Version())
 
 	return fmt.Sprintf("%016x", h.Sum64())
 }

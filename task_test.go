@@ -73,8 +73,9 @@ func TestTaskOutputBudgetAndTinyEnvelopeFailure(t *testing.T) {
 }
 
 func TestTaskBudgetAcceptanceIsMonotonic(t *testing.T) {
-	t.Parallel()
-
+	// Each budget performs semantic Go analysis. Keep the sweep serial so
+	// transient loader degradation under package-wide parallel load cannot
+	// change diagnostics—and therefore the encoded envelope—mid-sweep.
 	root := taskFixture(t)
 	succeeded := false
 	for budget := 128; budget <= 2304; budget += 64 {

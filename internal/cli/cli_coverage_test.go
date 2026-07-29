@@ -28,7 +28,7 @@ func TestOrphansPrinting(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	printOrphans(&buf, report)
+	require.NoError(t, printOrphans(&buf, report))
 
 	out := buf.String()
 	assert.Contains(t, out, "Static analysis warning")
@@ -128,7 +128,7 @@ func TestContextHelpers(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		printSymbolContext(&buf, symCtx)
+		require.NoError(t, printSymbolContext(&buf, symCtx))
 		out := buf.String()
 
 		assert.Contains(t, out, "main.go:5")
@@ -153,7 +153,7 @@ func TestExplainPrinting(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	printExplain(&buf, explain)
+	require.NoError(t, printExplain(&buf, explain))
 	out := buf.String()
 
 	assert.Contains(t, out, "service.go")

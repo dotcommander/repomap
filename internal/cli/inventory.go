@@ -165,7 +165,7 @@ func findInventoryPaths(root, boundary string, migrations bool) []string {
 		rel = filepath.ToSlash(rel)
 		low := strings.ToLower(rel)
 		if migrations {
-			if !(strings.Contains(low, "migration") || strings.Contains(low, "schema") || strings.HasSuffix(low, ".sql")) {
+			if !strings.Contains(low, "migration") && !strings.Contains(low, "schema") && !strings.HasSuffix(low, ".sql") {
 				return nil
 			}
 			if hasAny(low, terms) {
@@ -173,7 +173,7 @@ func findInventoryPaths(root, boundary string, migrations bool) []string {
 			}
 			return nil
 		}
-		if !(strings.HasSuffix(low, ".md") || strings.HasSuffix(low, ".mdx") || strings.HasSuffix(low, ".txt")) {
+		if !strings.HasSuffix(low, ".md") && !strings.HasSuffix(low, ".mdx") && !strings.HasSuffix(low, ".txt") {
 			return nil
 		}
 		if hasAny(low, terms) || fileContainsAny(path, terms) {

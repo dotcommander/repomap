@@ -22,13 +22,17 @@ func BenchmarkBuildPrecise(b *testing.B) {
 // TestPreciseBudget enforces the Decision 6 perf ceiling: the --precise
 // whole-program call-graph build on repomap's own module must complete within
 // max(10 * default Map.Build() time, 5*time.Second). Gated by testing.Short()
-// because it builds the whole module; a go/packages load failure skips rather
-// than fails (environmental, not a perf regression — mirrors the --precise
-// fail-open contract).
+// and the race detector because either instrumentation invalidates the wall
+// time comparison; a go/packages load failure skips rather than fails
+// (environmental, not a perf regression — mirrors the --precise fail-open
+// contract).
 func TestPreciseBudget(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
 		t.Skip("precise budget builds the whole module; skipped under -short")
+	}
+	if raceEnabled {
+		t.Skip("precise budget is a wall-time comparison; skipped under -race")
 	}
 	root := findBenchRoot(t)
 

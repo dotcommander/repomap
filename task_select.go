@@ -112,7 +112,9 @@ func taskFieldEvidence(file RankedFile, goal string) ([]TaskEvidence, int) {
 	return out, score
 }
 func taskGoalTerms(goal string) []string {
-	fields := strings.FieldsFunc(strings.ToLower(goal), func(r rune) bool { return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') })
+	fields := strings.FieldsFunc(strings.ToLower(goal), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-'
+	})
 	seen := map[string]bool{}
 	out := []string{}
 	for _, term := range fields {
@@ -232,7 +234,7 @@ func taskLexicalEffects(m *Map, file RankedFile) []TaskEffect {
 	if err != nil {
 		return nil
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 	data, err := io.ReadAll(io.LimitReader(source, defaultMaxFileSize+1))
 	if err != nil || len(data) > defaultMaxFileSize {
 		return nil

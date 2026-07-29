@@ -247,7 +247,7 @@ func (c *mapCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return err
 	}
 	if c.Precise && !c.Calls {
-		fmt.Fprintln(ioctx.stderr, "repomap: --precise has no effect without --calls")
+		_, _ = fmt.Fprintln(ioctx.stderr, "repomap: --precise has no effect without --calls")
 	}
 	if !c.Calls {
 		return renderStandard(ioctx.stdout, m, c.Format, c.JSON, c.JSONLegacy, c.JSONStructured)

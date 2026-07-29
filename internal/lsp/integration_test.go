@@ -68,7 +68,7 @@ func TestIntegration_GoplsSymbols(t *testing.T) {
 	require.NotEmpty(t, syms)
 
 	// Find the Hello symbol.
-	var helloLine int = -1
+	helloLine := -1
 	for _, s := range syms {
 		if s.Name == "Hello" {
 			helloLine = s.Range.Start.Line + 1

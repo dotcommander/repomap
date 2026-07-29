@@ -121,9 +121,7 @@ func deriveRustCratePath(absPath, root string) string {
 	rel = strings.TrimSuffix(rel, ".rs")
 	rel = strings.ReplaceAll(rel, string(filepath.Separator), "::")
 	// mod.rs is the directory's module — represent as the parent name.
-	if strings.HasSuffix(rel, "::mod") {
-		rel = strings.TrimSuffix(rel, "::mod")
-	}
+	rel = strings.TrimSuffix(rel, "::mod")
 	if rel == "mod" || rel == "" {
 		rel = "lib"
 	}
@@ -182,9 +180,7 @@ func deriveTSPackagePath(absPath, root string) string {
 	rel = strings.TrimSuffix(rel, ext)
 	rel = filepath.ToSlash(rel)
 	// index files represent the directory itself.
-	if strings.HasSuffix(rel, "/index") {
-		rel = strings.TrimSuffix(rel, "/index")
-	}
+	rel = strings.TrimSuffix(rel, "/index")
 	if rel == "" || rel == "index" {
 		return pkgName
 	}

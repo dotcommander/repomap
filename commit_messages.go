@@ -93,9 +93,7 @@ func depsSubject(g *CommitGroup, bumps []DepBump) string {
 		if !want[b.File] {
 			continue
 		}
-		for _, c := range b.Changes {
-			names = append(names, c)
-		}
+		names = append(names, b.Changes...)
 	}
 	if len(names) == 0 {
 		return fmt.Sprintf("bump dependencies (%d files)", len(g.Files))

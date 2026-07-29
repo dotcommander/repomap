@@ -193,9 +193,7 @@ func filterAuditEffects(report repomap.AuditEffectReport, kind string) repomap.A
 	existingKinds := report.Kinds
 	report.Files = files
 	report.Kinds = nil
-	for _, existing := range buildFilteredEffectKinds(existingKinds, kindFiles) {
-		report.Kinds = append(report.Kinds, existing)
-	}
+	report.Kinds = append(report.Kinds, buildFilteredEffectKinds(existingKinds, kindFiles)...)
 	if len(report.Files) == 0 {
 		report.FilesOmittedReason = "no side-effect data matched --kind"
 	} else {

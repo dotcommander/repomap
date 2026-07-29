@@ -60,7 +60,7 @@ func (c *contextCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return err
 	}
 	if c.Precise && !c.Calls {
-		fmt.Fprintln(ioctx.stderr, "repomap: --precise has no effect without --calls")
+		_, _ = fmt.Fprintln(ioctx.stderr, "repomap: --precise has no effect without --calls")
 	}
 	result, err := m.Context(c.Symbol, repomap.ContextOptions{Kind: c.Kind, File: c.File, MaxSourceLines: c.MaxSourceLines})
 	if err != nil {

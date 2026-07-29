@@ -6,12 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/dotcommander/repomap"
 	"github.com/dotcommander/repomap/internal/callgraph"
-	"github.com/dotcommander/repomap/internal/lsp"
 )
 
 // jsonOutput is the versioned envelope for --json output.
@@ -75,6 +73,7 @@ func resolvePreciseCallers(ctx context.Context, root string, stderr io.Writer) (
 	edges, err := callgraph.Build(ctx, root)
 	if err != nil {
 		if errors.Is(err, callgraph.ErrLoadFailed) {
+			//nolint:errcheck // Fallback notice has no recoverable output error.
 			fmt.Fprintln(stderr, "repomap: --precise disabled \u2014 go/packages load failed, falling back to --calls")
 			return nil, false, nil
 		}
@@ -83,53 +82,12 @@ func resolvePreciseCallers(ctx context.Context, root string, stderr io.Writer) (
 	return repomap.TypedGraphToSymbolCallers(edges), true, nil
 }
 
-func runExpansion(ctx context.Context, stderr io.Writer, root string, ranked []repomap.RankedFile, cfg repomap.CallsConfig, useBinary bool) (repomap.SymbolCallers, repomap.CallsStats, error) {
-	var q repomap.RefsQuerier
-	if useBinary {
-		if err := repomap.CheckLspq(); err != nil {
-			return nil, repomap.CallsStats{}, err
-		}
-		q = repomap.DefaultQuerier()
-	} else {
-		if err := repomap.CheckGopls(); err != nil {
-			return nil, repomap.CallsStats{}, err
-		}
-		mgr := lsp.NewManager(root)
-		defer mgr.Shutdown(context.WithoutCancel(ctx))
-		q = repomap.NewInProcessQuerier(mgr)
-	}
-
-	isTTY := isTTYWriter(stderr)
-	progress := buildProgressFn(stderr, isTTY)
-
-	callers, stats := repomap.ExpandCallers(ctx, root, ranked, cfg, q, progress)
-
-	if isTTY {
-		// Clear the progress line.
-		fmt.Fprint(stderr, "\r\033[K")
-	}
-
-	if stats.OK+stats.Timeout+stats.Error > 0 {
-		fmt.Fprintf(stderr, "call expansion: %d OK, %d timeout, %d error\n", stats.OK, stats.Timeout, stats.Error)
-	}
-	return callers, stats, nil
-}
-
 // callsRunDegraded reports whether an expansion run had any LSP timeout or
 // error, in which case its (possibly incomplete) result must NOT be cached as
 // authoritative. Pure predicate so the cache-write gate is unit-testable
 // without a live LSP backend.
 func callsRunDegraded(stats repomap.CallsStats) bool {
 	return stats.Timeout > 0 || stats.Error > 0
-}
-
-func buildProgressFn(stderr io.Writer, isTTY bool) func(done, total int) {
-	if !isTTY {
-		return nil
-	}
-	return func(done, total int) {
-		fmt.Fprintf(stderr, "\rexpanding callers: %d/%d", done, total)
-	}
 }
 
 func renderCallsOutput(
@@ -158,7 +116,7 @@ func renderCallsOutputStructured(
 ) error {
 	switch format {
 	case "compact", "lines", "xml":
-		fmt.Fprintf(stderr, "warning: --calls has no effect with --format %s\n", format)
+		_, _ = fmt.Fprintf(stderr, "warning: --calls has no effect with --format %s\n", format)
 	}
 	return writeRankedWithinBudget(w, m.Config().MaxTokens, ranked, func(selected []repomap.RankedFile) ([]byte, error) {
 		return encodeCallsOutput(m, format, asJSON, jsonLegacy, jsonStructured, selected, callers, limit)
@@ -213,18 +171,6 @@ func encodeCallsOutput(
 		}
 		return []byte(repomap.FormatMapWithCallers(ranked, 0, false, false, callers, limit, nil, explain)), nil
 	}
-}
-
-func isTTYWriter(w io.Writer) bool {
-	f, ok := w.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
 }
 
 func encodeStandard(m *repomap.Map, ranked []repomap.RankedFile, format string, asJSON, jsonLegacy, jsonStructured bool) ([]byte, error) {

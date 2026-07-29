@@ -132,7 +132,7 @@ func fileIdentifierSet(path string) (map[string]struct{}, bool) {
 	if err != nil {
 		return nil, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(f, symbolRefsMaxFileBytes+1))
 	if err != nil || len(data) > symbolRefsMaxFileBytes {

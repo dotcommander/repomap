@@ -63,11 +63,11 @@ func (c *serveCommand) Run(ctx context.Context, ioctx *commandIO) error {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 	m := repomap.New(absDir, repomap.DefaultConfig())
-	fmt.Fprintf(ioctx.stderr, "repomap serve: building map for %s...\n", absDir)
+	_, _ = fmt.Fprintf(ioctx.stderr, "repomap serve: building map for %s...\n", absDir)
 	if err := m.Build(ctx); err != nil {
 		return err
 	}
-	fmt.Fprintln(ioctx.stderr, "repomap serve: ready")
+	_, _ = fmt.Fprintln(ioctx.stderr, "repomap serve: ready")
 	s := &serveServer{
 		root:   absDir,
 		m:      m,
@@ -77,7 +77,7 @@ func (c *serveCommand) Run(ctx context.Context, ioctx *commandIO) error {
 	if err := s.Run(ctx); err != nil {
 		return err
 	}
-	fmt.Fprintln(ioctx.stderr, "repomap serve: shutting down")
+	_, _ = fmt.Fprintln(ioctx.stderr, "repomap serve: shutting down")
 	return nil
 }
 
@@ -156,7 +156,7 @@ func (s *serveServer) dispatchLoop(ctx context.Context, requestCh <-chan rawRequ
 
 func (s *serveServer) handle(ctx context.Context, req rawRequest) error {
 	if s.m.Stale() {
-		fmt.Fprintf(s.stderr, "repomap serve: rebuilding (stale)\n")
+		_, _ = fmt.Fprintf(s.stderr, "repomap serve: rebuilding (stale)\n")
 		if err := s.m.Build(ctx); err != nil {
 			return s.respondErr(req.ID, errServer, err.Error())
 		}

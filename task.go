@@ -132,7 +132,9 @@ func (m *Map) Task(ctx context.Context, goal string, opts TaskOptions) (TaskRepo
 	if err := build.Build(ctx); err != nil {
 		return TaskReport{}, fmt.Errorf("build task map: %w", err)
 	}
-	report := TaskReport{SchemaVersion: 1, Root: root, Goal: goal, Budget: TaskBudget{MaxTokens: opts.MaxTokens}, Selection: TaskSelection{Strategy: "positive task relevance, structural score, path", Limit: taskTargetLimit}, Rules: []TaskRule{}, RelatedChanges: []TaskRelatedChange{}, Targets: []TaskTarget{}, ReadNext: []ReadNextItem{}, VerifyCommands: []string{}, FollowUpCommands: []string{}, Diagnostics: []string{}, Truncations: []TaskTruncation{}}
+	// Reserve the maximum possible decimal width for UsedTokens while packing.
+	// Replacing it with the final count can only keep or reduce encoded size.
+	report := TaskReport{SchemaVersion: 1, Root: root, Goal: goal, Budget: TaskBudget{MaxTokens: opts.MaxTokens, UsedTokens: opts.MaxTokens}, Selection: TaskSelection{Strategy: "positive task relevance, structural score, path", Limit: taskTargetLimit}, Rules: []TaskRule{}, RelatedChanges: []TaskRelatedChange{}, Targets: []TaskTarget{}, ReadNext: []ReadNextItem{}, VerifyCommands: []string{}, FollowUpCommands: []string{}, Diagnostics: []string{}, Truncations: []TaskTruncation{}}
 	changes, gitDiagnostics := taskRelatedChanges(ctx, root)
 	report.Diagnostics = append(report.Diagnostics, gitDiagnostics...)
 	report.Diagnostics = append(report.Diagnostics, taskAnalysisDiagnostics(build)...)

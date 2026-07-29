@@ -74,12 +74,14 @@ func execCommit(ctx context.Context, root string, files []string, msg string) (s
 	if err != nil {
 		return "", fmt.Errorf("create msg tmpfile: %w", err)
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.WriteString(msg); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return "", fmt.Errorf("write msg: %w", err)
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		return "", fmt.Errorf("close msg: %w", err)
+	}
 
 	// Pass explicit pathspec after -- so only this group's files land in this
 	// commit, even when other paths are staged from prior state.

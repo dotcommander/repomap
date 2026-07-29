@@ -495,12 +495,7 @@ func clusterReasonsAndEvidence(paths []string, edges []edge) ([]string, []EdgeEv
 	for _, e := range edges {
 		if inCluster[e.A] && inCluster[e.B] {
 			seen[e.Reason] = true
-			evidence = append(evidence, EdgeEvidence{
-				A:      e.A,
-				B:      e.B,
-				Weight: e.Weight,
-				Reason: e.Reason,
-			})
+			evidence = append(evidence, EdgeEvidence(e))
 		}
 	}
 	var reasons []string

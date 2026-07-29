@@ -27,7 +27,9 @@ func makePlanFile(t *testing.T, groups []CommitGroup) string {
 	if _, err := f.Write(data); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		t.Fatalf("close plan file: %v", err)
+	}
 	return f.Name()
 }
 

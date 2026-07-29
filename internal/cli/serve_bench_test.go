@@ -60,7 +60,9 @@ func BenchmarkWarmMapRender(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		out.Reset()
-		s.handle(b.Context(), req)
+		if err := s.handle(b.Context(), req); err != nil {
+			b.Fatal(err)
+		}
 
 		var resp struct {
 			Result mapRenderResult `json:"result"`

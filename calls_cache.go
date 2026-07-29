@@ -28,8 +28,8 @@ func CallsCacheKey(root string, ranked []RankedFile, cfg CallsConfig) string {
 	h := fnv.New64a()
 
 	// Repo root.
-	fmt.Fprint(h, root)
-	fmt.Fprint(h, "\x00")
+	_, _ = fmt.Fprint(h, root)
+	_, _ = fmt.Fprint(h, "\x00")
 
 	// Sorted file paths and their content hashes.
 	type entry struct {
@@ -47,11 +47,11 @@ func CallsCacheKey(root string, ranked []RankedFile, cfg CallsConfig) string {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 	for _, e := range entries {
-		fmt.Fprintf(h, "%s\x00%s\x00", e.path, e.hash)
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", e.path, e.hash)
 	}
 
 	// Flag combo.
-	fmt.Fprintf(h, "t=%d,l=%d,tests=%v", cfg.Threshold, cfg.Limit, cfg.IncludeTests)
+	_, _ = fmt.Fprintf(h, "t=%d,l=%d,tests=%v", cfg.Threshold, cfg.Limit, cfg.IncludeTests)
 
 	return fmt.Sprintf("%016x", h.Sum64())
 }

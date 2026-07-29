@@ -336,7 +336,7 @@ func readAuditLines(ctx context.Context, path string) ([]auditLine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open audit source %s: %w", path, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxAuditLineBytes)

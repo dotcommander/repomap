@@ -165,12 +165,14 @@ func parseFileSymbolsFromSource(root, path, language, src string) *FileSymbols {
 	if err != nil {
 		return nil
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.WriteString(src); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return nil
 	}
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		return nil
+	}
 
 	if language == "go" {
 		fs, _ := ParseGoFile(tmp.Name(), root)

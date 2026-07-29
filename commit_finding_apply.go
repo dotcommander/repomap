@@ -61,9 +61,7 @@ func ApplyFixFindings(ctx context.Context, repoRoot string, findings []Finding) 
 			if errors.Is(readErr, errUnsafeRepositoryFile) {
 				return applied, skipped, fmt.Errorf("read %s: %w", path, readErr)
 			}
-			for _, f := range group {
-				skipped = append(skipped, f)
-			}
+			skipped = append(skipped, group...)
 			continue
 		}
 

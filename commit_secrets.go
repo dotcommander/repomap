@@ -144,7 +144,7 @@ func runGitleaks(ctx context.Context, root string, files []string) []Finding {
 	if err != nil {
 		return nil
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	// Build a flat symlink farm so gitleaks sees a simple directory.
 	basenameToOrig := make(map[string]string, len(files))
@@ -210,7 +210,7 @@ func scanFileForSecrets(abs, rel string, rules []*regexp.Regexp, class, kind, de
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	var out []Finding

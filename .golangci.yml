@@ -1,0 +1,14 @@
+version: "2"
+
+# Keep `just lint` independent of any configuration inherited from parent
+# directories on a contributor's machine.
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
