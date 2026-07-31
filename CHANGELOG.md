@@ -4,7 +4,14 @@ All notable changes to repomap are documented here.
 
 ---
 
-## Unreleased
+## v0.24.0 — 2026-07-31
+
+### Breaking
+
+- **Commit mutation APIs are now internal.** Go integrations that called
+  `ExecuteCommit`, prep, rewrite, release, or verification helpers must invoke
+  the corresponding `repomap commit …` CLI command. Public analysis APIs,
+  including `AnalyzeCommit`, remain available from `repomap`.
 
 ### Features
 
@@ -12,6 +19,22 @@ All notable changes to repomap are documented here.
   model, static-analysis, test, module, and external CLI gates and atomically
   publishes their provenance, log digests, and derived status to
   `.work/qa/repomap_e2e_qa_report.md`.
+
+### Fixed
+
+- **No-tree-sitter builds** — the documented parser fallback builds and tests
+  when tree-sitter and CGO are disabled, while tree-sitter fidelity thresholds
+  remain scoped to normal builds.
+- **Rooted repository rewrites and secret snapshots** — commit workflows reject
+  escaping, symlinked, non-regular, and oversized repository paths, preserve
+  target permissions during atomic rewrites, and scan bounded private snapshots
+  instead of reopening repository files through a symlink farm.
+
+### Changes
+
+- **Contributor workflow and toolchain** — contributor documentation now names
+  the supported Go toolchain and local checks, and the standard verification
+  path enforces repository-wide Go formatting.
 
 ## v0.23.0 — 2026-07-29
 
