@@ -233,6 +233,9 @@ func TestTaskManifestContractAndOptionalReplay(t *testing.T) {
 
 func TestTaskAcceptanceCorpus(t *testing.T) {
 	t.Parallel()
+	if !TreeSitterAvailable() {
+		t.Skip("acceptance corpus requires tree-sitter parsing fidelity")
+	}
 
 	manifests := readTaskManifests(t)
 	ownerFound := 0

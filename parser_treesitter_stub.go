@@ -16,4 +16,8 @@ func (m *Map) parseTreeSitterFiles(_ context.Context, files []FileInfo) ([]*File
 	return nil, files
 }
 
+func parseWithTreeSitter(_ []byte, _, _ string) *FileSymbols {
+	return nil
+}
+
 func ApplyCallSiteReferenceBonus(_ []RankedFile) {}
