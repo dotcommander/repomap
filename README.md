@@ -732,26 +732,6 @@ repomap init --force
 
 The installed post-commit hook runs `repomap cache warm .` in the background.
 
-## End-to-End QA
-
-Run the repository-owned evidence workflow with:
-
-```bash
-just qa-e2e
-```
-
-The workflow requires `git`, Go, `golangci-lint`, and `gopls`. It builds one
-temporary Repomap binary, runs eight required build, model, static-analysis,
-test, module, and external CLI gates, and writes the canonical local report to
-`.work/qa/repomap_e2e_qa_report.md`. Resolving stdout and stderr logs are stored
-under `.work/qa/latest/`.
-
-`PASS` exits 0 only when all eight gates ran successfully. `FAIL` exits 1 when
-a required command fails, while `INCOMPLETE` exits 2 when a prerequisite or
-required result is missing. The report always records the tested Git HEAD,
-dirty paths and `source_state`, tool versions, and the temporary binary digest;
-a dirty checkout can pass but is never described as clean-source evidence.
-
 ## Library Usage
 
 ```go

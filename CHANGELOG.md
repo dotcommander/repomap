@@ -13,13 +13,6 @@ All notable changes to repomap are documented here.
   the corresponding `repomap commit …` CLI command. Public analysis APIs,
   including `AnalyzeCommit`, remain available from `repomap`.
 
-### Features
-
-- **Evidence-bound end-to-end QA** — `just qa-e2e` runs the required build,
-  model, static-analysis, test, module, and external CLI gates and atomically
-  publishes their provenance, log digests, and derived status to
-  `.work/qa/repomap_e2e_qa_report.md`.
-
 ### Fixed
 
 - **No-tree-sitter builds** — the documented parser fallback builds and tests

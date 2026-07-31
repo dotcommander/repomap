@@ -26,12 +26,3 @@ just check
 and lints the module, and verifies downloaded modules. It requires
 [`just`](https://just.systems/) and
 [`golangci-lint`](https://golangci-lint.run/).
-
-For changes that affect CLI behavior or the repository QA contract, also run:
-
-```bash
-just qa-e2e
-```
-
-The end-to-end workflow additionally requires `gopls` and records its local
-evidence under `.work/qa/`.

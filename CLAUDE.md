@@ -107,8 +107,6 @@ Optional `.repomap.yaml` at project root. Loader in `config.go`; filters applied
 - `testing.Short()` gates expensive integration coverage.
 - `testdata/task/` contains twelve deterministic Go, TypeScript, and PHP task
   manifests.
-- `.work/qa/run-cli-matrix.sh` exercises the complete CLI surface against a
-  built binary and temporary checkout.
 
 ## CLI
 

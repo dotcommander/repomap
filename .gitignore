@@ -18,14 +18,6 @@ coverage.*
 # Local cache
 /.cache/
 
-# Working files
-.work/
-!.work/
-.work/*
-!.work/qa/
-.work/qa/*
-!.work/qa/repomap-cli-improvements.json
-!.work/qa/repomap-cli-audit.html
-!.work/qa/run-cli-matrix.sh
-!.work/qa/run-e2e.sh
-!.work/qa/run-e2e-test.sh
+# Local agent and working files
+/.claude/
+/.work/
