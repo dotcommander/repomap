@@ -4,6 +4,16 @@ All notable changes to repomap are documented here.
 
 ---
 
+## v0.24.1 — 2026-07-31
+
+### Changes
+
+- **Public repository hygiene** — remove accidentally tracked local Claude
+  settings and `.work/` QA artifacts, ignore both local directories, and drop
+  their obsolete documentation, recipe, and artifact-presence test.
+- **Codebase reduction** — remove two unreferenced commit fixtures and an
+  uncalled internal safe-filesystem wrapper pair.
+
 ## v0.24.0 — 2026-07-31
 
 ### Breaking
