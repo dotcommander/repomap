@@ -125,21 +125,6 @@ func RewriteRepositoryRegularFile(repoRoot, path string, data []byte) error {
 	return atomicWriteRoot(root, clean, data, mode.Perm())
 }
 
-// RepositoryRegularFile validates and locates a regular file contained by
-// repoRoot without following symlinks in any path component.
-func RepositoryRegularFile(repoRoot, path string) (string, fs.FileMode, error) {
-	return repositoryRegularFile(repoRoot, path)
-}
-
-func repositoryRegularFile(repoRoot, path string) (string, fs.FileMode, error) {
-	rootPath, clean, root, mode, err := openRepositoryRegularFile(repoRoot, path)
-	if err != nil {
-		return "", 0, err
-	}
-	_ = root.Close()
-	return filepath.Join(rootPath, clean), mode, nil
-}
-
 func openRepositoryRegularFile(repoRoot, path string) (string, string, *os.Root, fs.FileMode, error) {
 	if path == "" || filepath.IsAbs(path) {
 		return "", "", nil, 0, fmt.Errorf("%w: invalid repository path %q", ErrUnsafeRepositoryFile, path)
