@@ -57,6 +57,10 @@ tidy:
 # Full verification pipeline
 check: build test vet lint verify
 
+# Run the complete evidence-bound end-to-end QA workflow
+qa-e2e:
+    @.work/qa/run-e2e.sh
+
 # Clean build artifacts
 clean:
     rm -f {{ binary }}

@@ -13,8 +13,17 @@ case "$binary:$checkout" in
   *) echo "binary and checkout must be absolute paths" >&2; exit 2 ;;
 esac
 
+require_gopls=${REPOMAP_QA_REQUIRE_GOPLS:-0}
+case "$require_gopls" in
+  0|1) ;;
+  *)
+    echo "REPOMAP_QA_REQUIRE_GOPLS must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
+
 qa_tmp=$(mktemp -d "${TMPDIR:-/tmp}/repomap-cli-matrix.XXXXXX")
-trap 'rm -rf "$qa_tmp"' EXIT HUP INT TERM
+trap 'rm -rf "$qa_tmp"' 0 HUP INT TERM
 fixture="$qa_tmp/fixture"
 cache_dir="$qa_tmp/cache"
 mkdir -p "$fixture" "$cache_dir" "$qa_tmp/bin"
@@ -181,6 +190,9 @@ if command -v gopls >/dev/null 2>&1; then
   "$binary" def --json "$fixture/main.go" 3 Hello | check_json
   "$binary" hover --json "$fixture/main.go" 3 Hello | check_json
   "$binary" orphans --json "$fixture" | check_json
+elif [ "$require_gopls" -eq 1 ]; then
+  echo "gopls is required when REPOMAP_QA_REQUIRE_GOPLS=1" >&2
+  exit 2
 fi
 
 echo "matrix: serve"

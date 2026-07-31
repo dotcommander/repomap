@@ -4,6 +4,15 @@ All notable changes to repomap are documented here.
 
 ---
 
+## Unreleased
+
+### Features
+
+- **Evidence-bound end-to-end QA** — `just qa-e2e` runs the required build,
+  model, static-analysis, test, module, and external CLI gates and atomically
+  publishes their provenance, log digests, and derived status to
+  `.work/qa/repomap_e2e_qa_report.md`.
+
 ## v0.23.0 — 2026-07-29
 
 ### Features
