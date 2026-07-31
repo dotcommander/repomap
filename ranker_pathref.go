@@ -53,11 +53,12 @@ func resolveRelativeImportKey(importerPath, imp string) string {
 
 // nonGoImportKeys returns the candidate match keys for a single import string
 // originating from importerPath, given the set of existing file keys.
-// - Relative imports resolve path-aware: the resolved key, plus an "/index"
-//   variant to cover directory imports ("./components" -> "./components/index").
-// - Bare/package imports fall back to bare-basename matching (Python dotted
-//   modules, npm packages, C system headers) — path resolution is meaningless
-//   for them.
+//   - Relative imports resolve path-aware: the resolved key, plus an "/index"
+//     variant to cover directory imports ("./components" -> "./components/index").
+//   - Bare/package imports fall back to bare-basename matching (Python dotted
+//     modules, npm packages, C system headers) — path resolution is meaningless
+//     for them.
+//
 // Only keys present in existingKeys are returned, so callers can match without
 // guessing which candidate is real.
 func nonGoImportKeys(importerPath, imp string, existingKeys map[string]struct{}) []string {

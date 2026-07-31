@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.23 or later
+- Go 1.26 or later
 - `git` available on `$PATH` (used for file discovery)
 - Optional: `ctags` for non-Go, non-tree-sitter languages
 

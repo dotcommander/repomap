@@ -814,6 +814,11 @@ scan -> parse -> rank -> budget -> format
 
 Docs live in `docs/`. Start with [docs/02-quick-start.md](docs/02-quick-start.md), then [docs/03-output-formats.md](docs/03-output-formats.md), [docs/06-ranking.md](docs/06-ranking.md), and [docs/08-languages.md](docs/08-languages.md). For a task-by-task tour from cold start to commit, see [docs/11-usage-examples.md](docs/11-usage-examples.md).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, formatting, tests, and local
+verification.
+
 ## Acknowledgments
 
 The repository map concept was pioneered by [aider.chat](https://aider.chat/), which popularized compact codebase maps for LLM-assisted development.

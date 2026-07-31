@@ -79,13 +79,13 @@ type PrepReleaseGate struct {
 
 // PrepState is persisted to tmpdir and loaded by `commit finish`.
 type PrepState struct {
-	Analysis      *CommitAnalysis  `json:"analysis"`
-	Plan          []CommitGroup    `json:"plan"`
-	SessionRepos  []string         `json:"session_repos"`
-	ReleaseRecipe bool             `json:"release_recipe"`
-	ReleaseGate   *PrepReleaseGate `json:"release_gate,omitempty"`
-	RepoRoot      string           `json:"repo_root"`
-	HeadSHA       string           `json:"head_sha,omitempty"`     // HEAD at prep time; finish refuses on mismatch
+	Analysis      *CommitAnalysis   `json:"analysis"`
+	Plan          []CommitGroup     `json:"plan"`
+	SessionRepos  []string          `json:"session_repos"`
+	ReleaseRecipe bool              `json:"release_recipe"`
+	ReleaseGate   *PrepReleaseGate  `json:"release_gate,omitempty"`
+	RepoRoot      string            `json:"repo_root"`
+	HeadSHA       string            `json:"head_sha,omitempty"`    // HEAD at prep time; finish refuses on mismatch
 	FileHashes    map[string]string `json:"file_hashes,omitempty"` // planned rel path → sha256 hex ("absent" for planned deletions)
 }
 

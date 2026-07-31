@@ -64,7 +64,7 @@ func TestApplyConsumedBonus(t *testing.T) {
 			consumedPaths: map[string]bool{"consumed.go": true},
 			wantScores: map[string]int{
 				"consumed.go": 10, // 20/2
-				"fresh.go":   20,
+				"fresh.go":    20,
 			},
 			wantOrder: []string{"fresh.go", "consumed.go"},
 		},
@@ -75,7 +75,7 @@ func TestApplyConsumedBonus(t *testing.T) {
 			},
 			consumedPaths: map[string]bool{"odd.go": true},
 			wantScores:    map[string]int{"odd.go": 10}, // 21/2 = 10
-			wantOrder:    []string{"odd.go"},
+			wantOrder:     []string{"odd.go"},
 		},
 		{
 			name: "importer of consumed file upranked +15",
@@ -131,8 +131,8 @@ func TestApplyConsumedBonus(t *testing.T) {
 			},
 			consumedPaths: map[string]bool{"read1.go": true, "read2.go": true},
 			wantScores: map[string]int{
-				"read1.go": 20, // 40/2
-				"read2.go": 15, // 30/2
+				"read1.go":  20, // 40/2
+				"read2.go":  15, // 30/2
 				"unread.go": 50, // 20 + 15 + 15 = 50
 			},
 			wantOrder: []string{"unread.go", "read1.go", "read2.go"},
@@ -174,7 +174,7 @@ func TestApplyConsumedBonus(t *testing.T) {
 			consumedPaths: map[string]bool{"internal/svc/handler.go": true},
 			wantScores: map[string]int{
 				"internal/svc/handler.go": 20, // 40/2
-				"cmd/app/main.go":        25, // 10 + 15 (matched via ImportPath "myapp/svc")
+				"cmd/app/main.go":         25, // 10 + 15 (matched via ImportPath "myapp/svc")
 			},
 			wantOrder: []string{"cmd/app/main.go", "internal/svc/handler.go"},
 		},
@@ -189,8 +189,8 @@ func TestApplyConsumedBonus(t *testing.T) {
 				"absent.go":  true, // not in ranked → no bonus for pkg/absent
 			},
 			wantScores: map[string]int{
-				"present.go":   15, // 30/2
-				"importer.go":  25, // 10 + 15 (only present matched)
+				"present.go":  15, // 30/2
+				"importer.go": 25, // 10 + 15 (only present matched)
 			},
 			wantOrder: []string{"importer.go", "present.go"},
 		},
@@ -218,7 +218,7 @@ func TestApplyConsumedBonus(t *testing.T) {
 			consumedPaths: map[string]bool{"src/utils.ts": true},
 			wantScores: map[string]int{
 				"src/utils.ts": 20, // 40/2
-				"src/main.ts": 25, // 10 + 15 ("./utils" resolves to src/utils)
+				"src/main.ts":  25, // 10 + 15 ("./utils" resolves to src/utils)
 			},
 			wantOrder: []string{"src/main.ts", "src/utils.ts"},
 		},

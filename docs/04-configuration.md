@@ -43,7 +43,7 @@ A token is roughly four bytes. The budget controls:
 
 ```bash
 repomap -t 1024    # tight prompt
-repomap -t 4096    # default doubled
+repomap -t 4096    # twice the 2048 default
 repomap -t 16384   # practically uncapped
 ```
 

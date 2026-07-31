@@ -46,6 +46,10 @@ lint:
 vet:
     go vet ./...
 
+# Check Go formatting
+fmt-check:
+    unformatted="$(gofmt -l .)" && test -z "$unformatted"
+
 # Verify modules
 verify:
     go mod verify
@@ -55,7 +59,7 @@ tidy:
     go mod tidy
 
 # Full verification pipeline
-check: build test vet lint verify
+check: build fmt-check test vet lint verify
 
 # Run the complete evidence-bound end-to-end QA workflow
 qa-e2e:

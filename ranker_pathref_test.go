@@ -86,7 +86,7 @@ func TestStripImportQuotes(t *testing.T) {
 		`"./types"`:     "./types",
 		`'./x'`:         "./x",
 		`"./y"`:         "./y",
-		`react`:          "react",
+		`react`:         "react",
 		`"unterminated`: `"unterminated`,
 	}
 	for in, want := range cases {
