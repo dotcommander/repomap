@@ -2,16 +2,17 @@ package repomap
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/dotcommander/repomap/internal/safefs"
 )
 
 // scanSecrets runs all content-review passes over the changeset and returns
@@ -27,15 +28,15 @@ func scanSecrets(ctx context.Context, root string, files []fileChange, visibilit
 	var findings []Finding
 
 	// Gitleaks pre-pass (single exec over all files).
-	findings = append(findings, runGitleaks(ctx, root, scanFiles)...)
+	findings = append(findings, runGitleaks(ctx, scanFiles)...)
 
 	// Regex passes (one compiled regex per category, one file walk per category).
-	findings = append(findings, runRegexPass(root, scanFiles, secretFlagRules, "FLAG", "secret", "secret")...)
-	findings = append(findings, runRegexPass(root, scanFiles, secretReviewRules, "REVIEW", "secret", "credential (review)")...)
-	findings = append(findings, runRegexPass(root, scanFiles, piiFlagRules, "FLAG", "pii", "personal path")...)
-	findings = append(findings, runRegexPass(root, scanFiles, piiReviewRules, "REVIEW", "pii", "personal info (review)")...)
-	findings = append(findings, runRegexPass(root, scanFiles, devHistoryFlagRules, "FLAG", "dev_history", "dev history")...)
-	findings = append(findings, runRegexPass(root, scanFiles, devHistoryReviewRules, "REVIEW", "dev_history", "dev history (review)")...)
+	findings = append(findings, runRegexPass(scanFiles, secretFlagRules, "FLAG", "secret", "secret")...)
+	findings = append(findings, runRegexPass(scanFiles, secretReviewRules, "REVIEW", "secret", "credential (review)")...)
+	findings = append(findings, runRegexPass(scanFiles, piiFlagRules, "FLAG", "pii", "personal path")...)
+	findings = append(findings, runRegexPass(scanFiles, piiReviewRules, "REVIEW", "pii", "personal info (review)")...)
+	findings = append(findings, runRegexPass(scanFiles, devHistoryFlagRules, "FLAG", "dev_history", "dev history")...)
+	findings = append(findings, runRegexPass(scanFiles, devHistoryReviewRules, "REVIEW", "dev_history", "dev history (review)")...)
 
 	// Adjudicate each finding with a deterministic DefaultAction so the agent
 	// can process them without a per-finding LLM round-trip.
@@ -105,8 +106,13 @@ func defaultAction(f Finding, visibility string) string {
 
 // filterScannable drops files that shouldn't be grep'd: deletions, binaries,
 // files larger than 1MB, directories, symlinks, and other non-regular files.
-func filterScannable(root string, files []fileChange) []string {
-	var out []string
+type scannableFile struct {
+	Path string
+	Data []byte
+}
+
+func filterScannable(root string, files []fileChange) []scannableFile {
+	var out []scannableFile
 	for _, f := range files {
 		if f.Status == "D" || f.IndexStatus == "D" {
 			continue
@@ -114,26 +120,19 @@ func filterScannable(root string, files []fileChange) []string {
 		if f.IsArtifact {
 			continue
 		}
-		abs, _, err := repositoryRegularFile(root, f.Path)
+		_, data, err := safefs.ReadRepositoryRegularFileLimit(root, f.Path, 1<<20)
 		if err != nil {
 			continue
 		}
-		info, err := os.Lstat(abs)
-		if err != nil || !info.Mode().IsRegular() {
-			continue
-		}
-		if info.Size() > 1<<20 {
-			continue
-		}
-		out = append(out, f.Path)
+		out = append(out, scannableFile{Path: f.Path, Data: data})
 	}
 	return out
 }
 
 // runGitleaks shells `gitleaks detect --no-git --source <tmp>` where <tmp> is
-// a symlink farm pointing at the scannable files. Returns FLAG findings.
+// a private snapshot of the scannable files. Returns FLAG findings.
 // Silently skips if gitleaks is missing.
-func runGitleaks(ctx context.Context, root string, files []string) []Finding {
+func runGitleaks(ctx context.Context, files []scannableFile) []Finding {
 	if _, err := exec.LookPath("gitleaks"); err != nil {
 		return nil
 	}
@@ -146,22 +145,23 @@ func runGitleaks(ctx context.Context, root string, files []string) []Finding {
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
 
-	// Build a flat symlink farm so gitleaks sees a simple directory.
+	// Build a flat snapshot so gitleaks never reopens repository paths after
+	// rooted validation.
 	basenameToOrig := make(map[string]string, len(files))
-	for _, p := range files {
-		bn := filepath.Base(p)
+	for _, file := range files {
+		bn := filepath.Base(file.Path)
 		// Dedupe by appending an index if necessary.
-		link := filepath.Join(tmp, bn)
+		snapshot := filepath.Join(tmp, bn)
 		for i := 1; ; i++ {
-			if _, err := os.Lstat(link); err != nil && errors.Is(err, fs.ErrNotExist) {
+			if _, exists := basenameToOrig[filepath.Base(snapshot)]; !exists {
 				break
 			}
-			link = filepath.Join(tmp, fmt.Sprintf("%d_%s", i, bn))
+			snapshot = filepath.Join(tmp, fmt.Sprintf("%d_%s", i, bn))
 		}
-		if err := os.Symlink(filepath.Join(root, p), link); err != nil {
+		if err := os.WriteFile(snapshot, file.Data, 0o600); err != nil {
 			continue
 		}
-		basenameToOrig[filepath.Base(link)] = p
+		basenameToOrig[filepath.Base(snapshot)] = file.Path
 	}
 
 	report := filepath.Join(tmp, "report.json")
@@ -204,14 +204,9 @@ func runGitleaks(ctx context.Context, root string, files []string) []Finding {
 	return out
 }
 
-// scanFileForSecrets opens a single file and returns all regex findings within it.
-func scanFileForSecrets(abs, rel string, rules []*regexp.Regexp, class, kind, detail string) []Finding {
-	f, err := os.Open(abs)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = f.Close() }()
-	scanner := bufio.NewScanner(f)
+// scanFileForSecrets scans one rooted file snapshot and returns all regex findings within it.
+func scanFileForSecrets(data []byte, rel string, rules []*regexp.Regexp, class, kind, detail string) []Finding {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	var out []Finding
 	lineNo := 0
@@ -240,14 +235,13 @@ func scanFileForSecrets(abs, rel string, rules []*regexp.Regexp, class, kind, de
 
 // runRegexPass scans every file in `files` for any of the `rules`. One
 // compiled regex per category (OR'd) keeps this O(files × bytes).
-func runRegexPass(root string, files []string, rules []*regexp.Regexp, class, kind, detail string) []Finding {
+func runRegexPass(files []scannableFile, rules []*regexp.Regexp, class, kind, detail string) []Finding {
 	if len(rules) == 0 || len(files) == 0 {
 		return nil
 	}
 	var out []Finding
-	for _, p := range files {
-		abs := filepath.Join(root, p)
-		out = append(out, scanFileForSecrets(abs, p, rules, class, kind, detail)...)
+	for _, file := range files {
+		out = append(out, scanFileForSecrets(file.Data, file.Path, rules, class, kind, detail)...)
 	}
 	return out
 }

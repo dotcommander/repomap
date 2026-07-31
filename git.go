@@ -13,18 +13,6 @@ import (
 	"strings"
 )
 
-// gitHeadSHA returns the full SHA of HEAD. Returns an error (not empty string)
-// so callers can distinguish "git call failed" from "clean repo with no commits".
-func gitHeadSHA(ctx context.Context, root string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "HEAD")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out.String()), nil
-}
-
 // cacheStatusSnapshot is one coherent Git view used to decide whether an
 // on-disk cache describes the current worktree. Its digest deliberately
 // ignores index state: staging identical bytes must not invalidate a cache.

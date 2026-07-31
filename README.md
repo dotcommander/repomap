@@ -43,7 +43,7 @@ Outputs below are abridged; paths, counts, scores, and timestamps vary by reposi
 
    ### Flow
    entry: cmd/repomap/main.go
-   spine: repomap.go, types.go, calls.go, commit_prep_helpers.go, audit_packets.go
+   spine: repomap.go, types.go, calls.go, internal/commit/commit_prep_helpers.go, audit_packets.go
 
    repomap.go [imported by 33]
      3 types, 2 funcs, 16 methods, 1 vars · Config, GoDiagnostic
@@ -89,7 +89,7 @@ Outputs below are abridged; paths, counts, scores, and timestamps vary by reposi
    ### Flow
    entry: cmd/repomap/main.go
    spine: repomap.go, structured_json.go, audit_packets.go,
-          commit_execute.go, commit_analyze.go
+          internal/commit/commit_execute.go, commit_analyze.go
    ...
    ```
 
@@ -166,7 +166,7 @@ Outputs below are abridged; paths, counts, scores, and timestamps vary by reposi
 
    ### Flow
    entry: cmd/repomap/main.go
-   spine: repomap.go, types.go, calls.go, commit_prep_helpers.go,
+   spine: repomap.go, types.go, calls.go, internal/commit/commit_prep_helpers.go,
           structured_json.go
    ...
    ```
@@ -800,7 +800,7 @@ repomap is intentionally boring:
 
 - local only
 - deterministic
-- small Go API
+- public analysis API
 - no LLM calls
 - no embeddings
 - no hidden network dependency

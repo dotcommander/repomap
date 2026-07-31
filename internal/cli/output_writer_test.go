@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 	"github.com/dotcommander/repomap/internal/serve"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func (w *failAfterWriter) Write(p []byte) (int, error) {
 func TestEmitPrepReturnsWriteError(t *testing.T) {
 	t.Parallel()
 
-	payload := &repomap.PrepPayload{Status: repomap.PrepStatusReady}
+	payload := &commitflow.PrepPayload{Status: commitflow.PrepStatusReady}
 	for _, tc := range []struct {
 		name    string
 		jsonOut bool

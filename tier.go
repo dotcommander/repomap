@@ -1,12 +1,13 @@
-// Package repomap: tiers are a pure projection over ScoreComponents.
-// They add provenance labels to explain why a file scored as it did,
-// but never mutate Score or ScoreComponents.
 package repomap
 
 import (
 	"fmt"
 	"strings"
 )
+
+// Tiers are a pure projection over ScoreComponents. They add provenance labels
+// to explain why a file scored as it did, but never mutate Score or
+// ScoreComponents.
 
 // Confidence represents the reliability tier of a score component.
 type Confidence string

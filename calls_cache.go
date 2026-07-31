@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/dotcommander/repomap/internal/safefs"
 )
 
 // callsCacheEntry is the on-disk format for a cached --calls expansion.
@@ -90,7 +92,7 @@ func SaveCallsCache(cacheDir, hash string, callers SymbolCallers) error {
 		return fmt.Errorf("marshal calls cache: %w", err)
 	}
 	path := callsCachePath(cacheDir, hash)
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
+	if err := safefs.AtomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write calls cache: %w", err)
 	}
 	return nil

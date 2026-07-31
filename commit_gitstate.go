@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dotcommander/repomap/internal/safefs"
 )
 
 // gitState aggregates everything we shell out to git for. Built once per
@@ -458,10 +460,9 @@ func untrackedConfigContent(ctx context.Context, root string, files []fileChange
 	return writeFile(outPath, []byte(sb.String()))
 }
 
-// writeFile creates parent dirs and writes data atomically. Thin wrapper over
-// the existing atomicWriteFile so commit code reads naturally.
+// writeFile creates parent dirs and writes data atomically.
 func writeFile(path string, data []byte) error {
-	return atomicWriteFile(path, data, 0o600)
+	return safefs.AtomicWriteFile(path, data, 0o600)
 }
 
 // readFileBounded reads up to maxBytes from path. Returns truncated content

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 	"github.com/dotcommander/repomap/internal/lsp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -255,8 +256,8 @@ func TestCommitFinishIOHelpers(t *testing.T) {
 	t.Run("buildFinishResult", func(t *testing.T) {
 		tag := "v1.2.3"
 		relURL := "https://github.com/example/repo/releases/tag/v1.2.3"
-		execRes := &repomap.ExecuteResult{
-			Commits:    []repomap.CommitRecord{{SHA: "abc1234"}},
+		execRes := &commitflow.ExecuteResult{
+			Commits:    []commitflow.CommitRecord{{SHA: "abc1234"}},
 			Tag:        &tag,
 			ReleaseURL: &relURL,
 		}

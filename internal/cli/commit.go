@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 )
 
 type commitCommand struct {
@@ -58,10 +59,10 @@ type commitExecuteCommand struct {
 }
 
 func (c *commitExecuteCommand) Run(ctx context.Context, ioctx *commandIO) error {
-	result, err := repomap.ExecuteCommit(ctx, repomap.ExecuteOptions{PlanFile: c.PlanFile, Push: c.Push, Tag: c.Tag, NoRelease: c.NoRelease, ReleaseNotesFrom: c.ReleaseNotesFrom, DryRun: c.DryRun, JSON: c.JSON, SkipFix: c.SkipFix, Output: ioctx.stdout})
+	result, err := commitflow.ExecuteCommit(ctx, commitflow.ExecuteOptions{PlanFile: c.PlanFile, Push: c.Push, Tag: c.Tag, NoRelease: c.NoRelease, ReleaseNotesFrom: c.ReleaseNotesFrom, DryRun: c.DryRun, JSON: c.JSON, SkipFix: c.SkipFix, Output: ioctx.stdout})
 	if err != nil {
 		if result != nil && c.JSON {
-			data, encErr := repomap.EncodeExecuteResult(result, false)
+			data, encErr := commitflow.EncodeExecuteResult(result, false)
 			if encErr != nil {
 				return fmt.Errorf("encode partial result: %w", encErr)
 			}
@@ -72,12 +73,12 @@ func (c *commitExecuteCommand) Run(ctx context.Context, ioctx *commandIO) error 
 				return writeErr
 			}
 		}
-		return commandExitError{code: repomap.ExecExitCode(err), err: err}
+		return commandExitError{code: commitflow.ExecExitCode(err), err: err}
 	}
 	if !c.JSON {
 		return nil
 	}
-	data, err := repomap.EncodeExecuteResult(result, false)
+	data, err := commitflow.EncodeExecuteResult(result, false)
 	if err != nil {
 		return fmt.Errorf("encode result: %w", err)
 	}

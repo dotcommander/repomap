@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 )
 
 const (
@@ -66,7 +67,7 @@ func finishFatal(w io.Writer, jsonOut bool, exitCode int, detail string) error {
 }
 
 // buildFinishResult converts an ExecuteResult to a finishResult for exit-4 partial failures.
-func buildFinishResult(status string, r *repomap.ExecuteResult, detail string) *finishResult {
+func buildFinishResult(status string, r *commitflow.ExecuteResult, detail string) *finishResult {
 	fr := &finishResult{
 		Status:        status,
 		Commits:       r.Commits,

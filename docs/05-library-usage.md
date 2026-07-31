@@ -1,6 +1,7 @@
 # Library Usage
 
-Everything the CLI does, you can do from Go.
+The public Go API provides repository analysis, mapping, rendering, audit,
+task, context, and impact reports. Commit mutation workflows remain CLI-only.
 
 ## Install
 

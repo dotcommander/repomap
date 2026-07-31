@@ -223,7 +223,8 @@ func TestCompactModeOrientation_ContainsNames(t *testing.T) {
 func TestDefaultModeContainsSymbols(t *testing.T) {
 	t.Parallel()
 	root := findRootTestRepo(t)
-	m := buildTestMap(t, root)
+	m := repomap.New(root, repomap.Config{MaxTokens: 32768, MaxTokensNoCtx: 8192})
+	require.NoError(t, m.Build(context.Background()))
 
 	out := m.String()
 	require.NotEmpty(t, out, "default output must not be empty")

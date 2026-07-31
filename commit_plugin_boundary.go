@@ -4,19 +4,6 @@ import (
 	"strings"
 )
 
-// codeExts lists source-code extensions that, when newly added, promote a
-// group's type to "feat" regardless of how many doc files are present.
-var codeExts = map[string]bool{
-	".go": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true,
-	".py": true, ".rs": true, ".php": true, ".rb": true, ".java": true,
-	".c": true, ".cpp": true, ".cs": true,
-}
-
-// docExts lists documentation/text extensions that keep type as "docs".
-var docExts = map[string]bool{
-	".md": true, ".txt": true, ".rst": true, ".adoc": true,
-}
-
 // crossesPluginBoundary reports whether two paths live in different top-level
 // plugins (e.g. plugins/dc/... vs plugins/pi/...). Files outside `plugins/`
 // are never considered to cross.

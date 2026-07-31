@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,11 +50,11 @@ func runGitAuto(t *testing.T, root string, args ...string) {
 }
 
 // decodePayload parses the captured output into a PrepPayload.
-func decodePayload(t *testing.T, raw string) *repomap.PrepPayload {
+func decodePayload(t *testing.T, raw string) *commitflow.PrepPayload {
 	t.Helper()
 	raw = strings.TrimSpace(raw)
 	require.NotEmpty(t, raw, "expected JSON payload on writer")
-	var p repomap.PrepPayload
+	var p commitflow.PrepPayload
 	require.NoError(t, json.Unmarshal([]byte(raw), &p), "output: %s", raw)
 	return &p
 }
@@ -69,7 +69,7 @@ func TestRunCommitAuto_Abort_NoChanges(t *testing.T) {
 	require.NoError(t, runCommitAuto(context.Background(), &buf, io.Discard, root, false, false, "", "", ""))
 
 	p := decodePayload(t, buf.String())
-	assert.Equal(t, repomap.PrepStatusAbort, p.Status)
+	assert.Equal(t, commitflow.PrepStatusAbort, p.Status)
 	assert.NotEmpty(t, p.AbortReason)
 }
 
@@ -132,6 +132,6 @@ func TestRunCommitAuto_NeedsJudgment_KitchenSink(t *testing.T) {
 	// The guard may produce either needs_judgment (one fused group) or abort
 	// (if reviewer/lowConf caps trip). Either is a non-ready outcome — assert
 	// the routing invariant: an 11-file fusion never passes through as ready.
-	assert.NotEqual(t, repomap.PrepStatusReady, p.Status,
+	assert.NotEqual(t, commitflow.PrepStatusReady, p.Status,
 		"11-file fusion must not pass through as ready: status=%q", p.Status)
 }

@@ -124,13 +124,6 @@ type edge struct {
 	Reason string  // "test-pair" | "symbol-dep" | "co-change" | "sibling"
 }
 
-// Prep status values emitted in PrepPayload.Status.
-const (
-	PrepStatusReady         = "ready"
-	PrepStatusNeedsJudgment = "needs_judgment"
-	PrepStatusAbort         = "abort"
-)
-
 // Review verdict values emitted in ReviewDecision.Verdict.
 const (
 	VerdictSafe   = "safe"

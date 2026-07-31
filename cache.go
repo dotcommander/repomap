@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dotcommander/repomap/internal/safefs"
 )
 
 // outputCache lazily computes and caches formatted output strings.
@@ -113,7 +115,7 @@ func (m *Map) SaveCacheContext(ctx context.Context, cacheDir string) error {
 	}
 
 	path := cachePath(cacheDir, m.root)
-	if err := atomicWriteFile(path, data, 0o644); err != nil {
+	if err := safefs.AtomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write cache: %w", err)
 	}
 	return nil

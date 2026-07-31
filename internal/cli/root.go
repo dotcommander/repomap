@@ -11,6 +11,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 )
 
 type commandIO struct {
@@ -223,7 +224,7 @@ func ExitCode(err error) int {
 	if errors.As(err, &commandErr) {
 		return commandErr.code
 	}
-	if code := repomap.ExecExitCode(err); code != 0 {
+	if code := commitflow.ExecExitCode(err); code != 0 {
 		return code
 	}
 	return 1

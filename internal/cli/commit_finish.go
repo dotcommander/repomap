@@ -4,7 +4,7 @@ package cli
 //
 // Loads the PrepState written by `commit prep`, applies any LLM decisions,
 // then either runs `just release <bump>` (Justfile path) or calls
-// repomap.ExecuteFromGroups (standard path), followed by cross-repo and
+// internal/commit.ExecuteFromGroups (standard path), followed by cross-repo and
 // self-verification.
 //
 // Exit codes:
@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 )
 
 // finishDecisions is the JSON schema accepted by --decisions.
 type finishDecisions struct {
-	ReviewDecisions []repomap.ReviewDecision `json:"review_decisions"`
-	Subjects        []finishSubjectOverride  `json:"subjects"`
+	ReviewDecisions []commitflow.ReviewDecision `json:"review_decisions"`
+	Subjects        []finishSubjectOverride     `json:"subjects"`
 }
 
 // finishSubjectOverride replaces a group's SuggestedMsg when the agent
@@ -39,13 +39,13 @@ type finishSubjectOverride struct {
 
 // finishResult is the JSON payload emitted on --json.
 type finishResult struct {
-	Status            string                 `json:"status"` // "passed" | "failed"
-	Commits           []repomap.CommitRecord `json:"commits"`
-	Tag               string                 `json:"tag,omitempty"`
-	ReleaseURL        string                 `json:"release_url,omitempty"`
-	LastCommitSubject string                 `json:"last_commit_subject,omitempty"`
-	CrossRepo         []repomap.RepoStatus   `json:"cross_repo"`
-	FailureDetail     string                 `json:"failure_detail,omitempty"`
+	Status            string                    `json:"status"` // "passed" | "failed"
+	Commits           []commitflow.CommitRecord `json:"commits"`
+	Tag               string                    `json:"tag,omitempty"`
+	ReleaseURL        string                    `json:"release_url,omitempty"`
+	LastCommitSubject string                    `json:"last_commit_subject,omitempty"`
+	CrossRepo         []commitflow.RepoStatus   `json:"cross_repo"`
+	FailureDetail     string                    `json:"failure_detail,omitempty"`
 }
 
 type commitFinishCommand struct {
@@ -62,12 +62,12 @@ func (c *commitFinishCommand) Run(ctx context.Context, ioctx *commandIO) error {
 
 func runCommitFinish(ctx context.Context, stdout, stderr io.Writer, prepToken, decisionsArg string, push bool, tag string, jsonOut bool) error {
 	// Step 1: load prep state.
-	state, err := repomap.LoadPrepState(prepToken)
+	state, err := commitflow.LoadPrepState(prepToken)
 	if err != nil {
 		return finishFatal(stdout, jsonOut, 2, fmt.Sprintf("load prep state: %v", err))
 	}
 
-	if err := repomap.VerifyPrepStateFresh(ctx, state); err != nil {
+	if err := commitflow.VerifyPrepStateFresh(ctx, state); err != nil {
 		return finishFatal(stdout, jsonOut, 2, fmt.Sprintf("stale prep state: %v", err))
 	}
 
@@ -107,10 +107,10 @@ func runCommitFinish(ctx context.Context, stdout, stderr io.Writer, prepToken, d
 	// Review decisions legitimately mutate planned files; refresh the binding
 	// so a retry of the same token still passes freshness verification.
 	if len(dec.ReviewDecisions) > 0 {
-		if headSHA, fileHashes, bindErr := repomap.BuildPrepStateBinding(ctx, repoRoot, state.Plan); bindErr == nil {
+		if headSHA, fileHashes, bindErr := commitflow.BuildPrepStateBinding(ctx, repoRoot, state.Plan); bindErr == nil {
 			state.HeadSHA = headSHA
 			state.FileHashes = fileHashes
-			_ = repomap.PersistPrepStateAt(prepToken, state)
+			_ = commitflow.PersistPrepStateAt(prepToken, state)
 		}
 	}
 
@@ -120,17 +120,17 @@ func runCommitFinish(ctx context.Context, stdout, stderr io.Writer, prepToken, d
 		if justErr := runJustRelease(ctx, stderr, repoRoot, bump); justErr != nil {
 			return finishFatal(stdout, jsonOut, 4, fmt.Sprintf("just release: %v", justErr))
 		}
-		_ = repomap.DeletePrepState(prepToken)
+		_ = commitflow.DeletePrepState(prepToken)
 		return runVerifyAndEmit(ctx, stdout, repoRoot, state.SessionRepos, nil, tag, jsonOut)
 	}
 
 	// Step 4: standard execute path.
-	execResult, execErr := repomap.ExecuteFromGroups(ctx, repoRoot, groups, repomap.ExecuteOptions{
+	execResult, execErr := commitflow.ExecuteFromGroups(ctx, repoRoot, groups, commitflow.ExecuteOptions{
 		Push: push,
 		Tag:  tag,
 	})
 	if execErr != nil {
-		code := repomap.ExecExitCode(execErr)
+		code := commitflow.ExecExitCode(execErr)
 		detail := execErr.Error()
 		// For exit-3/4 failures after some commits landed, still emit the partial result.
 		if (code == 3 || code == 4) && execResult != nil {
@@ -139,11 +139,11 @@ func runCommitFinish(ctx context.Context, stdout, stderr io.Writer, prepToken, d
 		return finishFatal(stdout, jsonOut, code, detail)
 	}
 
-	_ = repomap.DeletePrepState(prepToken)
+	_ = commitflow.DeletePrepState(prepToken)
 	return runVerifyAndEmit(ctx, stdout, repoRoot, state.SessionRepos, execResult, tag, jsonOut)
 }
 
-func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state *repomap.PrepState, decisions []repomap.ReviewDecision) error {
+func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state *commitflow.PrepState, decisions []commitflow.ReviewDecision) error {
 	if state.Analysis == nil {
 		if len(decisions) > 0 {
 			return fmt.Errorf("review decisions: missing analysis state")
@@ -157,26 +157,26 @@ func validateAndApplyReviewDecisions(ctx context.Context, repoRoot string, state
 		return fmt.Errorf("review decisions: missing findings artifact")
 	}
 
-	findings, err := repomap.LoadFindings(state.Analysis.Refs.Findings)
+	findings, err := commitflow.LoadFindings(state.Analysis.Refs.Findings)
 	if err != nil {
 		return fmt.Errorf("load findings: %w", err)
 	}
-	if err := repomap.ValidateReviewDecisions(findings, decisions); err != nil {
+	if err := commitflow.ValidateReviewDecisions(findings, decisions); err != nil {
 		return fmt.Errorf("review decisions: %w", err)
 	}
 	if len(decisions) == 0 {
 		return nil
 	}
-	if err := repomap.ApplyReviewDecisions(ctx, repoRoot, decisions, findings); err != nil {
+	if err := commitflow.ApplyReviewDecisions(ctx, repoRoot, decisions, findings); err != nil {
 		return fmt.Errorf("apply review decisions: %w", err)
 	}
 	return nil
 }
 
 // runVerifyAndEmit runs cross-repo + self-verify then emits the final JSON.
-func runVerifyAndEmit(ctx context.Context, stdout io.Writer, repoRoot string, sessionRepos []string, execResult *repomap.ExecuteResult, tag string, jsonOut bool) error {
-	crossRepo, _ := repomap.CrossRepoVerify(ctx, sessionRepos)
-	selfResult, selfErr := repomap.SelfVerify(ctx, repoRoot, "auto")
+func runVerifyAndEmit(ctx context.Context, stdout io.Writer, repoRoot string, sessionRepos []string, execResult *commitflow.ExecuteResult, tag string, jsonOut bool) error {
+	crossRepo, _ := commitflow.CrossRepoVerify(ctx, sessionRepos)
+	selfResult, selfErr := commitflow.SelfVerify(ctx, repoRoot, "auto")
 
 	status := finishStatusPassed
 	failureDetail := ""

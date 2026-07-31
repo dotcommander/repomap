@@ -17,7 +17,7 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/dotcommander/repomap"
+	commitflow "github.com/dotcommander/repomap/internal/commit"
 )
 
 type commitAutoCommand struct {
@@ -57,10 +57,10 @@ func runCommitAuto(ctx context.Context, w, stderr io.Writer, repoRoot string, no
 	case "FULL", "LOCAL":
 		payload.ModeHint = forceMode
 	default:
-		payload.ModeHint = repomap.ModeHint(payload.Preflight)
+		payload.ModeHint = commitflow.ModeHint(payload.Preflight)
 	}
 
-	if payload.Status != repomap.PrepStatusReady {
+	if payload.Status != commitflow.PrepStatusReady {
 		return emitPrep(w, true, payload)
 	}
 
